@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0 
+    container_name: mysql8_ctspk
+    restart: always
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: test
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: Appuser@123
+    volumes:
+      # Save database files in ./mysql_data on the host
+      - ./mysql_data:/var/lib/mysql
+      # Load schema on first run (auto-import)
+      - ./ctspk.sql:/docker-entrypoint-initdb.d/ctspk.sql
+
