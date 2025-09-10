@@ -4,6 +4,7 @@ import datetime
 from pydantic import EmailStr, model_validator
 from sqlalchemy import Column, ForeignKey
 from sqlmodel import SQLModel, Field, Relationship
+from src.api.models.roleModel import RoleRead
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 
@@ -28,7 +29,10 @@ class User(TimeStampedModel, table=True):
 
     # relationships
     role: Optional["Role"] = Relationship(back_populates="users")
-    shops: List["Shop"] = Relationship(back_populates="owner")
+    shops: List["Shop"] = Relationship(
+        back_populates="owner",
+        sa_relationship_kwargs={"foreign_keys": "Shop.owner_id"},  # ✅ correct
+    )
     # profile: Optional["UserProfile"] = Relationship(back_populates="user")
     # wallets: List["Wallet"] = Relationship(back_populates="user")
     # addresses: List["Address"] = Relationship(back_populates="user")
@@ -46,3 +50,28 @@ class RegisterUser(SQLModel):
         if values.get("password") != values.get("confirm_password"):
             raise ValueError("Passwords do not match")
         return values
+
+
+class UserReadBase(TimeStampReadModel):
+    id: int
+    name: str
+    email: EmailStr
+
+
+class UserRead(UserReadBase):
+    role: Optional[RoleRead] = None
+
+
+class LoginRequest(SQLModel):
+    email: EmailStr
+    password: str
+
+
+class UserUpdate(SQLModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+
+
+class UpdateUserByAdmin(UserUpdate):
+    role_id: Optional[int] = None

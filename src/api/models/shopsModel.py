@@ -22,5 +22,9 @@ class Shop(TimeStampedModel, table=True):
     settings: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
     notifications: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
 
-    owner: "User" = Relationship(back_populates="shops")
+    owner: "User" = Relationship(
+        back_populates="shops",
+        sa_relationship_kwargs={"foreign_keys": "[Shop.owner_id]"},
+    )
+
     # products: List["Product"] = Relationship(back_populates="shop")

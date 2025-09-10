@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlmodel import SQLModel
+from src.api.routers import authRoute, userRoute
 
 
 # Define app lifespan — this runs once when the app starts and when it shuts down
@@ -17,3 +18,7 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/")
 def root():
     return {"message": "Hello, FastAPI with uv!"}
+
+
+app.include_router(authRoute.router)
+app.include_router(userRoute.router)
