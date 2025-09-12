@@ -14,3 +14,10 @@ dependencies = [
     "sqlmodel>=0.0.24",
     "uvicorn[standard]>=0.35.0",
 ]
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode= "basic"
+

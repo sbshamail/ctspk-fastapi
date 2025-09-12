@@ -1,47 +1,45 @@
 # src/api/models/userModel.py
-from typing import Optional, List
+from __future__ import annotations
+from typing import Literal, Optional, List, TYPE_CHECKING
 import datetime
 from pydantic import EmailStr, model_validator
-from sqlalchemy import Column, ForeignKey
 from sqlmodel import SQLModel, Field, Relationship
-from src.api.models.roleModel import RoleRead
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
+
+if TYPE_CHECKING:
+    from src.api.models.role_model.userRoleModel import UserRole
+    from src.api.models.shop_model.shopsModel import Shop
 
 
 class User(TimeStampedModel, table=True):
-    __tablename__ = "users"
+    __tablename__: Literal["users"] = "users"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=191)
     email: str = Field(max_length=191, index=True)
+    phone_no: str = Field(max_length=30)
     email_verified_at: Optional[datetime.datetime] = None
     password: Optional[str] = None
     remember_token: Optional[str] = Field(default=None, max_length=100)
     is_active: bool = Field(default=True)
 
-    shop_id: Optional[int] = Field(
-        sa_column=Column(
-            ForeignKey("shops.id", use_alter=True, name="fk_users_shop_id"),
-            nullable=True,
-        )
-    )
-    role_id: Optional[int] = Field(default=None, foreign_key="roles.id")
-
     # relationships
-    role: Optional["Role"] = Relationship(back_populates="users")
+    user_roles: List["UserRole"] = Relationship(back_populates="user")
     shops: List["Shop"] = Relationship(
         back_populates="owner",
         sa_relationship_kwargs={"foreign_keys": "Shop.owner_id"},  # ✅ correct
     )
-    # profile: Optional["UserProfile"] = Relationship(back_populates="user")
-    # wallets: List["Wallet"] = Relationship(back_populates="user")
-    # addresses: List["Address"] = Relationship(back_populates="user")
-    # wishlists: List["Wishlist"] = Relationship(back_populates="user")
+    # As fulfillment user (user assigned to fulfill orders)
+    # fulfillment_orders: List["Order"] = Relationship(
+    #     back_populates="fulfillment_user",
+    #     sa_relationship_kwargs={"foreign_keys": "Order.fullfillment_id"},
+    # )
 
 
 class RegisterUser(SQLModel):
     name: str
     email: EmailStr
+    phone_no: str
     password: str
     confirm_password: str
 
@@ -55,11 +53,13 @@ class RegisterUser(SQLModel):
 class UserReadBase(TimeStampReadModel):
     id: int
     name: str
+    phone_no: str
     email: EmailStr
+    is_active: bool
 
 
-class UserRead(UserReadBase):
-    role: Optional[RoleRead] = None
+# class UserRead(UserReadBase):
+#     role: Optional[RoleRead] = None
 
 
 class LoginRequest(SQLModel):
@@ -70,8 +70,10 @@ class LoginRequest(SQLModel):
 class UserUpdate(SQLModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
+    phone_no: Optional[str] = None
     password: Optional[str] = None
 
 
 class UpdateUserByAdmin(UserUpdate):
-    role_id: Optional[int] = None
+    # role_id: Optional[List] = None
+    is_active: Optional[bool] = None

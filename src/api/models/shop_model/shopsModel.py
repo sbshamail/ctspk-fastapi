@@ -26,5 +26,25 @@ class Shop(TimeStampedModel, table=True):
         back_populates="shops",
         sa_relationship_kwargs={"foreign_keys": "[Shop.owner_id]"},
     )
+    products: List["Product"] = Relationship(back_populates="shop")
+    balances: List["Balance"] = Relationship(back_populates="shop")
 
-    # products: List["Product"] = Relationship(back_populates="shop")
+class ShopCreate(SQLModel):
+    owner_id: int
+    name: str
+    slug: str
+    description: Optional[str] = None
+    is_active: bool = False
+
+class ShopRead(TimeStampReadModel):
+    id: int
+    owner_id: int
+    name: str
+    slug: str
+    is_active: bool
+
+class ShopUpdate(SQLModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None

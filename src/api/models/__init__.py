@@ -1,7 +1,11 @@
 from .usersModel import User
-from .roleModel import Role
+from .role_model.roleModel import Role
+from .role_model.userRoleModel import UserRole
 
-from .shopsModel import Shop
+from .shop_model.shopsModel import Shop
+from .shop_model.userShopModel import UserShop
+
+__all__ = ["User", "Role", "UserRole", "Shop", "UserShop"]
 
 # from .productsModel import Product
 # from .wishlistsModel import Wishlist

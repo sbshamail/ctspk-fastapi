@@ -8,12 +8,15 @@ from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 class Role(TimeStampedModel, table=True):
     __tablename__ = "roles"
     id: Optional[int] = Field(default=None, primary_key=True)
-    title: str = Field(max_length=50, unique=True)
+    name: str = Field(max_length=50, unique=True)
+    description: Optional[str] = None
     permissions: list[str] = Field(
         default_factory=list,
         sa_type=JSON,
     )
-    users: List["User"] = Relationship(back_populates="role")
+    is_active: bool = Field(default=True)
+   # relationships
+    user_roles: List["UserRole"] = Relationship(back_populates="role")
 
 
 class RoleRead(TimeStampReadModel):
