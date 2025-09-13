@@ -1,12 +1,16 @@
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Literal, Optional
 from sqlalchemy import JSON
 from sqlmodel import Field, Relationship, SQLModel
 
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 
+if TYPE_CHECKING:
+    from src.api.models import UserRole
+
+
 class Role(TimeStampedModel, table=True):
-    __tablename__ = "roles"
+    __tablename__: Literal["roles"] = "roles"
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=50, unique=True)
     description: Optional[str] = None
@@ -15,7 +19,7 @@ class Role(TimeStampedModel, table=True):
         sa_type=JSON,
     )
     is_active: bool = Field(default=True)
-   # relationships
+    # relationships
     user_roles: List["UserRole"] = Relationship(back_populates="role")
 
 

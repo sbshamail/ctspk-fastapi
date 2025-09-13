@@ -1,14 +1,17 @@
 # src/api/models/shopModel.py
-from typing import Optional, List
+from typing import Literal, Optional, List, TYPE_CHECKING
 import datetime
 from sqlalchemy import Column
-from sqlmodel import Field, Relationship
+from sqlmodel import Field, Relationship, SQLModel
 from sqlalchemy.dialects.postgresql import JSONB
-from src.api.models.baseModel import TimeStampedModel
+from src.api.models.baseModel import TimeStampReadModel, TimeStampedModel
+
+if TYPE_CHECKING:
+    from src.api.models import User
 
 
 class Shop(TimeStampedModel, table=True):
-    __tablename__ = "shops"
+    __tablename__: Literal["shops"] = "shops"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_id: int = Field(foreign_key="users.id")
@@ -26,8 +29,9 @@ class Shop(TimeStampedModel, table=True):
         back_populates="shops",
         sa_relationship_kwargs={"foreign_keys": "[Shop.owner_id]"},
     )
-    products: List["Product"] = Relationship(back_populates="shop")
-    balances: List["Balance"] = Relationship(back_populates="shop")
+    # products: List["Product"] = Relationship(back_populates="shop")
+    # balances: List["Balance"] = Relationship(back_populates="shop")
+
 
 class ShopCreate(SQLModel):
     owner_id: int
@@ -36,12 +40,14 @@ class ShopCreate(SQLModel):
     description: Optional[str] = None
     is_active: bool = False
 
+
 class ShopRead(TimeStampReadModel):
     id: int
     owner_id: int
     name: str
     slug: str
     is_active: bool
+
 
 class ShopUpdate(SQLModel):
     name: Optional[str] = None

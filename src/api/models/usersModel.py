@@ -7,8 +7,7 @@ from sqlmodel import SQLModel, Field, Relationship
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 if TYPE_CHECKING:
-    from src.api.models.role_model.userRoleModel import UserRole
-    from src.api.models.shop_model.shopsModel import Shop
+    from src.api.models import UserRole, Shop, Order
 
 
 class User(TimeStampedModel, table=True):
@@ -30,10 +29,10 @@ class User(TimeStampedModel, table=True):
         sa_relationship_kwargs={"foreign_keys": "Shop.owner_id"},  # ✅ correct
     )
     # As fulfillment user (user assigned to fulfill orders)
-    # fulfillment_orders: List["Order"] = Relationship(
-    #     back_populates="fulfillment_user",
-    #     sa_relationship_kwargs={"foreign_keys": "Order.fullfillment_id"},
-    # )
+    fulfillment_orders: List["Order"] = Relationship(
+        back_populates="fulfillment_user",
+        sa_relationship_kwargs={"foreign_keys": "Order.fullfillment_id"},
+    )
 
 
 class RegisterUser(SQLModel):
