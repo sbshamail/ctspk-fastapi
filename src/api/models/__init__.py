@@ -6,7 +6,7 @@ from .role_model.roleModel import Role
 from .role_model.userRoleModel import UserRole
 
 # # shop
-# from .shop_model import Shop, UserShop
+from .shop_model import Shop, UserShop
 
 # # product
 # from .product_model.productsModel import Product
@@ -43,9 +43,9 @@ __all__ = [
     # role
     "Role",
     "UserRole",
-    # # shop
-    # "Shop",
-    # "UserShop",
+    # shop
+    "Shop",
+    "UserShop",
     # # product
     # "Product",
     # "ProductPurchase",

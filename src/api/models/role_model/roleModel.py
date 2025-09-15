@@ -33,6 +33,7 @@ class RoleReadBase(TimeStampReadModel):
     id: int
     name: str
     permissions: list[str]
+    user_id: int
 
 
 class RoleRead(RoleReadBase):

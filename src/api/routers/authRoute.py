@@ -56,18 +56,18 @@ def initialize_first_user(
 
     # Create roles
     admin_role = Role(
-        name="admin",
+        name="root",
         user_id=user.id,
         permissions=["all"],
     )
-    user_role = Role(
-        name="user",
+    shop_admin_role = Role(
+        name="shop_admin",
         user_id=user.id,
-        permissions=["user"],
+        permissions=["shop", "role"],
     )
 
     session.add(admin_role)
-    session.add(user_role)
+    session.add(shop_admin_role)
     session.flush()  # get IDs without committing
 
     # Assign admin role to the user via UserRole

@@ -1,9 +1,9 @@
 # src/api/models/shopModel.py
 from typing import Literal, Optional, List, TYPE_CHECKING
-import datetime
 from sqlalchemy import Column
 from sqlmodel import Field, Relationship, SQLModel
 from sqlalchemy.dialects.postgresql import JSONB
+from src.api.models.usersModel import UserReadBase
 from src.api.models.baseModel import TimeStampReadModel, TimeStampedModel
 
 if TYPE_CHECKING:
@@ -34,23 +34,44 @@ class Shop(TimeStampedModel, table=True):
 
 
 class ShopCreate(SQLModel):
-    owner_id: int
     name: str
-    slug: str
+    slug: Optional[str] = None
     description: Optional[str] = None
-    is_active: bool = False
+    cover_image: Optional[dict] = None
+    logo: Optional[dict] = None
+    address: Optional[dict] = None
+    settings: Optional[dict] = None
+    notifications: Optional[dict] = None
 
 
-class ShopRead(TimeStampReadModel):
-    id: int
-    owner_id: int
-    name: str
-    slug: str
-    is_active: bool
-
-
+# ---------- UPDATE ----------
 class ShopUpdate(SQLModel):
     name: Optional[str] = None
     slug: Optional[str] = None
     description: Optional[str] = None
+    cover_image: Optional[dict] = None
+    logo: Optional[dict] = None
+    address: Optional[dict] = None
+    settings: Optional[dict] = None
+    notifications: Optional[dict] = None
     is_active: Optional[bool] = None
+
+
+# ---------- READ ----------
+class ShopRead(TimeStampReadModel):
+    id: int
+    owner_id: int
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    description: Optional[str] = None
+    cover_image: Optional[dict] = None
+    logo: Optional[dict] = None
+    is_active: bool
+    address: Optional[dict] = None
+    settings: Optional[dict] = None
+    notifications: Optional[dict] = None
+
+    # include nested owner
+    owner: Optional[UserReadBase] = None
+
+    model_config = {"from_attributes": True}
