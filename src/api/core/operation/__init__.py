@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 from fastapi import Query
 from sqlmodel import Session, SQLModel, select
 from typing import List
-
+from src.lib.db_con import get_session
+from src.api.core.response import api_response
 from src.api.core.operation.list_operation_helper import (
     applyFilters,
 )
@@ -83,3 +84,55 @@ def listop(
     results = session.exec(paginated_stmt).all()
 
     return {"data": results, "total": total_count}
+
+
+def listRecords(
+    query_params: dict,
+    searchFields: list[str],
+    Model,
+    join_options: list = [],
+    Schema: type[SQLModel] = None,
+):
+    session = next(get_session())  # get actual Session object
+    try:
+        # Extract params from query dict
+        dateRange = query_params.get("dateRange")
+        numberRange = query_params.get("numberRange")
+        searchTerm = query_params.get("searchTerm")
+        columnFilters = query_params.get("columnFilters")
+        page = int(query_params.get("page", 1))
+        skip = int(query_params.get("skip", 0))
+        limit = int(query_params.get("limit", 10))
+
+        filters = {
+            "searchTerm": searchTerm,
+            "columnFilters": columnFilters,
+            "dateRange": dateRange,
+            "numberRange": numberRange,
+        }
+
+        result = listop(
+            session=session,
+            Model=Model,
+            searchFields=searchFields,
+            filters=filters,
+            skip=skip,
+            page=page,
+            limit=limit,
+            join_options=join_options,
+        )
+
+        if not result["data"]:
+            return api_response(404, "No Result found")
+        # Convert each SQLModel Model instance into a ModelRead Pydantic model
+        if not Schema:
+            return result
+        list_data = [Schema.model_validate(prod) for prod in result["data"]]
+        return api_response(
+            200,
+            f"data found",
+            list_data,
+            result["total"],
+        )
+    finally:
+        session.close()

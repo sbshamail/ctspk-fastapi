@@ -1,17 +1,17 @@
-# src/api/models/userModel.py
-from __future__ import annotations
-from typing import Literal, Optional, List, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
 import datetime
 from pydantic import EmailStr, model_validator
 from sqlmodel import SQLModel, Field, Relationship
+
+from src.api.models.role_model.roleModel import RoleRead
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 if TYPE_CHECKING:
-    from src.api.models import UserRole, Shop, Order
+    from src.api.models import UserRole, Role
 
 
 class User(TimeStampedModel, table=True):
-    __tablename__: Literal["users"] = "users"
+    __tablename__ = "users"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=191)
@@ -23,16 +23,33 @@ class User(TimeStampedModel, table=True):
     is_active: bool = Field(default=True)
 
     # relationships
-    user_roles: List["UserRole"] = Relationship(back_populates="user")
-    shops: List["Shop"] = Relationship(
-        back_populates="owner",
-        sa_relationship_kwargs={"foreign_keys": "Shop.owner_id"},  # ✅ correct
-    )
+    user_roles: list["UserRole"] = Relationship(back_populates="user")
+
+    # shops: List["Shop"] = Relationship(
+    #     back_populates="owner",
+    #     sa_relationship_kwargs={"foreign_keys": "Shop.owner_id"},  # ✅ correct
+    # )
     # As fulfillment user (user assigned to fulfill orders)
-    fulfillment_orders: List["Order"] = Relationship(
-        back_populates="fulfillment_user",
-        sa_relationship_kwargs={"foreign_keys": "Order.fullfillment_id"},
-    )
+    # fulfillment_orders: List["Order"] = Relationship(
+    #     back_populates="fulfillment_user",
+    #     sa_relationship_kwargs={"foreign_keys": "Order.fullfillment_id"},
+    # )
+
+    @property
+    def roles(self) -> list["Role"]:
+        """Return Role objects directly"""
+        return [ur.role for ur in self.user_roles if ur.role]
+
+    @property
+    def role_names(self) -> list[str]:
+        return [role.name for role in self.roles]
+
+    @property
+    def permissions(self) -> list[str]:
+        perms = []
+        for role in self.roles:
+            perms.extend(role.permissions)
+        return perms
 
 
 class RegisterUser(SQLModel):
@@ -57,8 +74,8 @@ class UserReadBase(TimeStampReadModel):
     is_active: bool
 
 
-# class UserRead(UserReadBase):
-#     role: Optional[RoleRead] = None
+class UserRead(UserReadBase):
+    roles: List[RoleRead] = None
 
 
 class LoginRequest(SQLModel):

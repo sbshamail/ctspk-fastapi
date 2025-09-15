@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 from fastapi import APIRouter, Request, Response
+from src.api.core.utility import Print
 from src.api.core.decorator import handle_async_wrapper
 from src.config import ACCESS_TOKEN_EXPIRE_MINUTES
 from src.api.core.security import (
@@ -12,7 +13,8 @@ from src.api.core.security import (
     verify_password,
     verify_refresh_token,
 )
-from src.api.models.roleModel import Role
+from src.api.models.role_model.roleModel import Role
+from src.api.models.role_model.userRoleModel import UserRole
 from src.api.models.usersModel import RegisterUser, User, UserRead, LoginRequest
 from src.api.core import (
     GetSession,
@@ -32,6 +34,18 @@ def initialize_first_user(
     request: RegisterUser,
     session: GetSession,
 ):
+
+    # Create first user with admin role
+    hashed_password = hash_password(request.password)
+    user = User(**request.model_dump())
+    user = User(
+        name=request.name,
+        email=request.email,
+        phone_no=request.phone_no,
+        password=hashed_password,
+    )
+    session.add(user)
+    session.flush()
     # Prevent rerun if roles already exist
     existing_roles = session.exec(select(Role)).all()
     if existing_roles:
@@ -42,11 +56,13 @@ def initialize_first_user(
 
     # Create roles
     admin_role = Role(
-        title="admin",
+        name="admin",
+        user_id=user.id,
         permissions=["all"],
     )
     user_role = Role(
-        title="user",
+        name="user",
+        user_id=user.id,
         permissions=["user"],
     )
 
@@ -54,16 +70,10 @@ def initialize_first_user(
     session.add(user_role)
     session.flush()  # get IDs without committing
 
-    # Create first user with admin role
-    hashed_password = hash_password(request.password)
-    user = User(**request.model_dump())
-    user = User(
-        name=request.name,
-        email=request.email,
-        password=hashed_password,
-        role_id=admin_role.id,
-    )
-    session.add(user)
+    # Assign admin role to the user via UserRole
+    user_role_link = UserRole(user_id=user.id, role_id=admin_role.id)
+    session.add(user_role_link)
+
     session.commit()
     session.refresh(user)
 
@@ -110,7 +120,7 @@ def login_user(
     user = (
         session.exec(
             select(User)
-            .options(selectinload(User.role))
+            .options(selectinload(User.user_roles).selectinload(UserRole.role))
             .where(User.email == request.email)
         )
         .scalars()
@@ -120,18 +130,19 @@ def login_user(
         return api_response(404, "User not found")
     if not verify_password(request.password, user.password):
         return api_response(401, "Incorrect password")
-
     if not user.is_active:
         return api_response(403, "User account is disabled")
 
-    # Handle missing role gracefully
-    role_title = user.role.title if user.role else None
-    permissions = user.role.permissions if user.role and user.role.permissions else []
+    # Use properties instead of user.roles
+    roles = user.role_names
+    permissions = user.permissions
+
+    Print(user)
 
     user_data = {
         "id": user.id,
         "email": user.email,
-        "role": role_title,
+        "roles": roles,
         "permissions": permissions,
     }
     access_token = create_access_token(user_data=user_data)

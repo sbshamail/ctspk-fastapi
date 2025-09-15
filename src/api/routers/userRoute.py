@@ -55,6 +55,33 @@ def update_user(
     return api_response(200, "User Found", UserRead.model_validate(update_user))
 
 
+@router.get("/read", response_model=UserRead)
+def get_user(
+    user: requireSignin,
+    session: GetSession,
+):
+    user_id = user.get("id")
+    db_user = session.get(User, user_id)  # Like findById
+    raiseExceptions((db_user, 400, "User not found"))
+    read = UserRead.model_validate(db_user)
+    return api_response(200, "User Found", read)
+
+
+# ✅ DELETE
+@router.delete("/{user_id}", response_model=dict)
+def delete_user(
+    user_id: int,
+    session: GetSession,
+    user=requirePermission("all"),
+):
+    db_user = session.get(User, user_id)
+    raiseExceptions((db_user, 400, "User not found"))
+
+    session.delete(db_user)
+    session.commit()
+    return api_response(404, f"User {user_id} deleted")
+
+
 # ✅ READ ALL
 @router.get("/list", response_model=list[UserRead])  # no response_model
 def list_users(
@@ -105,29 +132,3 @@ def list_users(
         data,
         result["total"],
     )
-
-
-@router.get("/read", response_model=User)
-def get_user(
-    user: requireSignin,
-    session: GetSession,
-):
-    user_id = user.get("id")
-    db_user = session.get(User, user_id)  # Like findById
-    raiseExceptions((db_user, 400, "User not found"))
-    return api_response(200, "User Found", db_user)
-
-
-# ✅ DELETE
-@router.delete("/{user_id}", response_model=dict)
-def delete_user(
-    user_id: int,
-    session: GetSession,
-    user=requirePermission("all"),
-):
-    db_user = session.get(User, user_id)
-    raiseExceptions((db_user, 400, "User not found"))
-
-    session.delete(db_user)
-    session.commit()
-    return api_response(404, f"User {user_id} deleted")

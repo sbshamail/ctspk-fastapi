@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, List, Literal, Optional
+from typing import TYPE_CHECKING, Optional
 from sqlalchemy import JSON
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 class Role(TimeStampedModel, table=True):
-    __tablename__: Literal["roles"] = "roles"
+    __tablename__ = "roles"
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=50, unique=True)
     description: Optional[str] = None
@@ -18,19 +18,31 @@ class Role(TimeStampedModel, table=True):
         default_factory=list,
         sa_type=JSON,
     )
+    user_id: int = Field(foreign_key="users.id")
     is_active: bool = Field(default=True)
     # relationships
-    user_roles: List["UserRole"] = Relationship(back_populates="role")
+    user_roles: list["UserRole"] = Relationship(back_populates="role")
+
+    @property
+    def roles(self):
+        """Return roles directly (not UserRole objects)."""
+        return [ur.role for ur in self.user_roles if ur.role]
 
 
-class RoleRead(TimeStampReadModel):
+class RoleReadBase(TimeStampReadModel):
     id: int
-    title: str
+    name: str
     permissions: list[str]
 
 
+class RoleRead(RoleReadBase):
+    """Full role info returned in UserRead"""
+
+    pass
+
+
 class RoleCreate(SQLModel):
-    title: str
+    name: str
     permissions: list[str]
 
 

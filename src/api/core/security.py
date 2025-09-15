@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from sqlalchemy import select
@@ -16,7 +16,7 @@ from fastapi.security import (
 
 from src.config import ACCESS_TOKEN_EXPIRE_MINUTES, SECRET_KEY
 from src.api.core.response import api_response
-from src.api.models.usersModel import User
+from src.api.models import User
 
 ALGORITHM = "HS256"
 
@@ -43,7 +43,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def create_access_token(
     user_data: dict,
     refresh: Optional[bool] = False,
-    expires: timedelta = None,
+    expires: Optional[timedelta] = None,
 ):
 
     if refresh:
@@ -126,38 +126,22 @@ def require_signin(
         )
 
 
-def require_admin(
-    user: dict = Depends(require_signin),
-):
-    try:
-        if user.get("role") != "admin":
-            api_response(
-                status.HTTP_403_FORBIDDEN,
-                "Access denied: Admins only",
-            )
-
-        return user  # user info with "email", "id", "role"
-
-    except JWTError:
-        api_response(
-            status.HTTP_401_UNAUTHORIZED,
-            "Invalid or expired token",
-        )
+def require_admin(user: dict = Depends(require_signin)):
+    roles: List[str] = user.get("roles", [])
+    if "root" not in roles:
+        api_response(status.HTTP_403_FORBIDDEN, "Root User only")
+    return user
 
 
 def require_permission(permission: str):
     def permission_checker(
         user: dict = Depends(require_signin),
     ):
-        role = user.get("role")
-        permissions = user.get("permissions", [])
-        if not role:
-            api_response(403, "Permission denied")
+        permissions: List[str] = user.get("permissions", [])
 
-        # Allow all if "all" is in permissions
         if "all" in permissions or permission in permissions:
             return user
 
-        api_response(403, "Permission denied")
+        api_response(status.HTTP_403_FORBIDDEN, "Permission denied")
 
     return permission_checker

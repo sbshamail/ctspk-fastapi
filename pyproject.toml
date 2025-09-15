@@ -6,18 +6,22 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.16.4",
+    "bcrypt>=4.3.0",
     "email-validator>=2.3.0",
     "fastapi>=0.116.1",
     "passlib[bcrypt]>=1.7.4",
     "psycopg2-binary>=2.9.10",
     "python-jose[cryptography]>=3.5.0",
+    "sqlalchemy>=2.0.43",
     "sqlmodel>=0.0.24",
     "uvicorn[standard]>=0.35.0",
 ]
-[tool.pyright]
-include = ["src"]
-pythonVersion = "3.12"
-venvPath = "."
-venv = ".venv"
-typeCheckingMode= "basic"
+# [tool.pyright]
+# include = ["src"]
+# pythonVersion = "3.12"
+# venvPath = "."
+# venv = ".venv"
+# typeCheckingMode= "basic"
+# # 🔽 disable noisy errors
+# reportArgumentType = "none"       # no more "arg-type" errors
 

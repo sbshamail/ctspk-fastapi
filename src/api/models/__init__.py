@@ -2,37 +2,40 @@
 from .usersModel import User
 
 # role
-from .role_model import Role, UserRole
+from .role_model.roleModel import Role
+from .role_model.userRoleModel import UserRole
 
-# shop
-from .shop_model import Shop, UserShop
+# # shop
+# from .shop_model import Shop, UserShop
 
-# product
-from .product_model.productsModel import Product
-from .product_model import ProductPurchase, Type, VariationOption, Wishlist
-
-
-# attribute
-from .attributes_model import Attribute, AttributeValue, AttributeProduct
+# # product
+# from .product_model.productsModel import Product
+# from .product_model import ProductPurchase, Type, VariationOption, Wishlist
 
 
-# tag
-from .tag_model import Tag, ProductTag
+# # attribute
+# from .attributes_model import Attribute, AttributeValue, AttributeProduct
 
-# Category
-from .category_model import Category, CategoryProduct
+# # tag
+# from .tag_model import Tag, ProductTag
 
-# order
-from .order_model import Order, OrderProduct
+# # Category
+# from .category_model import Category, CategoryProduct
 
-# wallet
-from .wallet_model import Wallet, Coupon
+# # order
+# from .order_model.orderModel import Order, OrderProduct
+# from .order_model.orderProductModel import OrderProduct
 
-# manufaturer
-from .manufacturer_model import Manufacturer
 
-# media
-from .media_model import Media
+# # wallet
+# from .wallet_model import Wallet, Coupon
+
+# # manufaturer
+# from .manufacturer_model import Manufacturer
+
+# # media
+# from .media_model import Media
+
 
 __all__ = [
     # root
@@ -40,33 +43,33 @@ __all__ = [
     # role
     "Role",
     "UserRole",
-    # shop
-    "Shop",
-    "UserShop",
-    # product
-    "Product",
-    "ProductPurchase",
-    "VariationOption",
-    "Wishlist",
-    "Type",
-    # attribute
-    "Attribute",
-    "AttributeValue",
-    "AttributeProduct",
-    # tag
-    "Tag",
-    "ProductTag",
-    # category
-    "Category",
-    "CategoryProduct",
-    # order
-    "Order",
-    "OrderProduct",
-    # wallet
-    "Wallet",
-    "Coupon",
-    # manufacturer
-    "Manufacturer",
-    # media
-    "Media",
+    # # shop
+    # "Shop",
+    # "UserShop",
+    # # product
+    # "Product",
+    # "ProductPurchase",
+    # "VariationOption",
+    # "Wishlist",
+    # "Type",
+    # # attribute
+    # "Attribute",
+    # "AttributeValue",
+    # "AttributeProduct",
+    # # tag
+    # "Tag",
+    # "ProductTag",
+    # # category
+    # "Category",
+    # "CategoryProduct",
+    # # order
+    # "Order",
+    # "OrderProduct",
+    # # wallet
+    # "Wallet",
+    # "Coupon",
+    # # manufacturer
+    # "Manufacturer",
+    # # media
+    # "Media",
 ]
