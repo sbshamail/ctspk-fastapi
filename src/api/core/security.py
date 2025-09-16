@@ -139,7 +139,7 @@ def require_permission(permission: str):
     ):
         permissions: List[str] = user.get("permissions", [])
 
-        if "all" in permissions or permission in permissions:
+        if "system:*" in permissions or permission in permissions:
             return user
 
         api_response(status.HTTP_403_FORBIDDEN, "Permission denied")

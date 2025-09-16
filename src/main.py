@@ -1,7 +1,17 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlmodel import SQLModel
-from src.api.routers import authRoute, userRoute, roleRoute, userRoleRoute, shopRoute
+from src.api.routers import (
+    # user
+    authRoute,
+    userRoute,
+    # role
+    roleRoute,
+    userRoleRoute,
+    # shop
+    shopRoute,
+    userShopRoute,
+)
 
 
 # Define app lifespan — this runs once when the app starts and when it shuts down
@@ -27,3 +37,4 @@ app.include_router(roleRoute.router)
 app.include_router(userRoleRoute.router)
 # Shop
 app.include_router(shopRoute.router)
+app.include_router(userShopRoute.router)

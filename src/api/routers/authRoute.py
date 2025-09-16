@@ -43,6 +43,7 @@ def initialize_first_user(
         email=request.email,
         phone_no=request.phone_no,
         password=hashed_password,
+        is_root=True,
     )
     session.add(user)
     session.flush()
@@ -58,12 +59,12 @@ def initialize_first_user(
     admin_role = Role(
         name="root",
         user_id=user.id,
-        permissions=["all"],
+        permissions=["all", "system:*"],
     )
     shop_admin_role = Role(
         name="shop_admin",
         user_id=user.id,
-        permissions=["shop", "role"],
+        permissions=["shop_admin", "role"],
     )
 
     session.add(admin_role)
@@ -142,6 +143,7 @@ def login_user(
     user_data = {
         "id": user.id,
         "email": user.email,
+        "is_root": user.is_root or False,
         "roles": roles,
         "permissions": permissions,
     }
@@ -223,11 +225,12 @@ def test_auth(
 def get_admin_data(
     user: requireAdmin,
 ):
-    return {"message": f"Hello Admin {user['email']}"}
+
+    return {"message": f"Hello Admin {user['email']}", "user": user}
 
 
 @router.get("/testpermission")
 def get_admin_data(
-    user=requirePermission("all"),
+    user=requirePermission("system:*"),
 ):
     return {"message": f"Hello Admin {user}"}

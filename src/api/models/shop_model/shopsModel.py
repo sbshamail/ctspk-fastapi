@@ -7,7 +7,7 @@ from src.api.models.usersModel import UserReadBase
 from src.api.models.baseModel import TimeStampReadModel, TimeStampedModel
 
 if TYPE_CHECKING:
-    from src.api.models import User
+    from src.api.models import User, UserShop
 
 
 class Shop(TimeStampedModel, table=True):
@@ -29,6 +29,8 @@ class Shop(TimeStampedModel, table=True):
         back_populates="shops",
         sa_relationship_kwargs={"foreign_keys": "[Shop.owner_id]"},
     )
+    user_shops: list["UserShop"] = Relationship(back_populates="shop")
+
     # products: List["Product"] = Relationship(back_populates="shop")
     # balances: List["Balance"] = Relationship(back_populates="shop")
 

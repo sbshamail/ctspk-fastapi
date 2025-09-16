@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.response import api_response, raiseExceptions
 from src.api.models.role_model import Role, RoleCreate, RoleRead, RoleUpdate
@@ -7,6 +7,8 @@ from src.api.core.dependencies import GetSession, ListQueryParams, requirePermis
 
 router = APIRouter(prefix="/role", tags=["Role"])
 
+ROOT_PERMISSIONS = {"system:*", "all"}
+
 
 @router.post("/create")
 def create_role(
@@ -14,6 +16,8 @@ def create_role(
     session: GetSession,
     user=requirePermission("role"),
 ):
+    if any(p in ROOT_PERMISSIONS for p in request.permissions) and not user.is_root:
+        return api_response(403, "You cannot assign root-level permissions", role)
     role = Role(**request.model_dump())
     session.add(role)
     session.commit()
@@ -28,6 +32,8 @@ def update_role(
     session: GetSession,
     user=requirePermission("role"),
 ):
+    if any(p in ROOT_PERMISSIONS for p in request.permissions) and not user.is_root:
+        return api_response(403, "You cannot assign root-level permissions", role)
 
     role = session.get(Role, id)  # Like findById
     raiseExceptions((role, 404, "Role not found"))

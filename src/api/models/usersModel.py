@@ -7,7 +7,7 @@ from src.api.models.role_model.roleModel import RoleRead
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 if TYPE_CHECKING:
-    from src.api.models import UserRole, Role, Shop
+    from src.api.models import UserRole, Role, Shop, UserShop
 
 
 class User(TimeStampedModel, table=True):
@@ -17,6 +17,7 @@ class User(TimeStampedModel, table=True):
     name: str = Field(max_length=191)
     email: str = Field(max_length=191, index=True)
     phone_no: str = Field(max_length=30)
+    is_root: bool = Field(default=False)
     email_verified_at: Optional[datetime.datetime] = None
     password: Optional[str] = None
     remember_token: Optional[str] = Field(default=None, max_length=100)
@@ -29,6 +30,8 @@ class User(TimeStampedModel, table=True):
         back_populates="owner",
         sa_relationship_kwargs={"foreign_keys": "Shop.owner_id"},  # ✅ correct
     )
+    user_shops: list["UserShop"] = Relationship(back_populates="user")
+
     # As fulfillment user (user assigned to fulfill orders)
     # fulfillment_orders: List["Order"] = Relationship(
     #     back_populates="fulfillment_user",

@@ -5,7 +5,13 @@ from src.api.models.shop_model import Shop, ShopCreate, ShopRead, ShopUpdate
 from src.api.models.usersModel import User
 from src.api.models.role_model.userRoleModel import UserRole
 from src.api.models.role_model.roleModel import Role
-from src.api.core import GetSession, ListQueryParams, requireSignin, listRecords
+from src.api.core import (
+    GetSession,
+    ListQueryParams,
+    listRecords,
+    requireSignin,
+    requirePermission,
+)
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.decorator import handle_async_wrapper
 
@@ -87,8 +93,7 @@ def delete_shop(id: int, session: GetSession, user: User):
 # ✅ LIST shops (reusable listRecords)
 @router.get("/list", response_model=list[ShopRead])
 def list_shops(
-    session: GetSession,
-    query_params: ListQueryParams,
+    session: GetSession, query_params: ListQueryParams, user=requirePermission("all")
 ):
     query_params = vars(query_params)
     searchFields = ["name", "slug", "description"]
