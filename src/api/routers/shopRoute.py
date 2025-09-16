@@ -1,7 +1,13 @@
 from fastapi import APIRouter
 from sqlmodel import select
 
-from src.api.models.shop_model import Shop, ShopCreate, ShopRead, ShopUpdate
+from src.api.models.shop_model import (
+    Shop,
+    ShopCreate,
+    ShopRead,
+    ShopUpdate,
+    ShopVerifyByAdmin,
+)
 from src.api.models.usersModel import User
 from src.api.models.role_model.userRoleModel import UserRole
 from src.api.models.role_model.roleModel import Role
@@ -11,6 +17,7 @@ from src.api.core import (
     listRecords,
     requireSignin,
     requirePermission,
+    updateOp,
 )
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.decorator import handle_async_wrapper
@@ -77,6 +84,23 @@ def update_shop(id: int, request: ShopUpdate, session: GetSession, user: User):
     session.commit()
     session.refresh(shop)
     return api_response(200, "Shop Updated Successfully", ShopRead.model_validate(shop))
+
+
+# ✅ UPDATE shop Status
+@router.put("/shop_status_update/{shop_id}")
+def update_shop(
+    shop_id: int,
+    request: ShopVerifyByAdmin,
+    session: GetSession,
+    user=requirePermission("system:*"),
+):
+    db_shop = session.get(Shop, shop_id)  # Like findById
+    raiseExceptions((db_shop, 404, "Shop not found"))
+    verify = updateOp(db_shop, request, session)
+
+    session.commit()
+    session.refresh(db_shop)
+    return api_response(200, "User Found", ShopRead.model_validate(db_shop))
 
 
 # ✅ DELETE shop

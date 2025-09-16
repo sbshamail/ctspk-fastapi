@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 run:
-	uv run -- uvicorn src.main:app --reload
+	uv run -- uvicorn src.main:app --reload --reload-dir src
 
 
 generate:

@@ -44,6 +44,6 @@ def handle_async_wrapper(func):
             # Catch-all for unexpected errors, logs for debugging
             # (you could also use logging here instead of printing)
             print(f"[ERROR] {e}")
-            return api_response(500, "Internal Server Error")
+            return e
 
     return wrapper

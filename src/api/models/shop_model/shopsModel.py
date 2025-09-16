@@ -46,6 +46,10 @@ class ShopCreate(SQLModel):
     notifications: Optional[dict] = None
 
 
+class ShopVerifyByAdmin(SQLModel):
+    is_active: bool
+
+
 # ---------- UPDATE ----------
 class ShopUpdate(SQLModel):
     name: Optional[str] = None

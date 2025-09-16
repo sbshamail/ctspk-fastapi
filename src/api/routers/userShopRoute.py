@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from sqlmodel import select
 
+from src.api.core.utility import Print
 from src.api.models.shop_model import Shop, UserShop, UserShopCreate, UserShopRead
 from src.api.models.usersModel import User
 from src.api.core.dependencies import GetSession, ListQueryParams, requirePermission
@@ -32,7 +33,10 @@ def create_user_shop(
 
     # 3️⃣ Only shop owner can assign users
     if target_shop.owner_id != user.get("id"):
-        raiseExceptions((True, 403, "You are not the owner of this shop", True))
+        return api_response(403, "You are not the owner of this shop")
+
+    if target_shop.is_active == False:
+        return api_response(403, "You cannot assign users to inactive shop")
 
     # 4️⃣ Prevent duplicate assignment
     existing = session.exec(
