@@ -62,7 +62,6 @@ def create_user_shop(
 
 # ✅ READ single UserShop
 @router.get("/read/{id}", response_model=UserShopRead)
-@handle_async_wrapper
 def get_user_shop(id: int, session: GetSession, user=requirePermission("shop_admin")):
     user_shop = session.get(UserShop, id)
     raiseExceptions((user_shop, 404, "UserShop not found"))

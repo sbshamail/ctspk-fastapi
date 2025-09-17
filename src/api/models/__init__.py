@@ -5,8 +5,13 @@ from .usersModel import User
 from .role_model.roleModel import Role
 from .role_model.userRoleModel import UserRole
 
-# # shop
+# shop
 from .shop_model import Shop, UserShop
+
+# category
+from .category_model.categoryModel import Category
+
+print(Category)
 
 # # product
 # from .product_model.productsModel import Product
@@ -59,7 +64,7 @@ __all__ = [
     # # tag
     # "Tag",
     # "ProductTag",
-    # # category
+    # category
     # "Category",
     # "CategoryProduct",
     # # order

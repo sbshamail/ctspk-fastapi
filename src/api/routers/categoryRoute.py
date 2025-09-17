@@ -4,7 +4,7 @@ from sqlalchemy import select
 from src.api.core.utility import Print
 from src.api.core.operation import listop, updateOp
 from src.api.core.response import api_response, raiseExceptions
-from src.api.models.categoryModel import (
+from src.api.models.category_model.categoryModel import (
     Category,
     CategoryCreate,
     CategoryRead,
@@ -17,11 +17,27 @@ from sqlalchemy.orm import selectinload
 router = APIRouter(prefix="/category", tags=["Category"])
 
 
+def calculate_category_level(session, parent_id: Optional[int]) -> int:
+    if not parent_id:
+        return 1  # root level
+
+    parent = session.get(Category, parent_id)
+    if not parent:
+        raise ValueError("Parent category not found")
+
+    if parent.level >= 3:
+        raise ValueError("Cannot create a category deeper than 3 levels")
+
+    return parent.level + 1
+
+
 @router.post("/create")
 def create(
     request: CategoryCreate, session: GetSession, user=requirePermission("category")
 ):
-    data = Category(**request.model_dump())
+    # auto set level
+    level = calculate_category_level(session, request.parent_id)
+    data = Category(**request.model_dump(), level=level)
     Print(data, "data")
     session.add(data)
     session.commit()
@@ -41,6 +57,11 @@ def update(
 
     updateData = session.get(Category, id)  # Like findById
     raiseExceptions((updateData, 404, "Category not found"))
+    # if parent_id is being changed, recalc level
+    if request.parent_id is not None:
+        level = calculate_category_level(session, request.parent_id)
+        request.level = level  # inject auto-level
+
     updateOp(updateData, request, session)
 
     session.commit()
@@ -80,13 +101,13 @@ def delete(
         (
             len(children) > 0,
             400,
-            f"Cannot delete category '{category.title}' because it has child categories.",
+            f"Cannot delete category '{category.name}' because it has child categories.",
             True,
         )
     )
     session.delete(category)
     session.commit()
-    return api_response(404, f"Category {category.title} deleted")
+    return api_response(404, f"Category {category.name} deleted")
 
 
 def delete_category_tree(session, category_id: int):
@@ -124,7 +145,7 @@ def deleteMany(
     session.commit()
 
     return api_response(
-        200, f"Category tree with root {category.title} deleted successfully"
+        200, f"Category tree with root {category.name} deleted successfully"
     )
 
 
@@ -153,7 +174,7 @@ def list(
         # "customFilters": customFilters,
     }
     searchFields = [
-        "title",
+        "name",
     ]
 
     result = listop(
@@ -176,8 +197,8 @@ def list(
     category_map = {
         c.id: CategoryReadNested(
             id=c.id,
-            title=c.title,
-            description=c.description,
+            name=c.name,
+            slug=c.slug,
             parent_id=c.parent_id,
             created_at=c.created_at,
             updated_at=c.updated_at,

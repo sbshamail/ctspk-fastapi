@@ -5,40 +5,38 @@ from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
-if TYPE_CHECKING:
-    from src.api.models import CategoryProduct
+# if TYPE_CHECKING:
+#     from src.api.models import CategoryProduct
 
 
 class Category(TimeStampedModel, table=True):
-    __tablename__: Literal["categories"] = "categories"
-
+    __tablename__ = "categories"
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=191)
     slug: str = Field(max_length=191)
+    level: int = Field(default=1)  # 1, 2, or 3
     language: str = Field(default="en", max_length=191)
     icon: Optional[str] = Field(max_length=191)
     image: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
     details: Optional[str] = None
+    # own forien id
     parent_id: Optional[int] = Field(default=None, foreign_key="categories.id")
     parent: Optional["Category"] = Relationship(
         back_populates="children",
-        sa_relationship_kwargs={"remote_side": "categories.id"},
+        sa_relationship_kwargs={"remote_side": "Category.id"},
     )
     children: List["Category"] = Relationship(back_populates="parent")
-    type_id: int = Field(foreign_key="types.id")
     admin_commission_rate: Optional[float] = None
     is_active: bool = Field(default=True)
     deleted_at: Optional[datetime] = None
 
     # relationships
-    products: List["CategoryProduct"] = Relationship(back_populates="category")
+    # products: List["CategoryProduct"] = Relationship(back_populates="category")
 
 
 class CategoryCreate(SQLModel):
     name: str
     slug: str
-    type_id: int
-    is_active: bool = True
     parent_id: Optional[int] = None
 
 
@@ -46,14 +44,12 @@ class CategoryRead(TimeStampReadModel):
     id: int
     name: str
     slug: str
-    is_active: bool
     parent_id: Optional[int] = None
 
 
 class CategoryUpdate(SQLModel):
     name: Optional[str] = None
     slug: Optional[str] = None
-    is_active: Optional[bool] = None
     parent_id: Optional[int] = None
 
 
@@ -62,7 +58,6 @@ class CategoryReadNested(TimeStampReadModel):
     name: str
     description: str | None = None
     slug: Optional[str] = None
-    is_active: Optional[bool] = None
     parent_id: int | None = None
     children: list["CategoryReadNested"] = Field(default_factory=list)
 
