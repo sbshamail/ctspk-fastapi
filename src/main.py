@@ -13,6 +13,8 @@ from src.api.routers import (
     userShopRoute,
     # category
     categoryRoute,
+    # product
+    productRoute,
 )
 
 
@@ -42,3 +44,5 @@ app.include_router(shopRoute.router)
 app.include_router(userShopRoute.router)
 # Category
 app.include_router(categoryRoute.router)
+# Product
+app.include_router(productRoute.router)

@@ -5,8 +5,8 @@ from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
-# if TYPE_CHECKING:
-#     from src.api.models import CategoryProduct
+if TYPE_CHECKING:
+    from src.api.models import Product
 
 
 class Category(TimeStampedModel, table=True):
@@ -31,7 +31,7 @@ class Category(TimeStampedModel, table=True):
     deleted_at: Optional[datetime] = None
 
     # relationships
-    # products: List["CategoryProduct"] = Relationship(back_populates="category")
+    products: List["Product"] = Relationship(back_populates="category")
 
 
 class CategoryCreate(SQLModel):

@@ -1,11 +1,14 @@
 from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, List
-from datetime import datetime, timezone
-from sqlmodel import JSON, Column, Enum, SQLModel, Field, Relationship
+from datetime import datetime
+from sqlmodel import JSON, Column, SQLModel, Field, Relationship
+from enum import Enum
 
+from src.api.models.shop_model.shopsModel import ShopRead
+from src.api.models.category_model.categoryModel import CategoryRead
 from src.api.models.baseModel import TimeStampReadModel, TimeStampedModel
 
 if TYPE_CHECKING:
-    from src.api.models import Shop, Type, VariationOption, CategoryProduct
+    from src.api.models import Shop, Category
 
 
 class ProductStatus(str, Enum):
@@ -26,6 +29,7 @@ class Product(TimeStampedModel, table=True):
     slug: str = Field(max_length=191)
     description: Optional[str] = None
     price: Optional[float] = None
+    is_active: bool = Field(default=True)
 
     sale_price: Optional[float] = None
     purchase_price: Optional[float] = None
@@ -40,55 +44,89 @@ class Product(TimeStampedModel, table=True):
 
     status: ProductStatus = Field(default=ProductStatus.PUBLISH)
     product_type: ProductType = Field(default=ProductType.SIMPLE)
-    unit: str = Field(max_length=191)
-    height: Optional[str] = Field(max_length=191)
-    width: Optional[str] = Field(max_length=191)
-    length: Optional[str] = Field(max_length=191)
-    image: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
-    video: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
-    gallery: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
+    # unit: str = Field(max_length=191)
+    # height: Optional[str] = Field(max_length=191)
+    # width: Optional[str] = Field(max_length=191)
+    # length: Optional[str] = Field(max_length=191)
+    height: Optional[float] = None  # in cm
+    width: Optional[float] = None
+    length: Optional[float] = None
+    dimension_unit: str = Field(default="cm", max_length=10)
+
+    image: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        sa_column=Column(JSON),
+    )
+    video: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSON),
+    )
+
+    # gallery: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
     deleted_at: Optional[datetime] = None
     is_digital: bool = Field(default=False)
     is_external: bool = Field(default=False)
     external_product_url: Optional[str] = Field(max_length=191)
     external_product_button_text: Optional[str] = Field(max_length=191)
     # foriegn key
-    type_id: int = Field(foreign_key="types.id")
+    category_id: int = Field(foreign_key="categories.id")
     shop_id: Optional[int] = Field(foreign_key="shops.id")
-    author_id: Optional[int] = Field(foreign_key="authors.id")
-    manufacturer_id: Optional[int] = Field(foreign_key="manufacturers.id")
-
-    # ... rest of the product model code ...
+    # author_id: Optional[int] = Field(foreign_key="authors.id")
+    # manufacturer_id: Optional[int] = Field(foreign_key="manufacturers.id")
 
     # relationships
     shop: Optional["Shop"] = Relationship(back_populates="products")
-    type: "Type" = Relationship()
-    categories: List["CategoryProduct"] = Relationship(back_populates="product")
-    variation_options: List["VariationOption"] = Relationship(back_populates="product")
+    category: Optional["Category"] = Relationship(back_populates="products")
+
+    # categories: List["CategoryProduct"] = Relationship(back_populates="product")
+    # variation_options: List["VariationOption"] = Relationship(back_populates="product")
 
 
 class ProductCreate(SQLModel):
     name: str
     slug: str
-    type_id: int
+    description: str
+    category_id: int
     price: float
-    shop_id: Optional[int] = None
-    quantity: int = 0
-    unit: str
+    max_price: float
+    min_price: float
+    shop_id: int = None
+
+
+class UserReadForProduct(TimeStampReadModel):
+    id: int
+    name: str
+
+
+class ShopReadForProduct(TimeStampReadModel):
+    id: int
+    name: Optional[str] = None
+    # include nested owner
+    owner: Optional[UserReadForProduct] = None
+
+    model_config = {"from_attributes": True}
 
 
 class ProductRead(TimeStampReadModel):
     id: int
     name: str
+    description: str
     slug: str
     price: float
+    is_active: bool
     quantity: int
     status: ProductStatus
     product_type: ProductType
+    category: CategoryRead
+    shop: ShopReadForProduct
 
 
 class ProductUpdate(SQLModel):
     name: Optional[str] = None
+    slug: Optional[str] = None
+    category_id: int = None
+    description: Optional[str] = None
     price: Optional[float] = None
-    quantity: Optional[int] = None
-    status: Optional[ProductStatus] = None
+    max_price: Optional[float] = None
+    min_price: Optional[float] = None
+    shop_id: Optional[int] = None

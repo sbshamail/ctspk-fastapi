@@ -133,15 +133,19 @@ def require_admin(user: dict = Depends(require_signin)):
     return user
 
 
-def require_permission(permission: str):
-    def permission_checker(
-        user: dict = Depends(require_signin),
-    ):
-        permissions: List[str] = user.get("permissions", [])
+def require_permission(*permissions: str):
+    def permission_checker(user: dict = Depends(require_signin)):
+        user_permissions: List[str] = user.get("permissions", [])
 
-        if "system:*" in permissions or permission in permissions:
+        # ✅ system:* always passes
+        if "system:*" in user_permissions:
             return user
 
+        # ✅ OR logic: check if user has any required permission
+        if any(p in user_permissions for p in permissions):
+            return user
+
+        # ❌ no match → deny
         api_response(status.HTTP_403_FORBIDDEN, "Permission denied")
 
     return permission_checker

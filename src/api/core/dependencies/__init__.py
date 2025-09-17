@@ -15,5 +15,5 @@ requireAdmin = Annotated[dict, Depends(require_admin)]
 ListQueryParams = Annotated[dict, Depends(list_query_params)]
 
 
-def requirePermission(permission: str):
-    return Depends(require_permission(permission))
+def requirePermission(*permissions: str):
+    return Depends(require_permission(*permissions))

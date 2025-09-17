@@ -11,10 +11,10 @@ from .shop_model import Shop, UserShop
 # category
 from .category_model.categoryModel import Category
 
-print(Category)
 
 # # product
-# from .product_model.productsModel import Product
+from .product_model.productsModel import Product
+
 # from .product_model import ProductPurchase, Type, VariationOption, Wishlist
 
 
