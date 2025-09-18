@@ -17,11 +17,9 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           source ~/.local/bin/env
 
-      - name: Sync dependencies with uv
-        working-directory: ${{ github.workspace }}
+      - name: Deploy app
         run: |
-          uv sync --frozen --clean
-
-      - name: Restart FastAPI service
-        run: |
+          rsync -a --delete ${{ github.workspace }}/ /home/ubuntu/ctspk/fastapi/
+          cd /home/ubuntu/ctspk/fastapi
+          uv sync --frozen
           sudo systemctl restart fastapi
