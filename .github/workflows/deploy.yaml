@@ -12,14 +12,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install uv (safe to run multiple times)
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          source ~/.local/bin/env
-
       - name: Deploy app
         run: |
           rsync -a --delete ${{ github.workspace }}/ /home/ubuntu/ctspk/fastapi/
-          cd /home/ubuntu/ctspk/fastapi
-          uv sync --frozen
-          sudo systemctl restart fastapi
