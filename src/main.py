@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
 
 # Initialize the FastAPI app with the custom lifespan
 app = FastAPI(lifespan=lifespan)
+app = FastAPI(root_path="/api")
 
 
 @app.get("/")
