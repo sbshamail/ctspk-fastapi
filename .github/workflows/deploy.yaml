@@ -11,3 +11,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Sync dependencies
+        run: |
+          uv venv
+          uv sync --frozen  # installs exactly what's in uv.lock
+
+      - name: Restart FastAPI service
+        run: |
+          sudo systemctl daemon-reload
+          sudo systemctl restart ctspk-fastapi
