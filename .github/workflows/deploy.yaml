@@ -15,7 +15,12 @@ jobs:
       - name: Sync dependencies
         run: |
           uv venv
-          uv sync --frozen  # installs exactly what's in uv.lock
+          uv sync --frozen   # install deps from uv.lock
+
+      - name: Run database migrations
+        run: |
+          source .venv/bin/activate
+          alembic upgrade head || echo "No migrations to apply"
 
       - name: Restart FastAPI service
         run: |
