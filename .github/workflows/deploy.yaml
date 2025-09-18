@@ -1,0 +1,27 @@
+name: Deploy FastAPI
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install uv (safe to run multiple times)
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          source ~/.local/bin/env
+
+      - name: Sync dependencies with uv
+        working-directory: ${{ github.workspace }}
+        run: |
+          uv sync --frozen --clean
+
+      - name: Restart FastAPI service
+        run: |
+          sudo systemctl restart fastapi
