@@ -74,11 +74,7 @@ def update(
 
 
 @router.get("/read/{id}", response_model=CategoryReadNested)
-def get(
-    id: int,
-    session: GetSession,
-    user=requirePermission("category"),
-):
+def get(id: int, session: GetSession):
 
     read = session.get(Category, id)  # Like findById
     raiseExceptions((read, 404, "Category not found"))
@@ -164,7 +160,6 @@ def list(
     page: int = None,
     skip: int = 0,
     limit: int = Query(10, ge=1, le=100),
-    user=requirePermission("category"),
 ):
     filters = {
         "searchTerm": searchTerm,

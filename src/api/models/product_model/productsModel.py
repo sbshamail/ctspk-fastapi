@@ -111,20 +111,26 @@ class ProductRead(TimeStampReadModel):
     description: str
     slug: str
     price: float
+    image: Dict[str, Any]
+    gallery: List[Dict[str, Any]]
     is_active: bool
     quantity: int
     status: ProductStatus
     product_type: ProductType
     category: CategoryRead
     shop: ShopReadForProduct
+    unit: str
 
 
 class ProductUpdate(SQLModel):
     name: Optional[str] = None
     slug: Optional[str] = None
     category_id: int = None
+    image: Optional[Dict[str, Any]] = None
+    gallery: Optional[List[Dict[str, Any]]] = None
     description: Optional[str] = None
     price: Optional[float] = None
     max_price: Optional[float] = None
     min_price: Optional[float] = None
     shop_id: Optional[int] = None
+    unit: Optional[str] = None
