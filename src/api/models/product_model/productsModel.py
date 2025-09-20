@@ -44,16 +44,14 @@ class Product(TimeStampedModel, table=True):
 
     status: ProductStatus = Field(default=ProductStatus.PUBLISH)
     product_type: ProductType = Field(default=ProductType.SIMPLE)
-    # unit: str = Field(max_length=191)
-    # height: Optional[str] = Field(max_length=191)
-    # width: Optional[str] = Field(max_length=191)
-    # length: Optional[str] = Field(max_length=191)
-    height: Optional[float] = None  # in cm
-    width: Optional[float] = None
-    length: Optional[float] = None
-    dimension_unit: str = Field(default="cm", max_length=10)
+    unit: str = Field(default=None, max_length=191)
 
-    image: Optional[List[Dict[str, Any]]] = Field(
+    height: Optional[float] = Field(default=None, max_length=191)  # in cm
+    width: Optional[float] = Field(default=None, max_length=191)
+    length: Optional[float] = Field(default=None, max_length=191)
+    dimension_unit: str = Field(default=None, max_length=10)
+
+    image: Optional[Dict[str, Any]] = Field(
         default=None,
         sa_column=Column(JSON),
     )
@@ -62,7 +60,7 @@ class Product(TimeStampedModel, table=True):
         sa_column=Column(JSON),
     )
 
-    # gallery: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
+    gallery: Optional[List[Dict[str, Any]]] = Field(sa_column=Column(JSON))
     deleted_at: Optional[datetime] = None
     is_digital: bool = Field(default=False)
     is_external: bool = Field(default=False)
