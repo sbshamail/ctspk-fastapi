@@ -159,7 +159,7 @@ def list(
     ),  # e.g. '[["name","car"],["description","product"]]'
     page: int = None,
     skip: int = 0,
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(200, ge=1, le=200),
 ):
     filters = {
         "searchTerm": searchTerm,
