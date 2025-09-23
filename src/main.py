@@ -16,6 +16,7 @@ from src.api.routers import (
     categoryRoute,
     # product
     productRoute,
+    uploadImageRoute,
 )
 
 
@@ -57,3 +58,4 @@ app.include_router(userShopRoute.router)
 app.include_router(categoryRoute.router)
 # Product
 app.include_router(productRoute.router)
+app.include_router(uploadImageRoute.router)
