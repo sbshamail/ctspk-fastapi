@@ -44,12 +44,14 @@ class CategoryRead(TimeStampReadModel):
     id: int
     name: str
     slug: str
+    is_active: bool
     parent_id: Optional[int] = None
 
 
 class CategoryUpdate(SQLModel):
     name: Optional[str] = None
     slug: Optional[str] = None
+    is_active: Optional[bool] = None
     parent_id: Optional[int] = None
 
 
@@ -59,6 +61,7 @@ class CategoryReadNested(TimeStampReadModel):
     description: str | None = None
     slug: Optional[str] = None
     parent_id: int | None = None
+    is_active: bool
     children: list["CategoryReadNested"] = Field(default_factory=list)
 
     class Config:

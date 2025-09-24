@@ -194,6 +194,7 @@ def list(
             id=c.id,
             name=c.name,
             slug=c.slug,
+            is_active=c.is_active,
             parent_id=c.parent_id,
             created_at=c.created_at,
             updated_at=c.updated_at,
