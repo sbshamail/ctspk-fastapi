@@ -85,7 +85,7 @@ def list(
     query_params: ListQueryParams,
 ):
     query_params = vars(query_params)
-    searchFields = ["title", "description", "category.title"]
+    searchFields = ["name", "description", "category.name"]
     return listRecords(
         query_params=query_params,
         searchFields=searchFields,

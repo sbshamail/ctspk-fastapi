@@ -42,7 +42,7 @@ def listop(
     join_options: list = [],
     page: int = None,
     skip: int = 0,
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=200),
 ):
 
     # Compute skip based on page
