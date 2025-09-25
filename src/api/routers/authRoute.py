@@ -113,7 +113,6 @@ def register_user(
 
 
 @router.post("/login", response_model=dict)
-@handle_async_wrapper
 def login_user(
     request: LoginRequest,
     response: Response,

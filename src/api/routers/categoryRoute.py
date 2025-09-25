@@ -33,7 +33,9 @@ def calculate_category_level(session, parent_id: Optional[int]) -> int:
 
 @router.post("/create")
 def create(
-    request: CategoryCreate, session: GetSession, user=requirePermission("category")
+    request: CategoryCreate,
+    session: GetSession,
+    # user=requirePermission("category")
 ):
     # auto set level
     level = calculate_category_level(session, request.parent_id)
