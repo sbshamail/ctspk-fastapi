@@ -84,6 +84,8 @@ class ProductCreate(SQLModel):
     name: str
     slug: str
     description: str
+    image: Optional[Dict[str, Any]] = None
+    gallery: Optional[List[Dict[str, Any]]] = None
     category_id: int
     price: float
     max_price: float
