@@ -21,22 +21,35 @@ class Category(TimeStampedModel, table=True):
     details: Optional[str] = None
     # own forien id
     parent_id: Optional[int] = Field(default=None, foreign_key="categories.id")
-    parent: Optional["Category"] = Relationship(
-        back_populates="children",
-        sa_relationship_kwargs={"remote_side": "Category.id"},
-    )
-    children: List["Category"] = Relationship(back_populates="parent")
+
     admin_commission_rate: Optional[float] = None
     is_active: bool = Field(default=True)
     deleted_at: Optional[datetime] = None
 
     # relationships
+    parent: Optional["Category"] = Relationship(
+        back_populates="children",
+        sa_relationship_kwargs={"remote_side": "Category.id"},
+    )
+    children: List["Category"] = Relationship(back_populates="parent")
     products: List["Product"] = Relationship(back_populates="category")
 
 
 class CategoryCreate(SQLModel):
     name: str
     slug: str
+    parent_id: Optional[int] = None
+    details: Optional[str] = None
+    image: Optional[Dict[str, Any]] = None
+    is_active: bool = True
+    icon: Optional[str] = None
+    admin_commission_rate: Optional[float] = None
+
+
+class CategoryUpdate(SQLModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    is_active: Optional[bool] = None
     parent_id: Optional[int] = None
     details: Optional[str] = None
     image: Optional[Dict[str, Any]] = None
@@ -54,18 +67,6 @@ class CategoryRead(TimeStampReadModel):
     slug: Optional[str] = None
     is_active: bool
     parent_id: Optional[int] = None
-
-
-class CategoryUpdate(SQLModel):
-    name: Optional[str] = None
-    slug: Optional[str] = None
-    is_active: Optional[bool] = None
-    parent_id: Optional[int] = None
-    details: Optional[str] = None
-    image: Optional[Dict[str, Any]] = None
-    is_active: bool = True
-    icon: Optional[str] = None
-    admin_commission_rate: Optional[float] = None
 
 
 class CategoryReadNested(TimeStampReadModel):

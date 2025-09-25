@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import Query
+from sqlalchemy import ScalarResult
 from sqlmodel import Session, SQLModel, select
 from typing import List
 from src.lib.db_con import get_session
@@ -34,6 +35,19 @@ def updateOp(
     return instance
 
 
+def _exec(session, statement, Model):
+    result = session.exec(statement)
+    # If it's already Category objects, just return .all()
+    if isinstance(result, ScalarResult):  # SQLAlchemy 2.x ScalarResult
+        return result.all()
+    else:
+        # Fallback: try scalars (for select(Category))
+        try:
+            return result.scalars().all()
+        except Exception:
+            return result.all()
+
+
 def listop(
     session: Session,
     Model: type[SQLModel],
@@ -43,14 +57,16 @@ def listop(
     page: int = None,
     skip: int = 0,
     limit: int = Query(10, ge=1, le=200),
+    Statement=None,
+    otherFilters=None,
 ):
 
     # Compute skip based on page
     if page is not None:
         skip = (page - 1) * limit
 
-    # Start building base statement (without limit/offset for total count)
-    statement = select(Model)
+    # ✅ Fix: avoid boolean check on SQLAlchemy statements
+    statement = Statement if Statement is not None else select(Model)
 
     # Apply JOINs (like selectinload)
     if join_options:
@@ -72,16 +88,16 @@ def listop(
         dateRange=dateRange,
         numberRange=numberRange,
         customFilters=customFilters,
+        otherFilters=otherFilters,
     )
 
     # Total count (before pagination)
-    total = session.exec(statement).all()
+    total = _exec(session, statement, Model)
     total_count = len(total)
 
     # Now apply pagination (skip/limit)
     paginated_stmt = statement.offset(skip).limit(limit)
-
-    results = session.exec(paginated_stmt).all()
+    results = _exec(session, paginated_stmt, Model)
 
     return {"data": results, "total": total_count}
 
@@ -92,6 +108,8 @@ def listRecords(
     Model,
     join_options: list = [],
     Schema: type[SQLModel] = None,
+    otherFilters=None,
+    Statement=None,
 ):
     session = next(get_session())  # get actual Session object
     try:
@@ -120,6 +138,8 @@ def listRecords(
             page=page,
             limit=limit,
             join_options=join_options,
+            otherFilters=otherFilters,
+            Statement=Statement,
         )
 
         if not result["data"]:

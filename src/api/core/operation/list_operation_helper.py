@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from sqlmodel import SQLModel, and_, or_
 from sqlmodel.sql.expression import Select, SelectOfScalar
 
+from src.api.core.response import api_response
 from src.api.core.utility import parse_date
 
 # Optional Type Handling Function
@@ -118,7 +119,11 @@ def applyFilters(
     dateRange: Optional[List[str]] = None,
     numberRange: Optional[List[str]] = None,
     customFilters: Optional[List[List[str]]] = None,
+    otherFilters=None,
 ):
+    if otherFilters:
+        # pass the current statement through the hook
+        statement = otherFilters(statement, Model)
     # Global search
     if searchTerm and searchFields:
         # search_filters = [
@@ -164,10 +169,10 @@ def applyFilters(
 
             statement = statement.where(and_(*filters))
             return statement
-        except Exception:
-            raise HTTPException(
-                status_code=400,
-                detail="columnFilters must be JSON list like [['field', 'value']]",
+        except Exception as e:
+            return api_response(
+                400,
+                f" {e}",
             )
 
     if customFilters:

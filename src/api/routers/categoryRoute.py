@@ -1,9 +1,11 @@
+import ast
 from typing import Optional
 from fastapi import APIRouter, Query
 from sqlalchemy import select
 from src.api.core.utility import Print
 from src.api.core.operation import listop, updateOp
 from src.api.core.response import api_response, raiseExceptions
+from sqlalchemy.orm import aliased
 from src.api.models.category_model.categoryModel import (
     Category,
     CategoryCreate,
@@ -162,6 +164,7 @@ def list(
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
 ):
+
     filters = {
         "searchTerm": searchTerm,
         "columnFilters": columnFilters,
@@ -185,6 +188,7 @@ def list(
     )
     if not result["data"]:
         return api_response(404, "No products found")
+
     categories = result["data"]
     # assuming your search result is in `categories`
     # Treat the first search result as root by ignoring its parent

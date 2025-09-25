@@ -93,6 +93,20 @@ class ProductCreate(SQLModel):
     shop_id: int = None
 
 
+class ProductUpdate(SQLModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    category_id: int = None
+    image: Optional[Dict[str, Any]] = None
+    gallery: Optional[List[Dict[str, Any]]] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    max_price: Optional[float] = None
+    min_price: Optional[float] = None
+    shop_id: Optional[int] = None
+    unit: Optional[str] = None
+
+
 class UserReadForProduct(TimeStampReadModel):
     id: int
     name: str
@@ -125,18 +139,4 @@ class ProductRead(TimeStampReadModel):
     product_type: ProductType
     category: CategoryRead
     shop: ShopReadForProduct
-    unit: Optional[str] = None
-
-
-class ProductUpdate(SQLModel):
-    name: Optional[str] = None
-    slug: Optional[str] = None
-    category_id: int = None
-    image: Optional[Dict[str, Any]] = None
-    gallery: Optional[List[Dict[str, Any]]] = None
-    description: Optional[str] = None
-    price: Optional[float] = None
-    max_price: Optional[float] = None
-    min_price: Optional[float] = None
-    shop_id: Optional[int] = None
     unit: Optional[str] = None
