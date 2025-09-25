@@ -33,9 +33,7 @@ def calculate_category_level(session, parent_id: Optional[int]) -> int:
 
 @router.post("/create")
 def create(
-    request: CategoryCreate,
-    session: GetSession,
-    # user=requirePermission("category")
+    request: CategoryCreate, session: GetSession, user=requirePermission("category")
 ):
     # auto set level
     level = calculate_category_level(session, request.parent_id)
@@ -92,7 +90,8 @@ def delete(
     user=requirePermission("category-delete"),
 ):
     category = session.get(Category, id)
-    raiseExceptions((category, 404, "category not found"))
+    if category is None:
+        return api_response(404, "Category not found")
 
     children = session.exec(select(Category).where(Category.parent_id == id)).all()
     raiseExceptions(
@@ -105,7 +104,7 @@ def delete(
     )
     session.delete(category)
     session.commit()
-    return api_response(404, f"Category {category.name} deleted")
+    return api_response(200, f"Category {category.name} deleted")
 
 
 def delete_category_tree(session, category_id: int):

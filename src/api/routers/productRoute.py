@@ -3,7 +3,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from src.api.core.decorator import handle_async_wrapper
+from src.api.core.middleware import handle_async_wrapper
 from src.api.core.utility import Print
 from src.api.core.operation import listRecords, listop, updateOp
 from src.api.core.response import api_response, raiseExceptions

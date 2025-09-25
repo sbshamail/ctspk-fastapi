@@ -12,3 +12,4 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(
         30,
     )
 )
+DOMAIN = os.getenv("DOMAIN", "http://69.10.53.162")

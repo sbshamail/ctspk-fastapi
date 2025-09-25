@@ -7,7 +7,7 @@ from src.api.models.usersModel import User
 from src.api.core.dependencies import GetSession, ListQueryParams, requirePermission
 from src.api.core.operation import listRecords
 from src.api.core.response import api_response, raiseExceptions
-from src.api.core.decorator import handle_async_wrapper
+from src.api.core.middleware import handle_async_wrapper
 
 router = APIRouter(prefix="/user-shop", tags=["UserShop"])
 

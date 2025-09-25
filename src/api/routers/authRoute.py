@@ -3,7 +3,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 from fastapi import APIRouter, Request, Response
 from src.api.core.utility import Print
-from src.api.core.decorator import handle_async_wrapper
+from src.api.core.middleware import handle_async_wrapper
 from src.config import ACCESS_TOKEN_EXPIRE_MINUTES
 from src.api.core.security import (
     create_access_token,

@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlmodel import SQLModel
 from fastapi.middleware.cors import CORSMiddleware
+from src.api.core.middleware.error_handling import register_exception_handlers
 from src.api.routers import (
     # user
     authRoute,
@@ -29,6 +30,7 @@ async def lifespan(app: FastAPI):
 
 # Initialize the FastAPI app with the custom lifespan
 app = FastAPI(lifespan=lifespan)
+register_exception_handlers(app)
 app = FastAPI(root_path="/api")
 
 # Allow all origins

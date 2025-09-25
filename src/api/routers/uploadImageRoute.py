@@ -4,6 +4,7 @@ from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from src.config import DOMAIN
 from src.api.core import (
     requireSignin,
 )
@@ -16,8 +17,6 @@ MEDIA_DIR = "/var/www/ctspk-media"
 os.makedirs(MEDIA_DIR, exist_ok=True)  # ensure folder exists
 
 MAX_SIZE = 1 * 1024 * 1024  # 1 MB
-
-DOMAIN = "http://localhost:8000"  # change when deploying
 
 
 # ----------------------------

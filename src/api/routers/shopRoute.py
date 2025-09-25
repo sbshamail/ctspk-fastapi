@@ -20,7 +20,7 @@ from src.api.core import (
     updateOp,
 )
 from src.api.core.response import api_response, raiseExceptions
-from src.api.core.decorator import handle_async_wrapper
+from src.api.core.middleware import handle_async_wrapper
 
 router = APIRouter(prefix="/shop", tags=["Shop"])
 

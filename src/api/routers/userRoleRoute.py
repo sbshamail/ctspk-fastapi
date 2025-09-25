@@ -3,7 +3,7 @@ from sqlalchemy import select
 
 # core
 from src.api.core.utility import Print
-from src.api.core.decorator import handle_async_wrapper
+from src.api.core.middleware import handle_async_wrapper
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.dependencies import GetSession, requirePermission
 from src.api.core import api_response, raiseExceptions
