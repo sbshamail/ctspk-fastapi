@@ -127,3 +127,24 @@ async def get_multiple_images(user: requireSignin, data: FilenameList):
             results.append({"filename": filename, "error": "File not found"})
 
     return {"results": results}
+
+
+@router.delete("/media/delete-multiple")
+async def delete_multiple_images(user: requireSignin, data: FilenameList):
+    user_dir = os.path.join(MEDIA_DIR, user["email"])
+    results = []
+
+    for filename in data.filenames:
+        file_path = os.path.join(user_dir, filename)
+        if os.path.isfile(file_path):
+            try:
+                os.remove(file_path)
+                results.append({"filename": filename, "status": "deleted"})
+            except Exception as e:
+                results.append(
+                    {"filename": filename, "status": "error", "detail": str(e)}
+                )
+        else:
+            results.append({"filename": filename, "status": "not found"})
+
+    return {"results": results}

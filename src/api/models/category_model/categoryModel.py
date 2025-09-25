@@ -50,13 +50,16 @@ class CategoryRead(TimeStampReadModel):
     name: str
     slug: str
     image: Dict[str, Any] | None = None
+    details: Optional[str] = None
     slug: Optional[str] = None
+    is_active: bool
     parent_id: Optional[int] = None
 
 
 class CategoryUpdate(SQLModel):
     name: Optional[str] = None
     slug: Optional[str] = None
+    is_active: Optional[bool] = None
     parent_id: Optional[int] = None
     details: Optional[str] = None
     image: Optional[Dict[str, Any]] = None
@@ -68,10 +71,11 @@ class CategoryUpdate(SQLModel):
 class CategoryReadNested(TimeStampReadModel):
     id: int
     name: str
-    details: str | None = None
+    details: Optional[str] = None
     image: Dict[str, Any] | None = None
     slug: Optional[str] = None
     parent_id: int | None = None
+    is_active: bool
     children: list["CategoryReadNested"] = Field(default_factory=list)
 
     class Config:
