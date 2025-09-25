@@ -4,7 +4,9 @@ from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from src.api.core.response import api_response
 from src.config import DOMAIN
+
 from src.api.core import (
     requireSignin,
 )
@@ -47,7 +49,7 @@ async def upload_images(user: requireSignin, files: List[UploadFile] = File(...)
                 img.save(file_path, "webp", quality=80, method=6)
                 ext = ".webp"  # update extension
             except UnidentifiedImageError:
-                raise HTTPException(
+                raise api_response(
                     status_code=400,
                     detail=f"File type {ext} is not a supported image format.",
                 )
@@ -57,9 +59,9 @@ async def upload_images(user: requireSignin, files: List[UploadFile] = File(...)
         if size_bytes > MAX_SIZE:
             os.remove(file_path)
             size_mb = round(size_bytes / (1024 * 1024), 2)
-            raise HTTPException(
-                status_code=400,
-                detail=f"{file.filename} is still larger than 1 MB after optimization ({size_mb} MB)",
+            return api_response(
+                400,
+                f"{file.filename} is still larger than 1 MB after optimization ({size_mb} MB)",
             )
 
         saved_files.append(
@@ -71,7 +73,7 @@ async def upload_images(user: requireSignin, files: List[UploadFile] = File(...)
             }
         )
 
-    return {"uploaded": saved_files}
+    return api_response(200, "Images uploaded successfully", data=saved_files)
 
 
 # ----------------------------
@@ -81,14 +83,12 @@ async def upload_images(user: requireSignin, files: List[UploadFile] = File(...)
 async def get_image(user: requireSignin, filename: str):
     # build the user folder path
     safe_email = user["email"]
-    print(safe_email)
     user_dir = os.path.join(MEDIA_DIR, safe_email)
 
     file_path = os.path.join(user_dir, filename)
 
     if not os.path.isfile(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
-
+        return api_response(404, "File not found")
     return FileResponse(file_path)
 
 
@@ -96,7 +96,7 @@ async def get_image(user: requireSignin, filename: str):
 async def get_image(email: str, filename: str):
     file_path = os.path.join(MEDIA_DIR, email, filename)
     if not os.path.isfile(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
+        api_response(404, "File not found")
     return FileResponse(file_path)
 
 
@@ -131,7 +131,7 @@ async def get_multiple_images(user: requireSignin, data: FilenameList):
         else:
             results.append({"filename": filename, "error": "File not found"})
 
-    return {"results": results}
+    return api_response(200, "Images Found", data=results)
 
 
 @router.delete("/media/delete-multiple")
@@ -146,10 +146,12 @@ async def delete_multiple_images(user: requireSignin, data: FilenameList):
                 os.remove(file_path)
                 results.append({"filename": filename, "status": "deleted"})
             except Exception as e:
-                results.append(
-                    {"filename": filename, "status": "error", "detail": str(e)}
+                api_response(
+                    200,
+                    "Delete Images Successfully",
+                    data={"filename": filename, "status": "error", "detail": str(e)},
                 )
         else:
-            results.append({"filename": filename, "status": "not found"})
+            api_response(200, "Not Found", data=filename)
 
-    return {"results": results}
+    return api_response(200, "Delete Images Successfully", data=results)
