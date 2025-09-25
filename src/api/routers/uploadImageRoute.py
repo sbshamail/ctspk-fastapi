@@ -8,7 +8,7 @@ from src.config import DOMAIN
 from src.api.core import (
     requireSignin,
 )
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 router = APIRouter()
 
@@ -17,6 +17,7 @@ MEDIA_DIR = "/var/www/ctspk-media"
 os.makedirs(MEDIA_DIR, exist_ok=True)  # ensure folder exists
 
 MAX_SIZE = 1 * 1024 * 1024  # 1 MB
+ALLOWED_RAW_EXT = [".webp", ".avif", ".ico", ".svg"]
 
 
 # ----------------------------
@@ -26,35 +27,39 @@ MAX_SIZE = 1 * 1024 * 1024  # 1 MB
 async def upload_images(user: requireSignin, files: List[UploadFile] = File(...)):
     saved_files = []
 
-    # create a folder for this user (use email or id)
     user_dir = os.path.join(MEDIA_DIR, user["email"])
     os.makedirs(user_dir, exist_ok=True)
 
     for file in files:
-        # Get extension (lowercase)
         ext = os.path.splitext(file.filename)[1].lower()
+        file_path = os.path.join(user_dir, file.filename)
 
-        # If file is already webp/avif, save directly
-        if ext in [".webp", ".avif"]:
-            file_path = os.path.join(user_dir, file.filename)
+        if ext in ALLOWED_RAW_EXT:
+            # save directly
             with open(file_path, "wb") as buffer:
                 buffer.write(await file.read())
         else:
-            # Convert to WebP
-            img = Image.open(file.file).convert("RGB")
-            output_filename = os.path.splitext(file.filename)[0] + ".webp"
-            file_path = os.path.join(user_dir, output_filename)
-            img.save(file_path, "webp", quality=80, method=6)
+            try:
+                # Convert to WebP
+                img = Image.open(file.file).convert("RGB")
+                output_filename = os.path.splitext(file.filename)[0] + ".webp"
+                file_path = os.path.join(user_dir, output_filename)
+                img.save(file_path, "webp", quality=80, method=6)
+                ext = ".webp"  # update extension
+            except UnidentifiedImageError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File type {ext} is not a supported image format.",
+                )
 
-        # Check file size
+        # check size
         size_bytes = os.path.getsize(file_path)
         if size_bytes > MAX_SIZE:
-            os.remove(file_path)  # cleanup
+            os.remove(file_path)
             size_mb = round(size_bytes / (1024 * 1024), 2)
             raise HTTPException(
                 status_code=400,
-                detail=f"{file.filename} is still larger than 1 MB after optimization "
-                f"({size_mb} MB)",
+                detail=f"{file.filename} is still larger than 1 MB after optimization ({size_mb} MB)",
             )
 
         saved_files.append(
@@ -62,6 +67,7 @@ async def upload_images(user: requireSignin, files: List[UploadFile] = File(...)
                 "filename": os.path.basename(file_path),
                 "extension": ext,
                 "url": f"{DOMAIN}/media/{user['email']}/{os.path.basename(file_path)}",
+                "size_mb": round(size_bytes / (1024 * 1024), 2),
             }
         )
 

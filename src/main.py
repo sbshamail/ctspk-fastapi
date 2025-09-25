@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
 
 # Initialize the FastAPI app with the custom lifespan
 app = FastAPI(lifespan=lifespan)
-register_exception_handlers(app)
+# register_exception_handlers(app)
 app = FastAPI(root_path="/api")
 
 # Allow all origins
