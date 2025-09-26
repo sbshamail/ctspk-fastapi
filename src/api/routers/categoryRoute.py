@@ -62,7 +62,7 @@ def update(
     # if parent_id is being changed, recalc level
     if request.parent_id is not None:
         level = calculate_category_level(session, request.parent_id)
-        request.level = level  # inject auto-level
+        updateData.level = level  # inject auto-level
 
     updateOp(updateData, request, session)
 

@@ -53,7 +53,6 @@ class CategoryUpdate(SQLModel):
     parent_id: Optional[int] = None
     details: Optional[str] = None
     image: Optional[Dict[str, Any]] = None
-    is_active: bool = True
     icon: Optional[str] = None
     admin_commission_rate: Optional[float] = None
 
