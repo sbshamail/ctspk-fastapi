@@ -16,7 +16,8 @@ from src.api.core import (
 )
 
 
-router = APIRouter()
+router = APIRouter(prefix="/media", tags=["Media"])
+
 
 # 📂 Configure this path
 MEDIA_DIR = "/var/www/ctspk-media"
@@ -26,7 +27,7 @@ os.makedirs(MEDIA_DIR, exist_ok=True)  # ensure folder exists
 # ----------------------------
 # Upload multiple images (POST)
 # ----------------------------
-@router.post("/media/create")
+@router.post("/create")
 async def upload_images(
     user: requireSignin,
     session: GetSession,
@@ -74,7 +75,7 @@ def list(query_params: ListQueryParams):
 # ----------------------------
 # Get single image (GET)
 # ----------------------------
-@router.get("/media/{filename}")
+@router.get("/{filename}")
 async def get_image(user: requireSignin, filename: str):
     # build the user folder path
     safe_email = user["email"]
@@ -87,7 +88,7 @@ async def get_image(user: requireSignin, filename: str):
     return FileResponse(file_path)
 
 
-@router.get("/media/{email}/{filename}")
+@router.get("/{email}/{filename}")
 async def get_image(email: str, filename: str):
     file_path = os.path.join(MEDIA_DIR, email, filename)
     if not os.path.isfile(file_path):
@@ -104,7 +105,7 @@ class FilenameList(BaseModel):
     filenames: List[str]
 
 
-@router.post("/media/get-multiple")
+@router.post("/get-multiple")
 async def get_multiple_images(user: requireSignin, data: FilenameList):
     user_dir = os.path.join(MEDIA_DIR, user["email"])
     results = []
@@ -130,7 +131,7 @@ async def get_multiple_images(user: requireSignin, data: FilenameList):
     return api_response(200, "Images Found", data=results)
 
 
-@router.delete("/media/delete-multiple")
+@router.delete("/delete-multiple")
 async def delete_multiple_images(user: requireSignin, data: FilenameList):
     user_dir = os.path.join(MEDIA_DIR, user["email"])
     results = []

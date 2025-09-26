@@ -44,7 +44,7 @@ class Product(TimeStampedModel, table=True):
 
     status: ProductStatus = Field(default=ProductStatus.PUBLISH)
     product_type: ProductType = Field(default=ProductType.SIMPLE)
-    unit: str = Field(default=None, max_length=191)
+    unit: Optional[str] = Field(default=None, max_length=191)
 
     height: Optional[float] = Field(default=None, max_length=191)  # in cm
     width: Optional[float] = Field(default=None, max_length=191)
@@ -89,6 +89,7 @@ class ProductCreate(SQLModel):
     gallery: Optional[List[Dict[str, Any]]] = None
     category_id: int
     price: float
+    unit: str
     max_price: float
     min_price: float
     shop_id: int

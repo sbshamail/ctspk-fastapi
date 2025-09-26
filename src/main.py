@@ -51,6 +51,7 @@ def root():
 
 
 app.include_router(authRoute.router)
+app.include_router(uploadMediaRoute.router)
 app.include_router(userRoute.router)
 # role
 app.include_router(roleRoute.router)
@@ -62,4 +63,3 @@ app.include_router(userShopRoute.router)
 app.include_router(categoryRoute.router)
 # Product
 app.include_router(productRoute.router)
-app.include_router(uploadMediaRoute.router)
