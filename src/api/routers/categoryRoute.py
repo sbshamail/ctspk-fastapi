@@ -198,6 +198,7 @@ def list(
         c.id: CategoryReadNested(
             id=c.id,
             name=c.name,
+            image=c.image,
             slug=c.slug,
             is_active=c.is_active,
             parent_id=c.parent_id,
