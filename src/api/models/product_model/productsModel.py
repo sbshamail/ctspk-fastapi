@@ -49,7 +49,7 @@ class Product(TimeStampedModel, table=True):
     height: Optional[float] = Field(default=None, max_length=191)  # in cm
     width: Optional[float] = Field(default=None, max_length=191)
     length: Optional[float] = Field(default=None, max_length=191)
-    dimension_unit: str = Field(default=None, max_length=10)
+    dimension_unit: Optional[str] = Field(default=None, max_length=10, nullable=True)
 
     image: Optional[Dict[str, Any]] = Field(
         default=None,

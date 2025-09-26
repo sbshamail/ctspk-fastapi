@@ -7,7 +7,7 @@ from src.api.models.role_model.roleModel import RoleRead
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 if TYPE_CHECKING:
-    from src.api.models import UserRole, Role, Shop, UserShop
+    from src.api.models import UserRole, Role, Shop, UserShop, UserMedia
 
 
 class User(TimeStampedModel, table=True):
@@ -25,7 +25,7 @@ class User(TimeStampedModel, table=True):
 
     # relationships
     user_roles: list["UserRole"] = Relationship(back_populates="user")
-
+    media: List["UserMedia"] = Relationship(back_populates="user")
     shops: List["Shop"] = Relationship(
         back_populates="owner",
         sa_relationship_kwargs={"foreign_keys": "Shop.owner_id"},  # ✅ correct

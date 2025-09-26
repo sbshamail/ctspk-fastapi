@@ -4,13 +4,17 @@ from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from src.api.core.response import api_response
+from src.api.core.operation import listRecords
+from src.api.models.userMediaModel import UserMedia, UserMediaRead
+from src.api.core.operation.media import uploadImage
+from src.api.core.dependencies import GetSession, ListQueryParams
+from src.api.core.response import api_response, raiseExceptions
 from src.config import DOMAIN
 
 from src.api.core import (
     requireSignin,
 )
-from PIL import Image, UnidentifiedImageError
+
 
 router = APIRouter()
 
@@ -18,62 +22,53 @@ router = APIRouter()
 MEDIA_DIR = "/var/www/ctspk-media"
 os.makedirs(MEDIA_DIR, exist_ok=True)  # ensure folder exists
 
-MAX_SIZE = 1 * 1024 * 1024  # 1 MB
-ALLOWED_RAW_EXT = [".webp", ".avif", ".ico", ".svg"]
-
 
 # ----------------------------
 # Upload multiple images (POST)
 # ----------------------------
-@router.post("/media/upload")
-async def upload_images(user: requireSignin, files: List[UploadFile] = File(...)):
-    saved_files = []
+@router.post("/media/create")
+async def upload_images(
+    user: requireSignin,
+    session: GetSession,
+    files: List[UploadFile] = File(...),
+    thumbnail: bool = False,
+):
+    saved_files = await uploadImage(files, user, thumbnail)
 
-    user_dir = os.path.join(MEDIA_DIR, user["email"])
-    os.makedirs(user_dir, exist_ok=True)
+    # create one UserMedia entry with media array
+    media = UserMedia(
+        user_id=user["id"],
+        media=saved_files,
+        media_type="image",  # you can also make this dynamic if needed
+    )
+    session.add(media)
+    session.commit()
+    session.refresh(media)
+    return api_response(
+        200, "Images uploaded successfully", UserMediaRead.model_validate(media)
+    )
 
-    for file in files:
-        ext = os.path.splitext(file.filename)[1].lower()
-        file_path = os.path.join(user_dir, file.filename)
 
-        if ext in ALLOWED_RAW_EXT:
-            # save directly
-            with open(file_path, "wb") as buffer:
-                buffer.write(await file.read())
-        else:
-            try:
-                # Convert to WebP
-                img = Image.open(file.file).convert("RGB")
-                output_filename = os.path.splitext(file.filename)[0] + ".webp"
-                file_path = os.path.join(user_dir, output_filename)
-                img.save(file_path, "webp", quality=80, method=6)
-                ext = ".webp"  # update extension
-            except UnidentifiedImageError:
-                raise api_response(
-                    status_code=400,
-                    detail=f"File type {ext} is not a supported image format.",
-                )
+# ✅ READ (single)
+@router.get("/read/{id}", response_model=UserMediaRead)
+def get(id: int, session: GetSession):
+    read = session.get(UserMedia, id)
+    raiseExceptions((read, 404, "Media not found"))
 
-        # check size
-        size_bytes = os.path.getsize(file_path)
-        if size_bytes > MAX_SIZE:
-            os.remove(file_path)
-            size_mb = round(size_bytes / (1024 * 1024), 2)
-            return api_response(
-                400,
-                f"{file.filename} is still larger than 1 MB after optimization ({size_mb} MB)",
-            )
+    return api_response(200, "Media Found", UserMediaRead.model_validate(read))
 
-        saved_files.append(
-            {
-                "filename": os.path.basename(file_path),
-                "extension": ext,
-                "url": f"{DOMAIN}/media/{user['email']}/{os.path.basename(file_path)}",
-                "size_mb": round(size_bytes / (1024 * 1024), 2),
-            }
-        )
 
-    return api_response(200, "Images uploaded successfully", data=saved_files)
+@router.get("/list", response_model=list[UserMediaRead])
+def list(query_params: ListQueryParams):
+    query_params = vars(query_params)
+    searchFields = ["media_type"]
+
+    return listRecords(
+        query_params=query_params,
+        searchFields=searchFields,
+        Model=UserMedia,
+        Schema=UserMediaRead,
+    )
 
 
 # ----------------------------
@@ -126,6 +121,7 @@ async def get_multiple_images(user: requireSignin, data: FilenameList):
                     "extension": ext.lower(),
                     "size_kb": size_kb,
                     "url": f"{DOMAIN}/media/{user['email']}/{filename}",
+                    "thumbnail_url": f"{DOMAIN}/media/{user['email']}/{name}.webp",
                 }
             )
         else:

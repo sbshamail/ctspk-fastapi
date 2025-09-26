@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlmodel import SQLModel
 from fastapi.middleware.cors import CORSMiddleware
+
 from src.api.core.middleware.error_handling import register_exception_handlers
 from src.api.routers import (
     # user
@@ -17,7 +18,8 @@ from src.api.routers import (
     categoryRoute,
     # product
     productRoute,
-    uploadImageRoute,
+    # media
+    uploadMediaRoute,
 )
 
 
@@ -60,4 +62,4 @@ app.include_router(userShopRoute.router)
 app.include_router(categoryRoute.router)
 # Product
 app.include_router(productRoute.router)
-app.include_router(uploadImageRoute.router)
+app.include_router(uploadMediaRoute.router)

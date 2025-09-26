@@ -1,5 +1,6 @@
 # root
 from .usersModel import User
+from .userMediaModel import UserMedia
 
 # role
 from .role_model.roleModel import Role
