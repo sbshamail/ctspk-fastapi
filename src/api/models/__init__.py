@@ -13,8 +13,11 @@ from .shop_model import Shop, UserShop
 from .category_model.categoryModel import Category
 
 
-# # product
+# product
 from .product_model.productsModel import Product
+
+# cart
+from .cart_model.cartModel import Cart
 
 # from .product_model import ProductPurchase, Type, VariationOption, Wishlist
 

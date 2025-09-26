@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, List, Optional
 import datetime
-from pydantic import EmailStr, model_validator
+from pydantic import BaseModel, EmailStr, model_validator
 from sqlmodel import SQLModel, Field, Relationship
 
 from src.api.models.role_model.roleModel import RoleRead
@@ -69,6 +69,14 @@ class RegisterUser(SQLModel):
         return values
 
 
+class ShopReadForUser(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
 class UserReadBase(TimeStampReadModel):
     id: int
     name: str
@@ -79,6 +87,10 @@ class UserReadBase(TimeStampReadModel):
 
 class UserRead(UserReadBase):
     roles: List[RoleRead] = None
+    shops: List[ShopReadForUser] = None
+
+    class Config:
+        from_attributes = True
 
 
 class LoginRequest(SQLModel):

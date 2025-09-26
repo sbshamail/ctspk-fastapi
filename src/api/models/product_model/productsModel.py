@@ -8,7 +8,7 @@ from src.api.models.category_model.categoryModel import CategoryRead
 from src.api.models.baseModel import TimeStampReadModel, TimeStampedModel
 
 if TYPE_CHECKING:
-    from src.api.models import Shop, Category
+    from src.api.models import Shop, Category, Cart
 
 
 class ProductStatus(str, Enum):
@@ -75,6 +75,7 @@ class Product(TimeStampedModel, table=True):
     # relationships
     shop: Optional["Shop"] = Relationship(back_populates="products")
     category: Optional["Category"] = Relationship(back_populates="products")
+    carts: Optional[list["Cart"]] = Relationship(back_populates="product")
 
     # categories: List["CategoryProduct"] = Relationship(back_populates="product")
     # variation_options: List["VariationOption"] = Relationship(back_populates="product")
@@ -90,7 +91,7 @@ class ProductCreate(SQLModel):
     price: float
     max_price: float
     min_price: float
-    shop_id: int = None
+    shop_id: int
 
 
 class ProductUpdate(SQLModel):
