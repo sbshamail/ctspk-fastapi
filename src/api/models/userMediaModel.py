@@ -27,7 +27,7 @@ class MediaItem(BaseModel):
     size_mb: Optional[float] = None
     thumbnail_url: Optional[str] = None
 
-    @field_serializer("url")
+    @field_serializer("original")
     def add_domain_to_url(self, v: str, _info):
         return f"{DOMAIN}{v}"
 
@@ -41,7 +41,7 @@ class UserMediaBase(BaseModel):
     media_type: str
     media: List[MediaItem]  # array of items
 
-    # ✅ Validator to check unique filename + url
+    # ✅ Validator to check unique filename + orginal
     @field_validator("media")
     @classmethod
     def check_unique(cls, media_list: List[MediaItem]):
@@ -50,10 +50,10 @@ class UserMediaBase(BaseModel):
         for item in media_list:
             if item.filename in filenames:
                 raise ValueError(f"Duplicate filename detected: {item.filename}")
-            if item.url in urls:
-                raise ValueError(f"Duplicate URL detected: {item.url}")
+            if item.orginal in urls:
+                raise ValueError(f"Duplicate URL detected: {item.orginal}")
             filenames.add(item.filename)
-            urls.add(item.url)
+            urls.add(item.orginal)
         return media_list
 
 
