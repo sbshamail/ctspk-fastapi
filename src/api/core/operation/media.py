@@ -50,7 +50,7 @@ async def uploadImage(files, user, thumbnail):
         file_info = {
             "filename": os.path.basename(file_path),
             "extension": ext,
-            "url": f"/media/{user['email']}/{os.path.basename(file_path)}",
+            "original": f"/media/{user['email']}/{os.path.basename(file_path)}",
             "size_mb": round(size_bytes / (1024 * 1024), 2),
         }
         # ✅ Generate thumbnail if requested and format supported
@@ -64,7 +64,7 @@ async def uploadImage(files, user, thumbnail):
                 img.thumbnail(THUMBNAIL_SIZE)
                 img.save(thumb_path, "webp", quality=80, method=6)
 
-            file_info["thumbnail_url"] = f"/media/{user['email']}/{thumb_name}"
+            file_info["thumbnail"] = f"/media/{user['email']}/{thumb_name}"
 
         saved_files.append(file_info)
         return saved_files

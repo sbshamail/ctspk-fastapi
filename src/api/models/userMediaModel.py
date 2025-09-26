@@ -23,7 +23,7 @@ class UserMedia(TimeStampedModel, table=True):
 class MediaItem(BaseModel):
     filename: str
     extension: str
-    url: str  # ✅ required
+    original: str  # ✅ required
     size_mb: Optional[float] = None
     thumbnail_url: Optional[str] = None
 
