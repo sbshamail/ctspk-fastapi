@@ -121,8 +121,8 @@ async def get_multiple_images(user: requireSignin, data: FilenameList):
                     "filename": filename,
                     "extension": ext.lower(),
                     "size_kb": size_kb,
-                    "url": f"{DOMAIN}/media/{user['email']}/{filename}",
-                    "thumbnail_url": f"{DOMAIN}/media/{user['email']}/{name}.webp",
+                    "original": f"{DOMAIN}/media/{user['email']}/{filename}",
+                    "thumbnail": f"{DOMAIN}/media/{user['email']}/{name}.webp",
                 }
             )
         else:

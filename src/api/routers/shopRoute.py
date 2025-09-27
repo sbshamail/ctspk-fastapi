@@ -8,7 +8,7 @@ from src.api.models.shop_model import (
     ShopUpdate,
     ShopVerifyByAdmin,
 )
-from src.api.models.usersModel import User
+
 from src.api.models.role_model.userRoleModel import UserRole
 from src.api.models.role_model.roleModel import Role
 from src.api.core import (
@@ -62,8 +62,7 @@ def create_shop(
 
 # ✅ READ single shop
 @router.get("/read/{id}", response_model=ShopRead)
-@handle_async_wrapper
-def get_shop(id: int, session: GetSession, user: User):
+def get_shop(id: int, session: GetSession, user: requireSignin):
     shop = session.get(Shop, id)
     raiseExceptions((shop, 404, "Shop not found"))
     return api_response(200, "Shop Found", ShopRead.model_validate(shop))
@@ -72,18 +71,24 @@ def get_shop(id: int, session: GetSession, user: User):
 # ✅ UPDATE shop
 @router.put("/update/{id}")
 @handle_async_wrapper
-def update_shop(id: int, request: ShopUpdate, session: GetSession, user: User):
+def update_shop(
+    id: int,
+    request: ShopUpdate,
+    session: GetSession,
+    user=requirePermission("shop_admin"),
+):
     shop = session.get(Shop, id)
     raiseExceptions((shop, 404, "Shop not found"))
+    if user.get("id") != shop.owner_id:
+        return api_response(403, "You are not the owner of this shop")
+    updateShop = updateOp(shop, request, session)
 
-    update_data = request.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(shop, key, value)
-
-    session.add(shop)
+    session.add(updateShop)
     session.commit()
-    session.refresh(shop)
-    return api_response(200, "Shop Updated Successfully", ShopRead.model_validate(shop))
+    session.refresh(updateShop)
+    return api_response(
+        200, "Shop Updated Successfully", ShopRead.model_validate(updateShop)
+    )
 
 
 # ✅ UPDATE shop Status
@@ -105,7 +110,7 @@ def update_shop(
 
 # ✅ DELETE shop
 @router.delete("/delete/{id}")
-def delete_shop(id: int, session: GetSession, user: User):
+def delete_shop(id: int, session: GetSession, user=requirePermission("shop_admin")):
     shop = session.get(Shop, id)
     raiseExceptions((shop, 404, "Shop not found"))
 
