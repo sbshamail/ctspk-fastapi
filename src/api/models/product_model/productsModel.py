@@ -50,6 +50,7 @@ class Product(TimeStampedModel, table=True):
     width: Optional[float] = Field(default=None, max_length=191)
     length: Optional[float] = Field(default=None, max_length=191)
     dimension_unit: Optional[str] = Field(default=None, max_length=10, nullable=True)
+    is_feature: Optional[bool] = Field(default=None)
 
     image: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -107,6 +108,7 @@ class ProductUpdate(SQLModel):
     min_price: Optional[float] = None
     shop_id: Optional[int] = None
     unit: Optional[str] = None
+    is_feature: Optional[bool] = None
 
 
 class UserReadForProduct(TimeStampReadModel):

@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 from fastapi import APIRouter, Request, Response
+from src.api.models.shop_model.userShopModel import UserShop
 from src.api.core.utility import Print
 from src.api.core.middleware import handle_async_wrapper
 from src.config import ACCESS_TOKEN_EXPIRE_MINUTES
@@ -87,7 +88,6 @@ def initialize_first_user(
 
 
 @router.post("/register", response_model=UserRead)
-@handle_async_wrapper
 def register_user(
     request: RegisterUser,
     session: GetSession,
@@ -121,7 +121,12 @@ def login_user(
     user = (
         session.exec(
             select(User)
-            .options(selectinload(User.user_roles).selectinload(UserRole.role))
+            .options(
+                selectinload(User.user_roles).selectinload(UserRole.role),
+                selectinload(User.user_shops).selectinload(
+                    UserShop.shop
+                ),  # 👈 eager load shops
+            )
             .where(User.email == request.email)
         )
         .scalars()
@@ -138,7 +143,8 @@ def login_user(
     roles = user.role_names
     permissions = user.permissions
 
-    Print(user)
+    # 🔥 Extract shops
+    shops = [{"id": shop.id, "name": shop.name} for shop in user.shops]
 
     user_data = {
         "id": user.id,
@@ -146,7 +152,9 @@ def login_user(
         "is_root": user.is_root or False,
         "roles": roles,
         "permissions": permissions,
+        "shops": shops,
     }
+    # Print(user_data)
     access_token = create_access_token(user_data=user_data)
     refresh_token = create_access_token(user_data=user_data, refresh=True)
 

@@ -14,7 +14,12 @@ from src.api.models.product_model.productsModel import (
     ProductRead,
     ProductUpdate,
 )
-from src.api.core.dependencies import GetSession, ListQueryParams, requirePermission
+from src.api.core.dependencies import (
+    GetSession,
+    ListQueryParams,
+    requirePermission,
+    requireSignin,
+)
 from sqlalchemy.orm import aliased
 
 router = APIRouter(prefix="/product", tags=["Product"])
@@ -45,6 +50,31 @@ def update(
     request: ProductUpdate,
     session: GetSession,
     user=requirePermission("product_create"),
+):
+
+    updateData = session.get(Product, id)
+
+    raiseExceptions((updateData, 404, "Product not found"))
+
+    shop_ids = [s["id"] for s in user.get("shops", [])]
+    if updateData.shop_id not in shop_ids:
+        return api_response(403, "You are not the user of this Product")
+
+    updateOp(updateData, request, session)
+
+    session.commit()
+    session.refresh(updateData)
+    return api_response(
+        200, "Product Updated Successfully", ProductRead.model_validate(updateData)
+    )
+
+
+@router.put("/update_by_admin/{id}")
+def update(
+    id: int,
+    request: ProductUpdate,
+    session: GetSession,
+    user=requirePermission("admin"),
 ):
     updateData = session.get(Product, id)
     raiseExceptions((updateData, 404, "Product not found"))
