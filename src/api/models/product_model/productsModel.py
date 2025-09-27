@@ -108,7 +108,7 @@ class ProductUpdate(SQLModel):
     min_price: Optional[float] = None
     shop_id: Optional[int] = None
     unit: Optional[str] = None
-    is_feature: Optional[bool] = None
+    is_feature: Optional[bool] = Field(default=False)
 
 
 class UserReadForProduct(TimeStampReadModel):
