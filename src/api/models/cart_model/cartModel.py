@@ -24,7 +24,6 @@ class Cart(TimeStampedModel, table=True):
 
 class CartBase(BaseModel):
     product_id: int
-    user_id: int
     shop_id: int
     quantity: int
 
@@ -34,14 +33,12 @@ class CartCreate(CartBase):
 
 
 class CartUpdate(BaseModel):
-    product_id: Optional[int] = None
-    user_id: Optional[int] = None
-    shop_id: Optional[int] = None
-    quantity: Optional[int] = None
+    quantity: Optional[int] = Field(default=1, ge=1)
 
 
 class CartRead(CartBase, TimeStampReadModel):
     id: int
+    user_id: int
     product: Optional[ProductRead] = None
 
     class Config:

@@ -12,9 +12,11 @@ router = APIRouter(prefix="/cart", tags=["Cart"])
 def create_role(
     request: CartCreate,
     session: GetSession,
-    user=requireSignin,
+    user: requireSignin,
 ):
+
     cart = Cart(**request.model_dump())
+    cart.user_id = user.get("id")
     session.add(cart)
     session.commit()
     session.refresh(cart)
@@ -26,19 +28,22 @@ def update_role(
     id: int,
     request: CartUpdate,
     session: GetSession,
-    user=requireSignin,
+    user: requireSignin,
 ):
     cart = session.get(Cart, id)  # Like findById
     raiseExceptions((cart, 404, "Cart not found"))
     updateOp(cart, request, session)
 
+    # Ensure min quantity = 1
+    if request.quantity is not None and request.quantity < 1:
+        request.quantity = 1
     session.commit()
     session.refresh(cart)
     return api_response(200, "Cart Update Successfully", cart)
 
 
 @router.get("/read/{id}")
-def get_role(id: int, session: GetSession, user=requireSignin):
+def get_role(id: int, session: GetSession, user: requireSignin):
 
     cart = session.get(Cart, id)  # Like findById
     raiseExceptions((cart, 404, "Cart not found"))
@@ -47,11 +52,11 @@ def get_role(id: int, session: GetSession, user=requireSignin):
 
 
 # ❗ DELETE
-@router.delete("/cart/{id}", response_model=dict)
+@router.delete("/delete/{id}", response_model=dict)
 def delete_role(
     id: int,
     session: GetSession,
-    user=requireSignin,
+    user: requireSignin,
 ):
     cart = session.get(Cart, id)
     raiseExceptions((cart, 404, "Cart not found"))
@@ -63,7 +68,7 @@ def delete_role(
 
 # ✅ LIST
 @router.get("/list", response_model=list[CartRead])
-def list(query_params: ListQueryParams, user=requireSignin):
+def list(query_params: ListQueryParams, user: requireSignin):
     query_params = vars(query_params)
     searchFields = []
     return listRecords(

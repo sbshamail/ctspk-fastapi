@@ -20,6 +20,8 @@ from src.api.routers import (
     productRoute,
     # media
     uploadMediaRoute,
+    # cart
+    cartRoute,
 )
 
 
@@ -63,3 +65,5 @@ app.include_router(userShopRoute.router)
 app.include_router(categoryRoute.router)
 # Product
 app.include_router(productRoute.router)
+# Cart
+app.include_router(cartRoute.router)
