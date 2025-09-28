@@ -25,13 +25,13 @@ class MediaItem(BaseModel):
     extension: str
     original: str  # ✅ required
     size_mb: Optional[float] = None
-    thumbnail_url: Optional[str] = None
+    thumbnail: Optional[str] = None
 
     @field_serializer("original")
     def add_domain_to_url(self, v: str, _info):
         return f"{DOMAIN}{v}"
 
-    @field_serializer("thumbnail_url")
+    @field_serializer("thumbnail")
     def add_domain_to_thumbnail(self, v: Optional[str], _info):
         return f"{DOMAIN}{v}" if v else None
 
