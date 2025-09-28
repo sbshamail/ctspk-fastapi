@@ -1,9 +1,10 @@
 import os
 from typing import List
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from src.api.core.security import require_signin
 from src.api.core.operation import listRecords
 from src.api.models.userMediaModel import UserMedia, UserMediaRead
 from src.api.core.operation.media import uploadImage
@@ -29,8 +30,8 @@ os.makedirs(MEDIA_DIR, exist_ok=True)  # ensure folder exists
 # ----------------------------
 @router.post("/create")
 async def upload_images(
-    user: requireSignin,
     session: GetSession,
+    user: requireSignin,
     files: List[UploadFile] = File(...),
     thumbnail: bool = False,
 ):

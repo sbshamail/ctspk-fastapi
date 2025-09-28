@@ -119,11 +119,9 @@ def require_signin(
 
         return user  # contains {"email": ..., "id": ...}
 
-    except JWTError:
-        api_response(
-            status.HTTP_401_UNAUTHORIZED,
-            "Invalid or expired token",
-        )
+    except JWTError as e:
+        print(e)
+        return api_response(status.HTTP_401_UNAUTHORIZED, "Invalid token", data=str(e))
 
 
 def require_admin(user: dict = Depends(require_signin)):
