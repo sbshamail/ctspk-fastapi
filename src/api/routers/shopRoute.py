@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from sqlmodel import select
 
+from src.api.core.utility import uniqueSlugify
 from src.api.models.shop_model import (
     Shop,
     ShopCreate,
@@ -27,45 +28,56 @@ router = APIRouter(prefix="/shop", tags=["Shop"])
 
 # ✅ CREATE shop
 @router.post("/create")
-@handle_async_wrapper
 def create_shop(
     user: requireSignin,  # the logged-in user
     request: ShopCreate,
     session: GetSession,
 ):
-    print(user)
-    # 1️⃣ Create the shop
-    new_shop = Shop(**request.model_dump(), owner_id=user.get("id"))
-    session.add(new_shop)
-    session.commit()
-    session.refresh(new_shop)
+    with session.begin():  # 🔑 single transaction
 
-    # 2️⃣ find the shop_admin role
-    role = session.exec(select(Role).where(Role.name == "shop_admin")).first()
+        # 1️⃣ Create the shop
+        data = Shop(**request.model_dump(), owner_id=user.get("id"))
+        data.slug = uniqueSlugify(session, Shop, data.name)
+        session.add(data)
 
-    raiseExceptions((role, 404, "Role not found"))
+        # 2️⃣ find the shop_admin role
+        role = session.exec(select(Role).where(Role.name == "shop_admin")).first()
+        raiseExceptions((role, 404, "Role not found"))
 
-    # 3️⃣ Assign the shop_admin role to the user (if not already assigned)
-    existing = session.exec(
-        select(UserRole).filter(
-            UserRole.user_id == user.get("id"), UserRole.role_id == role.id
-        )
-    ).first()
-    if not existing:
-        mapping = UserRole(user_id=user.get("id"), role_id=role.id)
-        session.add(mapping)
-        session.commit()
+        # 3️⃣ Assign the shop_admin role to the user (if not already assigned)
+        existing = session.exec(
+            select(UserRole).where(
+                UserRole.user_id == user.get("id"),
+                UserRole.role_id == role.id,
+            )
+        ).first()
 
-    read = ShopRead.model_validate(new_shop)
+        if not existing:
+            mapping = UserRole(user_id=user.get("id"), role_id=role.id)
+            session.add(mapping)
+
+    # 🔒 commit happens automatically on context exit, rollback on error
+    session.refresh(data)
+
+    read = ShopRead.model_validate(data)
     return api_response(200, "Shop Created Successfully", read)
 
 
-# ✅ READ single shop
-@router.get("/read/{id}", response_model=ShopRead)
-def get_shop(id: int, session: GetSession, user: requireSignin):
-    shop = session.get(Shop, id)
-    raiseExceptions((shop, 404, "Shop not found"))
-    return api_response(200, "Shop Found", ShopRead.model_validate(shop))
+@router.get(
+    "/read/{id_slug}",
+    description="Shop ID (int) or slug (str)",
+    response_model=ShopRead,
+)
+def get(id_slug: str, session: GetSession):
+    # Check if it's an integer ID
+    if id_slug.isdigit():
+        read = session.get(Shop, int(id_slug))
+    else:
+        # Otherwise treat as slug
+        read = session.exec(select(Shop).where(Shop.slug.ilike(id_slug))).first()
+    raiseExceptions((read, 404, "Shop not found"))
+
+    return api_response(200, "Shop Found", ShopRead.model_validate(read))
 
 
 # ✅ UPDATE shop
@@ -81,14 +93,14 @@ def update_shop(
     raiseExceptions((shop, 404, "Shop not found"))
     if user.get("id") != shop.owner_id:
         return api_response(403, "You are not the owner of this shop")
-    updateShop = updateOp(shop, request, session)
+    data = updateOp(shop, request, session)
+    if data.name:
+        data.slug = uniqueSlugify(session, Shop, data.name)
 
-    session.add(updateShop)
+    session.add(data)
     session.commit()
-    session.refresh(updateShop)
-    return api_response(
-        200, "Shop Updated Successfully", ShopRead.model_validate(updateShop)
-    )
+    session.refresh(data)
+    return api_response(200, "Shop Updated Successfully", ShopRead.model_validate(data))
 
 
 # ✅ UPDATE shop Status

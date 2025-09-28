@@ -1,12 +1,11 @@
-from typing import List, Optional
-from fastapi import APIRouter, Query
-from sqlalchemy import select, text
-from sqlalchemy.orm import selectinload
+from fastapi import APIRouter
+from sqlalchemy import select
 
+from sqlmodel import select
 from src.api.models.category_model.categoryModel import Category
 from src.api.core.middleware import handle_async_wrapper
-from src.api.core.utility import Print
-from src.api.core.operation import listRecords, listop, updateOp
+from src.api.core.utility import uniqueSlugify
+from src.api.core.operation import listRecords, updateOp
 from src.api.core.response import api_response, raiseExceptions
 from src.api.models.product_model.productsModel import (
     Product,
@@ -34,7 +33,11 @@ def create(
     user=requirePermission("product_create", "shop_admin"),
 ):
     data = Product(**request.model_dump())
-    Print(data)
+    data.slug = uniqueSlugify(
+        session,
+        Product,
+        data.name,
+    )
     session.add(data)
     session.commit()
     session.refresh(data)
@@ -53,19 +56,20 @@ def update(
 ):
 
     updateData = session.get(Product, id)
-
     raiseExceptions((updateData, 404, "Product not found"))
 
     shop_ids = [s["id"] for s in user.get("shops", [])]
     if updateData.shop_id not in shop_ids:
         return api_response(403, "You are not the user of this Product")
 
-    updateOp(updateData, request, session)
+    data = updateOp(updateData, request, session)
+    if data.name:
+        data.slug = uniqueSlugify(session, Product, data.name)
 
     session.commit()
-    session.refresh(updateData)
+    session.refresh(data)
     return api_response(
-        200, "Product Updated Successfully", ProductRead.model_validate(updateData)
+        200, "Product Updated Successfully", ProductRead.model_validate(data)
     )
 
 
@@ -79,19 +83,29 @@ def update(
     updateData = session.get(Product, id)
     raiseExceptions((updateData, 404, "Product not found"))
 
-    updateOp(updateData, request, session)
+    data = updateOp(updateData, request, session)
+    if data.name:
+        data.slug = uniqueSlugify(session, Product, data.name)
 
     session.commit()
-    session.refresh(updateData)
+    session.refresh(data)
     return api_response(
-        200, "Product Updated Successfully", ProductRead.model_validate(updateData)
+        200, "Product Updated Successfully", ProductRead.model_validate(data)
     )
 
 
-# ✅ READ (single)
-@router.get("/read/{id}", response_model=ProductRead)
-def get(id: int, session: GetSession):
-    read = session.get(Product, id)
+@router.get(
+    "/read/{id_slug}",
+    description="Product ID (int) or slug (str)",
+    response_model=ProductRead,
+)
+def get(id_slug: str, session: GetSession):
+    # Check if it's an integer ID
+    if id_slug.isdigit():
+        read = session.get(Product, int(id_slug))
+    else:
+        # Otherwise treat as slug
+        read = session.exec(select(Product).where(Product.slug.ilike(id_slug))).first()
     raiseExceptions((read, 404, "Product not found"))
 
     return api_response(200, "Product Found", ProductRead.model_validate(read))
@@ -110,10 +124,6 @@ def delete(
     session.delete(product)
     session.commit()
     return api_response(200, f"Product {product.name} deleted")
-
-
-from sqlmodel import select
-from sqlalchemy import union_all
 
 
 @router.get("/list", response_model=list[ProductRead])

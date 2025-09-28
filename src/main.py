@@ -22,6 +22,10 @@ from src.api.routers import (
     uploadMediaRoute,
     # cart
     cartRoute,
+    # manufacturer
+    manufacturerRoute,
+    # banner
+    bannerRoute,
 )
 
 
@@ -67,3 +71,7 @@ app.include_router(categoryRoute.router)
 app.include_router(productRoute.router)
 # Cart
 app.include_router(cartRoute.router)
+# Manufacturer
+app.include_router(manufacturerRoute.router)
+# Banner
+app.include_router(bannerRoute.router)

@@ -8,7 +8,7 @@ from src.api.models.category_model.categoryModel import CategoryRead
 from src.api.models.baseModel import TimeStampReadModel, TimeStampedModel
 
 if TYPE_CHECKING:
-    from src.api.models import Shop, Category, Cart
+    from src.api.models import Shop, Category, Cart, Manufacturer
 
 
 class ProductStatus(str, Enum):
@@ -26,7 +26,7 @@ class Product(TimeStampedModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=191)
-    slug: str = Field(max_length=191)
+    slug: str = Field(max_length=191, index=True, unique=True)
     description: Optional[str] = None
     price: Optional[float] = None
     is_active: bool = Field(default=True)
@@ -68,15 +68,18 @@ class Product(TimeStampedModel, table=True):
     external_product_url: Optional[str] = Field(max_length=191)
     external_product_button_text: Optional[str] = Field(max_length=191)
     # foriegn key
-    category_id: int = Field(foreign_key="categories.id")
-    shop_id: Optional[int] = Field(foreign_key="shops.id")
+    category_id: int = Field(foreign_key="categories.id", index=True)
+    shop_id: Optional[int] = Field(foreign_key="shops.id", index=True)
     # author_id: Optional[int] = Field(foreign_key="authors.id")
-    # manufacturer_id: Optional[int] = Field(foreign_key="manufacturers.id")
+    manufacturer_id: Optional[int] = Field(
+        foreign_key="manufacturers.id", index=True, default=None
+    )
 
     # relationships
     shop: Optional["Shop"] = Relationship(back_populates="products")
     category: Optional["Category"] = Relationship(back_populates="products")
     carts: Optional[list["Cart"]] = Relationship(back_populates="product")
+    manufacturer: Optional["Manufacturer"] = Relationship(back_populates="products")
 
     # categories: List["CategoryProduct"] = Relationship(back_populates="product")
     # variation_options: List["VariationOption"] = Relationship(back_populates="product")
@@ -84,7 +87,6 @@ class Product(TimeStampedModel, table=True):
 
 class ProductCreate(SQLModel):
     name: str
-    slug: str
     description: str
     image: Optional[Dict[str, Any]] = None
     gallery: Optional[List[Dict[str, Any]]] = None
@@ -98,7 +100,6 @@ class ProductCreate(SQLModel):
 
 class ProductUpdate(SQLModel):
     name: Optional[str] = None
-    slug: Optional[str] = None
     category_id: int = None
     image: Optional[Dict[str, Any]] = None
     gallery: Optional[List[Dict[str, Any]]] = None

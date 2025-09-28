@@ -15,8 +15,8 @@ class Shop(TimeStampedModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_id: int = Field(foreign_key="users.id")
-    name: Optional[str] = Field(default=None, max_length=191)
-    slug: Optional[str] = Field(default=None, max_length=191)
+    name: Optional[str] = Field(default=None, max_length=191, unique=True)
+    slug: Optional[str] = Field(default=None, max_length=191, index=True, unique=True)
     description: Optional[str] = None
     cover_image: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
     logo: Optional[dict] = Field(default=None, sa_column=Column(JSONB))
@@ -37,7 +37,6 @@ class Shop(TimeStampedModel, table=True):
 
 class ShopCreate(SQLModel):
     name: str
-    slug: Optional[str] = None
     description: Optional[str] = None
     cover_image: Optional[dict] = None
     logo: Optional[dict] = None
@@ -53,7 +52,6 @@ class ShopVerifyByAdmin(SQLModel):
 # ---------- UPDATE ----------
 class ShopUpdate(SQLModel):
     name: Optional[str] = None
-    slug: Optional[str] = None
     description: Optional[str] = None
     cover_image: Optional[dict] = None
     logo: Optional[dict] = None

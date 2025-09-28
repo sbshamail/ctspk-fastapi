@@ -2,7 +2,7 @@ import ast
 from typing import Optional
 from fastapi import APIRouter, Query
 from sqlalchemy import select
-from src.api.core.utility import Print
+from src.api.core.utility import Print, uniqueSlugify
 from src.api.core.operation import listop, updateOp
 from src.api.core.response import api_response, raiseExceptions
 from sqlalchemy.orm import aliased
@@ -40,7 +40,11 @@ def create(
     # auto set level
     level = calculate_category_level(session, request.parent_id)
     data = Category(**request.model_dump(), level=level)
-    Print(data, "data")
+    data.slug = uniqueSlugify(
+        session,
+        Category,
+        data.name,
+    )
     session.add(data)
     session.commit()
     session.refresh(data)
@@ -64,7 +68,9 @@ def update(
         level = calculate_category_level(session, request.parent_id)
         updateData.level = level  # inject auto-level
 
-    updateOp(updateData, request, session)
+    data = updateOp(updateData, request, session)
+    if data.name:
+        data.slug = uniqueSlugify(session, Category, data.name)
 
     session.commit()
     session.refresh(updateData)
@@ -75,10 +81,22 @@ def update(
     )
 
 
-@router.get("/read/{id}", response_model=CategoryReadNested)
-def get(id: int, session: GetSession):
-
-    read = session.get(Category, id)  # Like findById
+@router.get(
+    "/read/{id_slug}",
+    description="Category ID (int) or slug (str)",
+    response_model=CategoryReadNested,
+)
+def get(id_slug: str, session: GetSession):
+    # Check if it's an integer ID
+    if id_slug.isdigit():
+        read = session.get(Category, int(id_slug))
+    else:
+        # Otherwise treat as slug
+        read = (
+            session.exec(select(Category).where(Category.slug.ilike(id_slug)))
+            .scalars()
+            .first()
+        )
     raiseExceptions((read, 404, "Category not found"))
 
     return api_response(200, "Category Found", CategoryReadNested.model_validate(read))

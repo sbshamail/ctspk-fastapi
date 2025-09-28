@@ -1,5 +1,7 @@
 # root
 from .usersModel import User
+
+# media
 from .userMediaModel import UserMedia
 
 # role
@@ -19,6 +21,12 @@ from .product_model.productsModel import Product
 # cart
 from .cart_model.cartModel import Cart
 
+# banner
+from .banner_model.bannerModel import Banner
+
+# manufacturer
+from .manufacturer_model.manufacturerModel import Manufacturer
+
 # from .product_model import ProductPurchase, Type, VariationOption, Wishlist
 
 
@@ -28,8 +36,6 @@ from .cart_model.cartModel import Cart
 # # tag
 # from .tag_model import Tag, ProductTag
 
-# # Category
-# from .category_model import Category, CategoryProduct
 
 # # order
 # from .order_model.orderModel import Order, OrderProduct
@@ -41,9 +47,6 @@ from .cart_model.cartModel import Cart
 
 # # manufaturer
 # from .manufacturer_model import Manufacturer
-
-# # media
-# from .media_model import Media
 
 
 __all__ = [

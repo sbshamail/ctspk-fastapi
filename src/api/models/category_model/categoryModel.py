@@ -6,14 +6,14 @@ from sqlmodel import SQLModel, Field, Relationship
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 if TYPE_CHECKING:
-    from src.api.models import Product
+    from src.api.models import Product, Banner
 
 
 class Category(TimeStampedModel, table=True):
     __tablename__ = "categories"
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=191)
-    slug: str = Field(max_length=191)
+    slug: str = Field(max_length=191, index=True, unique=True)
     level: int = Field(default=1)  # 1, 2, or 3
     language: str = Field(default="en", max_length=191)
     icon: Optional[str] = Field(max_length=191)
@@ -33,11 +33,11 @@ class Category(TimeStampedModel, table=True):
     )
     children: List["Category"] = Relationship(back_populates="parent")
     products: List["Product"] = Relationship(back_populates="category")
+    banners: List["Banner"] = Relationship(back_populates="category")
 
 
 class CategoryCreate(SQLModel):
     name: str
-    slug: str
     parent_id: Optional[int] = None
     details: Optional[str] = None
     image: Optional[Dict[str, Any]] = None
@@ -48,7 +48,6 @@ class CategoryCreate(SQLModel):
 
 class CategoryUpdate(SQLModel):
     name: Optional[str] = None
-    slug: Optional[str] = None
     is_active: Optional[bool] = None
     parent_id: Optional[int] = None
     details: Optional[str] = None
