@@ -37,26 +37,19 @@ async def lifespan(app: FastAPI):
 
 
 # Initialize the FastAPI app with the custom lifespan
-app = FastAPI(lifespan=lifespan)
-# register_exception_handlers(app)
-app = FastAPI(root_path="/api")
-
+app = FastAPI(lifespan=lifespan, root_path="/api")
 # Allow all origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 👈 Allow all domains
-    # allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods (GET, POST, PUT, DELETE, etc.)
-    allow_headers=["*"],  # Allow all headers
+    allow_origins=[
+        "https://admin-ctspk.vercel.app",
+        "https://ctspk-frontend.vercel.app",
+        "http://localhost:3000",
+    ],  # or "*"
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
-
-@app.middleware("http")
-async def add_referrer_policy(request, call_next):
-    response = await call_next(request)
-    response.headers["Referrer-Policy"] = "no-referrer-when-downgrade"
-    # 👆 sends full referrer for http→http and https→https
-    return response
 
 
 @app.get("/")

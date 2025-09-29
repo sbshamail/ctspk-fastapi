@@ -1,9 +1,11 @@
+from sqlalchemy.exc import DataError
 from datetime import datetime, timezone
 from fastapi import Query
 from sqlalchemy import ScalarResult
 from sqlmodel import Session, SQLModel, select
 from typing import List
 from src.lib.db_con import get_session
+
 from src.api.core.response import api_response
 from src.api.core.operation.list_operation_helper import (
     applyFilters,
@@ -62,7 +64,7 @@ def listop(
 ):
 
     # Compute skip based on page
-    if page is not None:
+    if page is not None and page > 0:
         skip = (page - 1) * limit
 
     # ✅ Fix: avoid boolean check on SQLAlchemy statements
@@ -153,6 +155,12 @@ def listRecords(
             f"data found",
             list_data,
             result["total"],
+        )
+    except DataError as e:
+        # This will catch OFFSET/limit errors and send proper API response
+        return api_response(
+            400,
+            f"Invalid pagination values: {str(e).splitlines()[0]}",
         )
     finally:
         session.close()
