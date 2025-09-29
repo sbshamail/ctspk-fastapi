@@ -38,9 +38,6 @@ async def lifespan(app: FastAPI):
 
 # Initialize the FastAPI app with the custom lifespan
 app = FastAPI(lifespan=lifespan)
-# register_exception_handlers(app)
-app = FastAPI(root_path="/api")
-
 # Allow all origins
 app.add_middleware(
     CORSMiddleware,
@@ -49,6 +46,9 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all methods (GET, POST, PUT, DELETE, etc.)
     allow_headers=["*"],  # Allow all headers
 )
+
+# register_exception_handlers(app)
+app = FastAPI(root_path="/api")
 
 
 @app.get("/")
