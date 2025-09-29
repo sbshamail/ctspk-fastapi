@@ -21,15 +21,15 @@ class UserMedia(TimeStampedModel, table=True):
 
 
 class MediaItem(BaseModel):
-    filename: str
-    extension: str
-    original: str  # ✅ required
+    filename: Optional[str] = None
+    extension: Optional[str] = None
+    original: Optional[str] = None  # ✅ optional now
     size_mb: Optional[float] = None
     thumbnail: Optional[str] = None
 
     @field_serializer("original")
-    def add_domain_to_url(self, v: str, _info):
-        return f"{DOMAIN}{v}"
+    def add_domain_to_url(self, v: Optional[str], _info):
+        return f"{DOMAIN}{v}" if v else None
 
     @field_serializer("thumbnail")
     def add_domain_to_thumbnail(self, v: Optional[str], _info):
@@ -64,8 +64,8 @@ class UserMediaCreate(UserMediaBase):
 
 class UserMediaRead(TimeStampReadModel):
     id: int
-    media_type: str
-    media: List[MediaItem]  # instead of single file
+    media_type: Optional[str] = None
+    media: Optional[list[MediaItem]] = None  # instead of single file
 
     class Config:
         from_attributes = True

@@ -28,6 +28,29 @@ os.makedirs(MEDIA_DIR, exist_ok=True)  # ensure folder exists
 # ----------------------------
 # Upload multiple images (POST)
 # ----------------------------
+# @router.post("/create")
+# async def upload_images(
+#     session: GetSession,
+#     user: requireSignin,
+#     files: List[UploadFile] = File(...),
+#     thumbnail: bool = False,
+# ):
+#     saved_files = await uploadImage(files, user, thumbnail)
+
+#     # create one UserMedia entry with media array
+#     media = UserMedia(
+#         user_id=user["id"],
+#         media=saved_files,
+#         media_type="image",  # you can also make this dynamic if needed
+#     )
+#     session.add(media)
+#     session.commit()
+#     session.refresh(media)
+#     return api_response(
+#         200, "Images uploaded successfully", UserMediaRead.model_validate(media)
+#     )
+
+
 @router.post("/create")
 async def upload_images(
     session: GetSession,
@@ -35,17 +58,32 @@ async def upload_images(
     files: List[UploadFile] = File(...),
     thumbnail: bool = False,
 ):
-    saved_files = await uploadImage(files, user, thumbnail)
+    saved_files = []
+
+    for file in files:
+        # Set your target folder path
+        target_folder = f"media/{user['email']}/"
+        os.makedirs(target_folder, exist_ok=True)
+
+        file_path = os.path.join(target_folder, file.filename)
+
+        # Check if file already exists
+        if os.path.exists(file_path):
+            return api_response(400, f"File '{file.filename}' already exists.")
+
+        # Save the file (you can keep your existing uploadImage logic)
+        saved_files = await uploadImage(files, user, thumbnail)
 
     # create one UserMedia entry with media array
     media = UserMedia(
         user_id=user["id"],
         media=saved_files,
-        media_type="image",  # you can also make this dynamic if needed
+        media_type="image",  # optionally dynamic
     )
     session.add(media)
     session.commit()
     session.refresh(media)
+
     return api_response(
         200, "Images uploaded successfully", UserMediaRead.model_validate(media)
     )
@@ -63,7 +101,7 @@ def get(id: int, session: GetSession):
 @router.get("/list", response_model=list[UserMediaRead])
 def list(query_params: ListQueryParams):
     query_params = vars(query_params)
-    searchFields = ["media_type"]
+    searchFields = ["id"]
 
     return listRecords(
         query_params=query_params,
