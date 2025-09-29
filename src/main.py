@@ -41,7 +41,11 @@ app = FastAPI(lifespan=lifespan, root_path="/api")
 # Allow all origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://admin-ctspk.vercel.app"],  # or "*"
+    allow_origins=[
+        "https://admin-ctspk.vercel.app",
+        "https://ctspk-frontend.vercel.app",
+        "http://localhost:3000",
+    ],  # or "*"
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
