@@ -54,7 +54,8 @@ app.add_middleware(
 @app.middleware("http")
 async def add_referrer_policy(request, call_next):
     response = await call_next(request)
-    response.headers["Referrer-Policy"] = "unsafe-url"  # 👈 always send full referrer
+    response.headers["Referrer-Policy"] = "no-referrer-when-downgrade"
+    # 👆 sends full referrer for http→http and https→https
     return response
 
 
