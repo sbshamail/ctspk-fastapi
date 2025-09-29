@@ -51,6 +51,13 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def add_referrer_policy(request, call_next):
+    response = await call_next(request)
+    response.headers["Referrer-Policy"] = "unsafe-url"  # 👈 always send full referrer
+    return response
+
+
 @app.get("/")
 def root():
     return {"message": "Hello, FastAPI with uv!"}
