@@ -37,18 +37,15 @@ async def lifespan(app: FastAPI):
 
 
 # Initialize the FastAPI app with the custom lifespan
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, root_path="/api")
 # Allow all origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 👈 Allow all domains
-    # allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods (GET, POST, PUT, DELETE, etc.)
-    allow_headers=["*"],  # Allow all headers
+    allow_origins=["https://admin-ctspk.vercel.app"],  # or "*"
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
-# register_exception_handlers(app)
-app = FastAPI(root_path="/api")
 
 
 @app.get("/")
