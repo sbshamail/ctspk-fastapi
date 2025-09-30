@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from pydantic import BaseModel, field_serializer, field_validator
-from sqlalchemy import Column
+from sqlalchemy import Column, UniqueConstraint
 from sqlmodel import JSON, SQLModel, Field, Relationship
 from src.config import DOMAIN
 from src.api.models.baseModel import TimeStampReadModel, TimeStampedModel
@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 class UserMedia(TimeStampedModel, table=True):
     __tablename__ = "media"
+    __table_args__ = (UniqueConstraint("user_id", "filename", name="uix_user_file"),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id")
@@ -27,11 +28,13 @@ class UserMedia(TimeStampedModel, table=True):
 
 
 class MediaItem(BaseModel):
-    filename: Optional[str] = None
-    extension: Optional[str] = None
-    original: Optional[str] = None  # ✅ optional now
+    id: int
+    filename: str
+    extension: str
+    original: str
     size_mb: Optional[float] = None
     thumbnail: Optional[str] = None
+    media_type: str
 
     @field_serializer("original")
     def add_domain_to_url(self, v: Optional[str], _info):
@@ -40,6 +43,9 @@ class MediaItem(BaseModel):
     @field_serializer("thumbnail")
     def add_domain_to_thumbnail(self, v: Optional[str], _info):
         return f"{DOMAIN}{v}" if v else None
+
+    class Config:
+        from_attributes = True
 
 
 # ✅ Base schema (shared between create/update)
@@ -69,9 +75,14 @@ class UserMediaCreate(UserMediaBase):
 
 
 class UserMediaRead(TimeStampReadModel):
-    id: int
-    media_type: Optional[str] = None
-    media: Optional[list[MediaItem]] = None  # instead of single file
+    id: Optional[int] = None
+    user_id: Optional[int] = None
+    filename: Optional[str] = None
+    extension: Optional[str] = None
+    original: Optional[str] = None
+    size_mb: Optional[float] = None
+    thumbnail: Optional[str] = None
+    media_type: str
 
     class Config:
         from_attributes = True
