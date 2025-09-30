@@ -15,7 +15,6 @@ class Attribute(TimeStampedModel, table=True):
     slug: str = Field(max_length=191)
     language: str = Field(default="en", max_length=191)
     name: str = Field(max_length=191)
-    shop_id: Optional[int] = Field(foreign_key="shops.id")
 
     # relationships
     values: List["AttributeValue"] = Relationship(back_populates="attribute")

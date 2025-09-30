@@ -19,7 +19,9 @@ class AttributeValue(TimeStampedModel, table=True):
 
     # relationships
     attribute: "Attribute" = Relationship(back_populates="values")
-    products: List["AttributeProduct"] = Relationship(back_populates="attribute_value")
+    attributes_products: List["AttributeProduct"] = Relationship(
+        back_populates="attribute_value"
+    )
 
 
 class AttributeValueCreate(SQLModel):

@@ -11,11 +11,14 @@ class AttributeProduct(TimeStampedModel, table=True):
     __tablename__: Literal["attribute_product"] = "attribute_product"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    # foreign key
     attribute_value_id: int = Field(foreign_key="attribute_values.id")
     product_id: int = Field(foreign_key="products.id")
 
     # relationships
-    attribute_value: "AttributeValue" = Relationship(back_populates="products")
+    attribute_value: "AttributeValue" = Relationship(
+        back_populates="attributes_products"
+    )
     product: "Product" = Relationship(back_populates="attributes")
 
 

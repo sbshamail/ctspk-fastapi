@@ -2,9 +2,9 @@ import json
 import os
 from sqlalchemy.exc import IntegrityError
 
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Path, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, Path, Query, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlmodel import select
@@ -27,32 +27,6 @@ router = APIRouter(prefix="/media", tags=["Media"])
 # 📂 Configure this path
 MEDIA_DIR = "/var/www/ctspk-media"
 os.makedirs(MEDIA_DIR, exist_ok=True)  # ensure folder exists
-
-
-# ----------------------------
-# Upload multiple images (POST)
-# ----------------------------
-# @router.post("/create")
-# async def upload_images(
-#     session: GetSession,
-#     user: requireSignin,
-#     files: List[UploadFile] = File(...),
-#     thumbnail: bool = False,
-# ):
-#     saved_files = await uploadImage(files, user, thumbnail)
-
-#     # create one UserMedia entry with media array
-#     media = UserMedia(
-#         user_id=user["id"],
-#         media=saved_files,
-#         media_type="image",  # you can also make this dynamic if needed
-#     )
-#     session.add(media)
-#     session.commit()
-#     session.refresh(media)
-#     return api_response(
-#         200, "Images uploaded successfully", UserMediaRead.model_validate(media)
-#     )
 
 
 @router.post("/create")
@@ -191,180 +165,124 @@ async def get_multiple_images(user: requireSignin, data: FilenameList):
     return api_response(200, "Images Found", data=results)
 
 
-# helper: delete actual files from disk (safe basename to avoid path traversal)
-def _delete_files_for_item(user_email: str, item: dict):
-    """Delete file and its thumbnail from disk."""
-    fname = item.get("filename") or (
-        item.get("original") and os.path.basename(item.get("original"))
-    )
-    if fname:
-        file_path = os.path.join(MEDIA_DIR, user_email, fname)
+# Delete Multiple
+
+
+def delete_media_items(
+    session: GetSession,
+    user_id: int,
+    user_email: str,
+    ids: Optional[List[int]] = None,
+    filenames: Optional[List[str]] = None,
+) -> List[UserMedia]:
+    """
+    Reusable helper to delete media by IDs or filenames for a specific user.
+    Removes files + thumbnails from disk and deletes DB rows.
+
+    Args:
+        session: SQLModel session
+        user_email: str (used to build disk path)
+        user_id: int (owner restriction)
+        ids: list of media IDs to delete
+        filenames: list of filenames to delete (case-insensitive)
+
+    Returns:
+        List of deleted UserMedia rows
+    """
+
+    if not ids and not filenames:
+        raise ValueError("Must provide either ids or filenames to delete.")
+
+    stmt = select(UserMedia).where(UserMedia.user_id == user_id)
+
+    if ids:
+        stmt = stmt.where(UserMedia.id.in_(ids))
+    if filenames:
+        stmt = stmt.where(UserMedia.filename.in_([f.lower() for f in filenames]))
+
+    media_records = session.exec(stmt).all()
+    if not media_records:
+        return []
+
+    for media in media_records:
+        # --- Delete original file ---
+        file_path = os.path.join(MEDIA_DIR, user_email, media.filename)
         if os.path.exists(file_path):
             os.remove(file_path)
 
-        # delete thumbnail if stored
-        if item.get("thumbnail"):
+        # --- Delete thumbnail ---
+        if media.thumbnail:
             thumb_path = os.path.join(
-                MEDIA_DIR, user_email, os.path.basename(item["thumbnail"])
+                MEDIA_DIR, user_email, os.path.basename(media.thumbnail)
             )
             if os.path.exists(thumb_path):
                 os.remove(thumb_path)
         else:
-            # fallback thumbnail name
-            base, _ = os.path.splitext(fname)
+            base, _ = os.path.splitext(media.filename)
             thumb_name = f"{base}_thumb.webp"
             thumb_path = os.path.join(MEDIA_DIR, user_email, thumb_name)
             if os.path.exists(thumb_path):
                 os.remove(thumb_path)
 
+        # --- Remove from DB ---
+        session.delete(media)
 
-# @router.delete("/delete/{id_or_filename}")
-# async def delete_media(id_or_filename: str, session: GetSession, user: requireSignin):
-#     # ----- Delete by ID -----
-#     if id_or_filename.isdigit():
-#         media_id = int(id_or_filename)
-#         media_record = session.get(UserMedia, media_id)
-#         if not media_record:
-#             return api_response(400, "Media record not found")
-#         if media_record.user_id != user["id"]:
-#             return api_response(403, "Unauthorized")
-
-#         for item in media_record.media or []:
-#             _delete_files_for_item(user["email"], item)
-
-#         session.delete(media_record)
-#         session.commit()
-#         return api_response(200, "Media record and all files deleted")
-
-#     # ----- Delete by filename -----
-#     filename = id_or_filename
-#     stmt = select(UserMedia).where(UserMedia.user_id == user["id"])
-#     all_media = session.exec(stmt).all()
-
-#     target_record = None
-
-#     for rec in all_media:
-#         print(rec)
-#         if any(
-#             m.get("filename", "").strip().lower() == filename.strip().lower()
-#             for m in (rec.media or [])
-#         ):
-#             target_record = rec
-#             break
-
-#     if not target_record:
-#         return api_response(400, f"File '{filename}' not found for this user")
-
-#     # remove file entry
-#     new_media = [
-#         m
-#         for m in (target_record.media or [])
-#         if m.get("filename", "").strip().lower() != filename.strip().lower()
-#     ]
-
-#     # normalize for schema
-#     def normalize_media_item(item: dict) -> dict:
-#         return {
-#             "filename": item.get("filename"),
-#             "extension": item.get("extension"),
-#             "original": item.get("original") or item.get("url"),
-#             "size_mb": item.get("size_mb"),
-#             "thumbnail": item.get("thumbnail") or item.get("thumbnail_url"),
-#         }
-
-#     target_record.media = (
-#         [normalize_media_item(m) for m in new_media] if new_media else None
-#     )
-
-#     if not new_media:
-#         session.delete(target_record)
-#     else:
-#         session.add(target_record)
-
-#     session.commit()
-
-#     return api_response(
-#         200,
-#         f"File '{filename}' deleted successfully",
-#         UserMediaRead.model_validate(target_record),  # ✅ will now work
-#     )
+    session.commit()
+    return media_records
 
 
-# # Delete Multiple
+@router.delete("/delete-by-ids")
+async def delete_by_ids(
+    session: GetSession,
+    user: requireSignin,
+    ids: List[int] = Query(
+        ..., description="IDs of media to delete"
+    ),  # e.g. /media/delete-by-ids?ids=1&ids=2&ids=3
+):
+    deleted = delete_media_items(
+        session=session,
+        user_id=user["id"],
+        user_email=user["email"],
+        ids=ids,
+    )
+
+    if not deleted:
+        return api_response(404, "No matching media found")
+
+    return api_response(
+        200,
+        "Media deleted successfully",
+        [UserMediaRead.model_validate(m) for m in deleted],
+    )
 
 
-# class DeleteRequest(BaseModel):
-#     items: List[str]  # each item can be an id (string digit) or filename
+from fastapi import Query
+from typing import List
 
 
-# @router.delete("/delete/multiple")
-# async def delete_multiple(req: DeleteRequest, session: GetSession, user: requireSignin):
-#     deleted = []
-#     not_found = []
-#     print()
-#     for id_or_filename in req.items:
-#         # ----- Case 1: Delete by ID -----
-#         if id_or_filename.isdigit():
-#             media_id = int(id_or_filename)
-#             media_record = session.get(UserMedia, media_id)
+@router.delete("/delete-by-filenames")
+async def delete_by_filenames(
+    session: GetSession,
+    user: requireSignin,
+    filenames: List[str] = Query(
+        ...,
+        description="Filenames of media to delete. Example: ?filenames=1.webp&filenames=2.webp",
+    ),
+):
+    deleted = delete_media_items(
+        session=session,
+        user_id=user["id"],
+        user_email=user["email"],
+        filenames=filenames,
+    )
+    if not deleted:
+        return api_response(404, "No media found for given filenames")
 
-#             if media_record and media_record.user_id == user["id"]:
-#                 # Try to delete files (ignore if not found on disk)
-#                 for item in media_record.media or []:
-#                     _delete_files_for_item(user["email"], item)
-
-#                 # Always delete DB record
-#                 session.delete(media_record)
-#                 deleted.append(f"id:{media_id}")
-#             else:
-#                 not_found.append(f"id:{media_id}")
-
-#         # ----- Case 2: Delete by filename -----
-#         else:
-#             filename = id_or_filename
-#             removed_from_db = False
-#             removed_from_disk = False
-
-#             # Delete from disk if exists
-#             file_path = os.path.join(MEDIA_DIR, user["email"], filename)
-#             if os.path.exists(file_path):
-#                 os.remove(file_path)
-#                 # thumbnail too
-#                 base, _ = os.path.splitext(filename)
-#                 thumb_path = os.path.join(
-#                     MEDIA_DIR, user["email"], f"{base}_thumb.webp"
-#                 )
-#                 if os.path.exists(thumb_path):
-#                     os.remove(thumb_path)
-#                 removed_from_disk = True
-
-#             # Delete from DB if exists
-#             stmt = select(UserMedia).where(UserMedia.user_id == user["id"])
-#             all_media = session.exec(stmt).all()
-
-#             for rec in all_media:
-#                 if any(m.get("filename") == filename for m in (rec.media or [])):
-#                     new_media = [m for m in rec.media if m.get("filename") != filename]
-#                     rec.media = new_media
-#                     if not new_media:
-#                         session.delete(rec)
-#                     else:
-#                         session.add(rec)
-#                     removed_from_db = True
-#                     break
-
-#             if removed_from_db or removed_from_disk:
-#                 deleted.append(filename)
-#             else:
-#                 not_found.append(filename)
-
-#     session.commit()
-
-#     detail = f"Deleted: {deleted}" if deleted else "No deletions"
-#     if not_found:
-#         detail += f" | Not found: {not_found}"
-
-#     return api_response(200, detail, {"deleted": deleted, "not_found": not_found})
+    return api_response(
+        200,
+        "Deleted successfully",
+        [UserMediaRead.model_validate(m) for m in deleted],
+    )
 
 
 # @router.delete("/delete-multiple")
