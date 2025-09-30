@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import Query
 from sqlalchemy import ScalarResult
 from sqlmodel import Session, SQLModel, select
-from typing import List
+from typing import List, Optional
 from src.lib.db_con import get_session
 
 from src.api.core.response import api_response
@@ -108,6 +108,7 @@ def listRecords(
     query_params: dict,
     searchFields: list[str],
     Model,
+    customFilters: Optional[List[List[str]]] = None,
     join_options: list = [],
     Schema: type[SQLModel] = None,
     otherFilters=None,
@@ -129,6 +130,7 @@ def listRecords(
             "columnFilters": columnFilters,
             "dateRange": dateRange,
             "numberRange": numberRange,
+            "customFilters": customFilters,
         }
 
         result = listop(

@@ -67,4 +67,4 @@ async def uploadImage(files, user, thumbnail):
             file_info["thumbnail"] = f"/media/{user['email']}/{thumb_name}"
 
         saved_files.append(file_info)
-        return saved_files
+    return saved_files

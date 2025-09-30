@@ -14,8 +14,14 @@ class UserMedia(TimeStampedModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id")
-    media: Optional[List[Dict[str, Any]]] = Field(sa_column=Column(JSON))
+
+    filename: str
+    extension: str
+    original: str
+    size_mb: Optional[float] = None
+    thumbnail: Optional[str] = None
     media_type: str  # "image" | "video" | "doc"
+
     # relationship back to user
     user: "User" = Relationship(back_populates="media")
 
