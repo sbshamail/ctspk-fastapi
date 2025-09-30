@@ -16,12 +16,14 @@ class Attribute(TimeStampedModel, table=True):
     language: str = Field(default="en", max_length=191)
     name: str = Field(max_length=191)
 
+    # 📝 Example use: "Color", "Size", "Material"
+    # One Attribute can have multiple AttributeValues (e.g. Color → Red, Blue, Green)
+
     # relationships
     values: List["AttributeValue"] = Relationship(back_populates="attribute")
 
 
 class AttributeCreate(SQLModel):
-    slug: str
     name: str
     language: str = "en"
     shop_id: Optional[int] = None

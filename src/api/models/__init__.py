@@ -27,6 +27,11 @@ from .banner_model.bannerModel import Banner
 # manufacturer
 from .manufacturer_model.manufacturerModel import Manufacturer
 
+# attribute
+from .attributes_model.attributeModel import Attribute
+from .attributes_model.attributeValueModel import AttributeValue
+from .attributes_model.attributeProductModel import AttributeProduct
+
 # from .product_model import ProductPurchase, Type, VariationOption, Wishlist
 
 

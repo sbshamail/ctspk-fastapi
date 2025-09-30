@@ -15,7 +15,8 @@ class AttributeProduct(TimeStampedModel, table=True):
     attribute_value_id: int = Field(foreign_key="attribute_values.id")
     product_id: int = Field(foreign_key="products.id")
 
-    # relationships
+    # 📝 Join table: connects products to specific attribute values.
+    # Example: Product #42 → Attribute "Color" → Value "Red"
     attribute_value: "AttributeValue" = Relationship(
         back_populates="attributes_products"
     )
@@ -31,3 +32,8 @@ class AttributeProductRead(TimeStampReadModel):
     id: int
     attribute_value_id: int
     product_id: int
+
+
+class AttributeProductUpdate(SQLModel):
+    attribute_value_id: Optional[int] = None
+    product_id: Optional[int] = None

@@ -4,6 +4,11 @@ from sqlmodel import SQLModel
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.core.middleware.error_handling import register_exception_handlers
+from src.api.routers.attribute import (
+    attributeRoute,
+    attributeValueRoute,
+    attributeProductRoute,
+)
 from src.api.routers import (
     # user
     authRoute,
@@ -70,6 +75,10 @@ app.include_router(userShopRoute.router)
 app.include_router(categoryRoute.router)
 # Product
 app.include_router(productRoute.router)
+# Attribute
+app.include_router(attributeRoute.router)
+app.include_router(attributeValueRoute.router)
+app.include_router(attributeProductRoute.router)
 # Cart
 app.include_router(cartRoute.router)
 # Manufacturer

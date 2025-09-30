@@ -16,7 +16,7 @@ class AttributeValue(TimeStampedModel, table=True):
     value: str = Field(max_length=191)
     language: str = Field(default="en", max_length=191)
     meta: Optional[str] = Field(max_length=191)
-
+    # 📝 Example use: For Attribute "Color", values might be "Red", "Blue", "Green"
     # relationships
     attribute: "Attribute" = Relationship(back_populates="values")
     attributes_products: List["AttributeProduct"] = Relationship(
@@ -25,19 +25,21 @@ class AttributeValue(TimeStampedModel, table=True):
 
 
 class AttributeValueCreate(SQLModel):
-    slug: str
     attribute_id: int
     value: str
+    meta: Optional[str] = None
     language: str = "en"
 
 
 class AttributeValueRead(TimeStampReadModel):
     id: int
     slug: str
+    meta: Optional[str]
     value: str
-    language: str
 
 
 class AttributeValueUpdate(SQLModel):
     value: Optional[str] = None
     language: Optional[str] = None
+    meta: Optional[str] = None
+    attribute_id: Optional[int] = None
