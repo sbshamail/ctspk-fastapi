@@ -9,6 +9,8 @@ from src.api.models.manufacturer_model import (
     ManufacturerCreate,
     ManufacturerRead,
     ManufacturerUpdate,
+    ManufacturerApproved,
+    ManufacturerActivate
 )
 from src.api.core.dependencies import (
     GetSession,
@@ -104,3 +106,43 @@ def list(query_params: ListQueryParams, user: requireSignin):
         Model=Manufacturer,
         Schema=ManufacturerRead,
     )
+
+# ✅ PATCH Manufacturer status (toggle/verify)
+@router.patch("/{id}/status")
+def patch_manufacturer_status(
+    id: int,
+    request: ManufacturerActivate,
+    session: GetSession,
+    user=requirePermission(["system:*"]),  # 🔒 both allowed
+):
+    manufacturer = session.get(Manufacturer, id)
+    raiseExceptions((manufacturer, 404, "Manufacturer not found"))
+
+    # only update status fields
+    updated = updateOp(manufacturer, request, session)
+
+    session.add(updated)
+    session.commit()
+    session.refresh(updated)
+
+    return api_response(200, "Manufacturer status updated successfully", ManufacturerRead.model_validate(updated))
+
+# ✅ PATCH Manufacturer Approved (toggle/verify)
+@router.patch("/{id}/approved")
+def patch_manufacturer_approved(
+    id: int,
+    request: ManufacturerApproved,
+    session: GetSession,
+    user=requirePermission(["system:*"]),  # 🔒 both allowed
+):
+    manufacturer = session.get(Manufacturer, id)
+    raiseExceptions((manufacturer, 404, "Manufacturer not found"))
+
+    # only update status fields
+    updated = updateOp(manufacturer, request, session)
+
+    session.add(updated)
+    session.commit()
+    session.refresh(updated)
+
+    return api_response(200, "Manufacturer Approved/Disapproved updated successfully", ManufacturerRead.model_validate(updated))

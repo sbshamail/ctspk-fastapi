@@ -1,1 +1,1 @@
-from .manufacturerModel import Manufacturer, ManufacturerCreate, ManufacturerRead, ManufacturerUpdate
+from .manufacturerModel import Manufacturer, ManufacturerCreate, ManufacturerRead, ManufacturerUpdate,ManufacturerActivate,ManufacturerApproved

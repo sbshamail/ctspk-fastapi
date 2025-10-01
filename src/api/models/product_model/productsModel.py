@@ -135,6 +135,9 @@ class ProductUpdate(SQLModel):
     dimension_unit: Optional[str] = None
     sku: Optional[str] = None
 
+class ProductActivate(SQLModel):
+    is_active: bool
+
 
 class UserReadForProduct(TimeStampReadModel):
     id: int
