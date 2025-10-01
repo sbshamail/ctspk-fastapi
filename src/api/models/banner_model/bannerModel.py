@@ -47,7 +47,7 @@ class BannerRead(TimeStampReadModel):
     slug: str
     image: Optional[Dict[str, Any]] = None
     is_active: bool
-    category: CategoryRead
+    category: Optional[CategoryRead] = None
 
     class Config:
         from_attributes = True
