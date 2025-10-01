@@ -128,7 +128,7 @@ def patch_manufacturer_status(
     return api_response(200, "Manufacturer status updated successfully", ManufacturerRead.model_validate(updated))
 
 # ✅ PATCH Manufacturer Approved (toggle/verify)
-@router.patch("/{id}/approved")
+@router.patch("/{id}/approval")
 def patch_manufacturer_approved(
     id: int,
     request: ManufacturerApproved,
