@@ -74,13 +74,13 @@ class UserMediaCreate(UserMediaBase):
     user_id: int
 
 
-class UserMediaRead(TimeStampReadModel):
+class UserMediaRead(BaseModel):
     id: Optional[int] = None
-    user_id: Optional[int] = None
+    # user_id: Optional[int] = None
     filename: Optional[str] = None
     extension: Optional[str] = None
     original: Optional[str] = None
-    size_mb: Optional[float] = None
+    # size_mb: Optional[float] = None
     thumbnail: Optional[str] = None
     media_type: str
 
