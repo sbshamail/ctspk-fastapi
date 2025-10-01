@@ -91,19 +91,31 @@ class Product(TimeStampedModel, table=True):
 
 class ProductCreate(SQLModel):
     name: str
+
     description: str
     image: Optional[Dict[str, Any]] = None
     gallery: Optional[List[Dict[str, Any]]] = None
+    purchase_price: Optional[float] = None
     category_id: int
     price: float
     unit: str
     max_price: float
     min_price: float
     shop_id: int
+    quantity: Optional[int] = None
+    in_stock: Optional[bool] = None
+    is_taxable: Optional[bool] = None
+    is_feature: Optional[bool] = Field(default=False)
+    height: Optional[float] = None
+    width: Optional[float] = None
+    length: Optional[float] = None
+    dimension_unit: Optional[str] = None
+    sku: Optional[str] = None
 
 
 class ProductUpdate(SQLModel):
     name: Optional[str] = None
+    is_active: Optional[bool] = True
     category_id: int = None
     image: Optional[Dict[str, Any]] = None
     gallery: Optional[List[Dict[str, Any]]] = None
@@ -114,6 +126,14 @@ class ProductUpdate(SQLModel):
     shop_id: Optional[int] = None
     unit: Optional[str] = None
     is_feature: Optional[bool] = Field(default=False)
+    quantity: Optional[int] = None
+    in_stock: Optional[bool] = None
+    is_taxable: Optional[bool] = None
+    height: Optional[float] = None
+    width: Optional[float] = None
+    length: Optional[float] = None
+    dimension_unit: Optional[str] = None
+    sku: Optional[str] = None
 
 
 class UserReadForProduct(TimeStampReadModel):
