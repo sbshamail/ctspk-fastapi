@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from sqlalchemy import select
+from src.api.models.attributes_model.attributeValueModel import AttributeValue
 from src.api.core.utility import uniqueSlugify
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.response import api_response, raiseExceptions
@@ -20,22 +21,69 @@ from src.api.core.dependencies import (
 router = APIRouter(prefix="/attribute", tags=["Attribute"])
 
 
+# @router.post("/create")
+# def create_role(
+#     request: AttributeCreate,
+#     session: GetSession,
+#     user=requirePermission("attribute"),
+# ):
+#     attribute = Attribute(**request.model_dump())
+#     attribute.slug = uniqueSlugify(
+#         session,
+#         Attribute,
+#         attribute.name,
+#     )
+#     session.add(attribute)
+#     session.commit()
+#     session.refresh(attribute)
+#     return api_response(200, "Attribute Created Successfully", attribute)
+
+
 @router.post("/create")
-def create_role(
+def create_attribute(
     request: AttributeCreate,
     session: GetSession,
     user=requirePermission("attribute"),
 ):
-    attribute = Attribute(**request.model_dump())
-    attribute.slug = uniqueSlugify(
-        session,
-        Attribute,
-        attribute.name,
-    )
-    session.add(attribute)
-    session.commit()
-    session.refresh(attribute)
-    return api_response(200, "Attribute Created Successfully", attribute)
+    try:
+        with session.begin():  # <-- Transaction starts here
+
+            # Step 1: Create Attribute
+            attribute = Attribute(
+                name=request.name,
+                language=request.language,
+            )
+            attribute.slug = uniqueSlugify(
+                session,
+                Attribute,
+                attribute.name,
+            )
+            session.add(attribute)
+            session.flush()  # ensures attribute.id is available before commit
+
+            # Step 2: Create Attribute Values (if provided)
+            if request.values:
+                for val in request.values:
+                    attr_value = AttributeValue(
+                        slug=uniqueSlugify(session, AttributeValue, val.value),
+                        attribute_id=attribute.id,
+                        value=val.value,
+                        language=getattr(val, "language", "en"),
+                        meta=getattr(val, "meta", None),
+                    )
+                    session.add(attr_value)
+
+        # 🚀 At this point, commit happens automatically if no error occurred
+        session.refresh(attribute)
+        return api_response(
+            200,
+            "Attribute Created Successfully",
+            AttributeRead.model_validate(attribute),
+        )
+
+    except Exception as e:
+        session.rollback()  # rollback if error
+        raise e
 
 
 @router.put("/update/{id}", response_model=AttributeRead)

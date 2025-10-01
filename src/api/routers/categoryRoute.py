@@ -218,6 +218,7 @@ def list(
             name=c.name,
             image=c.image,
             slug=c.slug,
+            details=c.details,
             is_active=c.is_active,
             parent_id=c.parent_id,
             created_at=c.created_at,
