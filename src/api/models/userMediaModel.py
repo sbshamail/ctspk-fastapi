@@ -74,15 +74,13 @@ class UserMediaCreate(UserMediaBase):
     user_id: int
 
 
-class UserMediaRead(BaseModel):
-    id: Optional[int] = None
-    # user_id: Optional[int] = None
-    filename: Optional[str] = None
-    extension: Optional[str] = None
-    original: Optional[str] = None
+class UserMediaRead(MediaItem):
+    pass
+    # id: Optional[int] = None
+    # # user_id: Optional[int] = None
+    # filename: Optional[str] = None
+    # extension: Optional[str] = None
+    # original: Optional[str] = None
     # size_mb: Optional[float] = None
-    thumbnail: Optional[str] = None
-    media_type: str
-
-    class Config:
-        from_attributes = True
+    # thumbnail: Optional[str] = None
+    # media_type: str
