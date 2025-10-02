@@ -118,6 +118,7 @@ def login_user(
     response: Response,
     session: GetSession,
 ):
+
     user = (
         session.exec(
             select(User)

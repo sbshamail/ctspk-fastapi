@@ -30,9 +30,26 @@ class Category(TimeStampedModel, table=True):
     # relationships
     parent: Optional["Category"] = Relationship(
         back_populates="children",
-        sa_relationship_kwargs={"remote_side": "Category.id"},
+        sa_relationship_kwargs={
+            "remote_side": "Category.id",
+            "foreign_keys": "[Category.parent_id]",  # must be string or class-level ref
+        },
     )
-    children: List["Category"] = Relationship(back_populates="parent")
+
+    children: List["Category"] = Relationship(
+        back_populates="parent",
+        sa_relationship_kwargs={
+            "foreign_keys": "[Category.parent_id]",
+        },
+    )
+
+    root: Optional["Category"] = Relationship(
+        sa_relationship_kwargs={
+            "remote_side": "Category.id",
+            "foreign_keys": "[Category.root_id]",
+        },
+    )
+
     products: List["Product"] = Relationship(back_populates="category")
     banners: List["Banner"] = Relationship(back_populates="category")
 
@@ -65,6 +82,7 @@ class CategoryRead(TimeStampReadModel):
     id: int
     name: str
     slug: str
+    root_id: int
     image: Dict[str, Any] | None = None
     details: Optional[str] = None
     slug: Optional[str] = None
@@ -75,6 +93,7 @@ class CategoryRead(TimeStampReadModel):
 class CategoryReadNested(TimeStampReadModel):
     id: int
     name: str
+    root_id: int
     details: Optional[str] = None
     image: Dict[str, Any] | None = None
     slug: Optional[str] = None
