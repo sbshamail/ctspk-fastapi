@@ -29,7 +29,11 @@ from src.api.routers import (
     cartRoute,
     # manufacturer
     manufacturerRoute,
+    # shipping
+    shippingRoute,
     # banner
+    # Email Template
+    emailRoute,
     bannerRoute,
 )
 
@@ -85,3 +89,7 @@ app.include_router(cartRoute.router)
 app.include_router(manufacturerRoute.router)
 # Banner
 app.include_router(bannerRoute.router)
+# Shipping
+app.include_router(shippingRoute.router)
+# Email Template
+app.include_router(emailRoute.router)
