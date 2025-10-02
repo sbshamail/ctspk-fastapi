@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 class Role(TimeStampedModel, table=True):
     __tablename__ = "roles"
     id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(max_length=50)
+    name: str = Field(max_length=50, unique=True)
     description: Optional[str] = None
     permissions: list[str] = Field(
         default_factory=list,
