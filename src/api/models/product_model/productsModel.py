@@ -98,6 +98,8 @@ class ProductCreate(SQLModel):
     purchase_price: Optional[float] = None
     category_id: int
     price: float
+    sale_price: Optional[float] = None
+    purchase_price: Optional[float] = None
     unit: str
     max_price: float
     min_price: float
@@ -121,6 +123,8 @@ class ProductUpdate(SQLModel):
     gallery: Optional[List[Dict[str, Any]]] = None
     description: Optional[str] = None
     price: Optional[float] = None
+    sale_price: Optional[float] = None
+    purchase_price: Optional[float] = None
     max_price: Optional[float] = None
     min_price: Optional[float] = None
     shop_id: Optional[int] = None
@@ -166,9 +170,15 @@ class ProductRead(TimeStampReadModel):
     image: Optional[Dict[str, Any]] = None
     gallery: Optional[List[Dict[str, Any]]] = None
     is_active: bool
+    is_feature: Optional[bool] = None
     quantity: int
     status: ProductStatus
     product_type: ProductType
     category: CategoryRead
     shop: ShopReadForProduct
     unit: Optional[str] = None
+    dimension_unit: Optional[str] = None
+    sku: Optional[str] = None
+    height: Optional[float] = None
+    width: Optional[float] = None
+    length: Optional[float] = None
