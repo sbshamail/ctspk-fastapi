@@ -21,6 +21,7 @@ class Category(TimeStampedModel, table=True):
     details: Optional[str] = None
     # own forien id
     parent_id: Optional[int] = Field(default=None, foreign_key="categories.id")
+    root_id: Optional[int] = Field(foreign_key="categories.id", index=True)
 
     admin_commission_rate: Optional[float] = None
     is_active: bool = Field(default=True)
@@ -55,9 +56,11 @@ class CategoryUpdate(SQLModel):
     icon: Optional[str] = None
     admin_commission_rate: Optional[float] = None
 
+
 class CategoryActivate(SQLModel):
     is_active: bool
-    
+
+
 class CategoryRead(TimeStampReadModel):
     id: int
     name: str

@@ -90,3 +90,10 @@ alembic stamp <revision_id> # force DB revision
 #
 
 ## http://localhost:8000/docs
+
+# Git
+
+```shell
+# For a pull with merge you just need this command:
+git pull --no-rebase
+```

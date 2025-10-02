@@ -12,7 +12,7 @@ from src.api.models.category_model.categoryModel import (
     CategoryRead,
     CategoryReadNested,
     CategoryUpdate,
-    CategoryActivate
+    CategoryActivate,
 )
 from src.api.core.dependencies import GetSession, requirePermission
 from sqlalchemy.orm import selectinload
@@ -41,14 +41,24 @@ def create(
     # auto set level
     level = calculate_category_level(session, request.parent_id)
     data = Category(**request.model_dump(), level=level)
-    data.slug = uniqueSlugify(
-        session,
-        Category,
-        data.name,
-    )
+
+    # generate unique slug
+    data.slug = uniqueSlugify(session, Category, data.name)
+
+    # add to session
     session.add(data)
-    session.commit()
+    session.flush()  # assigns 'id' without committing
+
+    # set root_id based on parent
+    if data.parent_id is None:
+        data.root_id = data.id  # top-level category
+    else:
+        parent = session.get(Category, data.parent_id)
+        data.root_id = parent.root_id if parent.root_id else parent.id
+
+    session.commit()  # commit everything in one transaction
     session.refresh(data)
+
     return api_response(
         200, "Category Created Successfully", CategoryRead.model_validate(data)
     )
@@ -245,6 +255,8 @@ def list(
             roots.append(cat)
 
     return api_response(200, "Category found", roots, result["total"])
+
+
 # ✅ PATCH Category status (toggle/verify)
 @router.patch("/{id}/status")
 def patch_category_status(
@@ -263,4 +275,8 @@ def patch_category_status(
     session.commit()
     session.refresh(updated)
 
-    return api_response(200, "Category status updated successfully", CategoryRead.model_validate(updated))
+    return api_response(
+        200,
+        "Category status updated successfully",
+        CategoryRead.model_validate(updated),
+    )
