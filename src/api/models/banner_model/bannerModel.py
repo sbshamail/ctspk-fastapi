@@ -39,6 +39,9 @@ class BannerUpdate(SQLModel):
     description: Optional[str] = None
     image: Optional[Dict[str, Any]] = None
 
+class BannerActivate(SQLModel):
+    is_active: bool
+
 
 class BannerRead(TimeStampReadModel):
     id: int

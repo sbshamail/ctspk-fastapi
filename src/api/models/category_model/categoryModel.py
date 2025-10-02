@@ -55,7 +55,9 @@ class CategoryUpdate(SQLModel):
     icon: Optional[str] = None
     admin_commission_rate: Optional[float] = None
 
-
+class CategoryActivate(SQLModel):
+    is_active: bool
+    
 class CategoryRead(TimeStampReadModel):
     id: int
     name: str

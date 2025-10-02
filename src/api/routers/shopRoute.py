@@ -144,3 +144,22 @@ def list_shops(
         Model=Shop,
         Schema=ShopRead,
     )
+# ✅ PATCH shop status (toggle/verify)
+@router.patch("/{id}/status")
+def patch_shop_status(
+    id: int,
+    request: ShopVerifyByAdmin,
+    session: GetSession,
+    user=requirePermission(["system:*", "shop_admin"]),  # 🔒 both allowed
+):
+    shop = session.get(Shop, id)
+    raiseExceptions((shop, 404, "Shop not found"))
+
+    # only update status fields
+    updated = updateOp(shop, request, session)
+
+    session.add(updated)
+    session.commit()
+    session.refresh(updated)
+
+    return api_response(200, "Shop status updated successfully", ShopRead.model_validate(updated))

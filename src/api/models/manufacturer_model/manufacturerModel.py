@@ -36,6 +36,11 @@ class ManufacturerCreate(SQLModel):
     cover_image: Optional[Dict[str, Any]] = None
     website: str
 
+class ManufacturerActivate(SQLModel):
+    is_active: bool
+
+class ManufacturerApproved(SQLModel):
+    is_approved: bool
 
 class ManufacturerRead(TimeStampReadModel):
     id: int

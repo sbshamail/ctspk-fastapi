@@ -3,7 +3,7 @@ from sqlalchemy import select
 from src.api.core.utility import uniqueSlugify
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.response import api_response, raiseExceptions
-from src.api.models.banner_model import Banner, BannerCreate, BannerRead, BannerUpdate
+from src.api.models.banner_model import Banner, BannerCreate, BannerRead, BannerUpdate,BannerActivate
 from src.api.core.dependencies import GetSession, ListQueryParams, requirePermission
 
 
@@ -96,3 +96,22 @@ def list(query_params: ListQueryParams):
         Model=Banner,
         Schema=BannerRead,
     )
+# ✅ PATCH Banner status (toggle/verify)
+@router.patch("/{id}/status")
+def patch_banner_status(
+    id: int,
+    request: BannerActivate,
+    session: GetSession,
+    user=requirePermission(["system:*"]),  # 🔒 both allowed
+):
+    banner = session.get(Banner, id)
+    raiseExceptions((banner, 404, "Banner not found"))
+
+    # only update status fields
+    updated = updateOp(banner, request, session)
+
+    session.add(updated)
+    session.commit()
+    session.refresh(updated)
+
+    return api_response(200, "Banner status updated successfully", BannerRead.model_validate(updated))

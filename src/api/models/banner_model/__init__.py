@@ -1,1 +1,1 @@
-from .bannerModel import Banner, BannerCreate, BannerRead, BannerUpdate
+from .bannerModel import Banner, BannerCreate, BannerRead, BannerUpdate,BannerActivate

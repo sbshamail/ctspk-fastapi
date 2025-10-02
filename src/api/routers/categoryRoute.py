@@ -12,6 +12,7 @@ from src.api.models.category_model.categoryModel import (
     CategoryRead,
     CategoryReadNested,
     CategoryUpdate,
+    CategoryActivate
 )
 from src.api.core.dependencies import GetSession, requirePermission
 from sqlalchemy.orm import selectinload
@@ -244,3 +245,22 @@ def list(
             roots.append(cat)
 
     return api_response(200, "Category found", roots, result["total"])
+# ✅ PATCH Category status (toggle/verify)
+@router.patch("/{id}/status")
+def patch_category_status(
+    id: int,
+    request: CategoryActivate,
+    session: GetSession,
+    user=requirePermission(["system:*"]),  # 🔒 both allowed
+):
+    category = session.get(Category, id)
+    raiseExceptions((category, 404, "Product not found"))
+
+    # only update status fields
+    updated = updateOp(category, request, session)
+
+    session.add(updated)
+    session.commit()
+    session.refresh(updated)
+
+    return api_response(200, "Category status updated successfully", CategoryRead.model_validate(updated))
