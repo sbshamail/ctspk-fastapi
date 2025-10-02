@@ -32,6 +32,12 @@ from .attributes_model.attributeModel import Attribute
 from .attributes_model.attributeValueModel import AttributeValue
 from .attributes_model.attributeProductModel import AttributeProduct
 
+# email
+from .email_model.emailModel import Emailtemplate
+
+# shipping
+from .shipping_model.shippingModel import Shipping
+
 # from .product_model import ProductPurchase, Type, VariationOption, Wishlist
 
 
