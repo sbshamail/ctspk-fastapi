@@ -13,7 +13,7 @@ class Emailtemplate(TimeStampedModel, table=True):
     __tablename__: Literal["email_template"] = "email_template"
 
     # Use mapper arguments to handle the conflict
-    __mapper_args__ = {"column_prefix": "_"}
+
 
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=191, nullable=False)
@@ -35,8 +35,9 @@ class EmailCreate(SQLModel):
     is_active: bool = True
 
 class EmailRead(TimeStampReadModel):
+    id:int
     name: str
-    amount: float
+    subject: Optional[str]
     content: Optional[str]
     is_active: bool 
 
