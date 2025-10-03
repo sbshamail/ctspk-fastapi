@@ -12,7 +12,7 @@ from src.api.models.product_model.productsModel import (
     ProductCreate,
     ProductRead,
     ProductUpdate,
-    ProductActivate
+    ProductActivate,
 )
 from src.api.core.dependencies import (
     GetSession,
@@ -166,6 +166,8 @@ def get_products_by_category(category_id: int, session: GetSession):
         )
     finally:
         session.close()
+
+
 # ✅ PATCH Product status (toggle/verify)
 @router.patch("/{id}/status")
 def patch_product_status(
@@ -184,4 +186,6 @@ def patch_product_status(
     session.commit()
     session.refresh(updated)
 
-    return api_response(200, "Product status updated successfully", ProductRead.model_validate(updated))
+    return api_response(
+        200, "Product status updated successfully", ProductRead.model_validate(updated)
+    )

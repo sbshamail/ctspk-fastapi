@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, List
 from datetime import datetime
+from pydantic import BaseModel
 from sqlmodel import JSON, Column, SQLModel, Field, Relationship
 from enum import Enum
 
@@ -139,22 +140,28 @@ class ProductUpdate(SQLModel):
     dimension_unit: Optional[str] = None
     sku: Optional[str] = None
 
+
 class ProductActivate(SQLModel):
     is_active: bool
 
 
-class UserReadForProduct(TimeStampReadModel):
+class UserReadForProduct(SQLModel):
     id: int
     name: str
 
 
-class ShopReadForProduct(TimeStampReadModel):
+class ShopReadForProduct(SQLModel):
     id: int
     name: Optional[str] = None
-    # include nested owner
-    owner: Optional[UserReadForProduct] = None
 
-    model_config = {"from_attributes": True}
+
+class CategoryReadProduct(SQLModel):
+    id: int
+    name: str
+    slug: str
+    root_id: int
+    # image: Dict[str, Any] | None = None
+    parent_id: Optional[int] = None
 
 
 class ProductRead(TimeStampReadModel):
@@ -174,7 +181,7 @@ class ProductRead(TimeStampReadModel):
     quantity: int
     status: ProductStatus
     product_type: ProductType
-    category: CategoryRead
+    category: CategoryReadProduct
     shop: ShopReadForProduct
     unit: Optional[str] = None
     dimension_unit: Optional[str] = None

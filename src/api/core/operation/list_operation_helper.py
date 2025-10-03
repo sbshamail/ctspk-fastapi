@@ -3,16 +3,13 @@ from datetime import datetime, timezone
 import json
 from typing import List, Optional
 from fastapi import HTTPException
-from sqlmodel import SQLModel, and_, or_
+from sqlmodel import SQLModel, and_, asc, desc, func, or_
 from sqlmodel.sql.expression import Select, SelectOfScalar
 
 from src.api.core.response import api_response
 from src.api.core.utility import parse_date
 
-# Optional Type Handling Function
-from fastapi import HTTPException
 from sqlalchemy.sql import sqltypes as SATypes
-from sqlalchemy import cast, String
 
 
 def _get_column_type(attr):
@@ -62,11 +59,11 @@ def _coerce_value_for_column(col_type, value, col_name: str):
                 else:
                     return float(v)
             except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Column '{col_name}' expects a number; got '{value}'.",
+                raise api_response(
+                    400,
+                    f"Column '{col_name}' expects a number; got '{value}'.",
                 )
-        raise HTTPException(400, f"Column '{col_name}' expects a number.")
+        raise api_response(400, f"Column '{col_name}' expects a number.")
     elif _is_bool_type(col_type):
         if isinstance(value, bool):
             return value
@@ -76,12 +73,12 @@ def _coerce_value_for_column(col_type, value, col_name: str):
                 return True
             if v in ("false", "0", "no"):
                 return False
-        raise HTTPException(400, f"Column '{col_name}' expects a boolean.")
+        raise api_response(400, f"Column '{col_name}' expects a boolean.")
     elif _is_datetime_type(col_type):
         if isinstance(value, str):
             # reuse your existing parse_date
             return parse_date(value)
-        raise HTTPException(400, f"Column '{col_name}' expects a datetime string.")
+        raise api_response(400, f"Column '{col_name}' expects a datetime string.")
     else:
         # string-like or other -> ensure string
         return str(value) if not isinstance(value, str) else value
@@ -120,6 +117,7 @@ def applyFilters(
     numberRange: Optional[List[str]] = None,
     customFilters: Optional[List[List[str]]] = None,
     otherFilters=None,
+    sort: Optional[str] = None,
 ):
     if otherFilters:
         # pass the current statement through the hook
@@ -169,6 +167,7 @@ def applyFilters(
 
             statement = statement.where(and_(*filters))
             return statement
+
         except Exception as e:
             return api_response(
                 400,
@@ -239,5 +238,29 @@ def applyFilters(
             )
 
         statement = statement.where(and_(column >= start_date, column <= end_date))
+
+        # Sorting
+    print("sort====>", sort)
+    if sort:
+        try:
+            column_name, direction = json.loads(sort)
+            attr, statement = resolve_column(Model, column_name, statement)
+            col_type = _get_column_type(attr)
+
+            # Case-insensitive sorting for strings
+            if _is_string_type(col_type):
+                order_expr = func.lower(attr)
+            else:
+                order_expr = attr
+
+            if direction.lower() in ["asc", "asc"]:
+                statement = statement.order_by(asc(order_expr))
+            elif direction.lower() in ["desc", "desc"]:
+                statement = statement.order_by(desc(order_expr))
+        except Exception as e:
+            return api_response(
+                400,
+                f"Invalid sort parameter: {e}",
+            )
 
     return statement

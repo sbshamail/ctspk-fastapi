@@ -61,6 +61,7 @@ def listop(
     limit: int = Query(10, ge=1, le=200),
     Statement=None,
     otherFilters=None,
+    sort=None,
 ):
 
     # Compute skip based on page
@@ -91,6 +92,7 @@ def listop(
         numberRange=numberRange,
         customFilters=customFilters,
         otherFilters=otherFilters,
+        sort=sort,
     )
 
     # Total count (before pagination)
@@ -124,6 +126,7 @@ def listRecords(
         page = int(query_params.get("page", 1))
         skip = int(query_params.get("skip", 0))
         limit = int(query_params.get("limit", 10))
+        sort = query_params.get("sort")
 
         filters = {
             "searchTerm": searchTerm,
@@ -144,6 +147,7 @@ def listRecords(
             join_options=join_options,
             otherFilters=otherFilters,
             Statement=Statement,
+            sort=sort,
         )
 
         if not result["data"]:

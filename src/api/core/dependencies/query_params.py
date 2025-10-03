@@ -18,6 +18,9 @@ class list_query_params:
         page: int = Query(1, description="Page number"),
         skip: int = Query(0, description="Number of items to skip"),
         limit: int = Query(10, description="Number of items to return"),
+        sort: Optional[str] = Query(
+            None, description="Example : ['created_at|price','asc|desc']"
+        ),
     ):
         self.dateRange = dateRange
         self.skip = skip
@@ -26,3 +29,4 @@ class list_query_params:
         self.columnFilters = columnFilters
         self.page = page
         self.numberRange = numberRange
+        self.sort = sort
