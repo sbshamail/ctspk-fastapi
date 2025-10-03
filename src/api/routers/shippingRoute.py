@@ -9,7 +9,6 @@ from src.api.models.shipping_model import (
     ShippingCreate,
     ShippingRead,
     ShippingUpdate,
-    ShippingType,
     ShippingActivate
 )
 from src.api.core.dependencies import (
@@ -27,36 +26,41 @@ router = APIRouter(prefix="/shipping", tags=["Shipping"])
 def create_role(
     request: ShippingCreate,
     session: GetSession,
-    user=requirePermission("shipping"),
+    user=requirePermission("system:*"),
 ):
-    shipping = sh(**request.model_dump())
-    shipping.slug = uniqueSlugify(
-        session,
-        Shipping,
-        shipping.name,
-    )
+    # Debug print
+   # print("📦 Incoming request:", request.model_dump())
+
+    # Create ORM object
+    shipping = Shipping(**request.model_dump())
+
+    # Auto-generate slug
+    shipping.slug = uniqueSlugify(session, Shipping, shipping.name)
+
+    # Save to DB
     session.add(shipping)
     session.commit()
     session.refresh(shipping)
-    return api_response(200, "Shipping Created Successfully", shipping)
 
+    return api_response(200, "Shipping Created Successfully", ShippingRead.model_validate(shipping))
 
 @router.put("/update/{id}", response_model=ShippingRead)
 def update_role(
     id: int,
     request: ShippingUpdate,
     session: GetSession,
-    user=requirePermission("shipping"),
+    user=requirePermission("system:*"),
 ):
     shipping = session.get(Shipping, id)  # Like findById
     raiseExceptions((shipping, 404, "Shipping not found"))
+
     data = updateOp(shipping, request, session)
 
     if data.name:
         data.slug = uniqueSlugify(session, Shipping, data.name)
     session.commit()
     session.refresh(data)
-    return api_response(200, "Shipping Update Successfully", data)
+    return api_response(200, "Shipping Update Successfully", ShippingRead.model_validate(data))
 
 
 @router.get("/read/{id_slug}", description="shipping ID (int) or slug (str)")
@@ -85,7 +89,7 @@ def get_role(id_slug: str, session: GetSession):
 def delete_role(
     id: int,
     session: GetSession,
-    user=requirePermission("shipping"),
+    user=requirePermission("system:*"),
 ):
     shipping = session.get(Shipping, id)
     raiseExceptions((shipping, 404, "shipping not found"))

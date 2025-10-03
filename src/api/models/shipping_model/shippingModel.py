@@ -1,6 +1,7 @@
-from typing import Literal, Optional
-from sqlalchemy import Column, Enum
+from typing import Optional, Literal
 from datetime import datetime
+from sqlalchemy import Column, Enum
+from pydantic import field_validator
 from sqlmodel import SQLModel, Field
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 from enum import Enum as PyEnum
@@ -15,41 +16,47 @@ class ShippingType(PyEnum):
 class Shipping(TimeStampedModel, table=True):
     __tablename__: Literal["shipping_classes"] = "shipping_classes"
 
-    # Use mapper arguments to handle the conflict
-    __mapper_args__ = {"column_prefix": "_"}
-
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=191, nullable=False)
-    slug: str = Field(max_length=191, index=True, unique=True)  # ✅ indexed + unique
+    slug: str = Field(max_length=191, index=True, unique=True)
     amount: float = Field(nullable=False)
-    is_global: str = Field(default="1", max_length=191)
+    is_global: bool = Field(default=True)   # <-- changed from str to bool
     is_active: bool = Field(default=True)
     language: str = Field(default="en", max_length=191)
-    type: ShippingType = Field(
-        sa_column=Column(Enum(ShippingType), default=ShippingType.FIXED)
-    )
+    type: Optional[ShippingType] = ShippingType.FIXED
 
 
 class ShippingCreate(SQLModel):
     name: str
     amount: float
-    type: Optional[ShippingType] = None
+    type: Optional[ShippingType] = ShippingType.FIXED
     is_global: bool = True
     is_active: bool = True
 
+class Config:
+        use_enum_values = True   # <-- ensures enum gets dumped as "fixed"
+
+
 class ShippingRead(TimeStampReadModel):
+    id:int
     name: str
     amount: float
     type: ShippingType
     is_global: bool
     is_active: bool 
 
+class Config:
+        use_enum_values = True
+
 class ShippingActivate(SQLModel):
     is_active: bool
 
+class GlobalActivate(SQLModel):
+    is_global: bool
+
 class ShippingUpdate(SQLModel):
-    name: str
-    amount: float
+    name: Optional[str] = None
+    amount: Optional[float] = None
     type: Optional[ShippingType] = None
-    is_active: bool = True
-    is_global: bool = True
+    is_active: Optional[bool] = None
+    is_global: Optional[bool] = None

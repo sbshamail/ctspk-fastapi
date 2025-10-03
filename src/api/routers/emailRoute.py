@@ -28,7 +28,12 @@ def create_role(
     session: GetSession,
     user=requirePermission("system:*"),
 ):
-    email = sh(**request.model_dump())
+     # Debug print
+    print("📦 Incoming request:", request.model_dump())
+    #return
+    email = Emailtemplate(**request.model_dump())
+    print(email.__dict__)
+   # return api_response(404, "Shipping not found", email)  # 👈 always returning 404 here!
     email.slug = uniqueSlugify(
         session,
         Emailtemplate,
@@ -37,7 +42,7 @@ def create_role(
     session.add(email)
     session.commit()
     session.refresh(email)
-    return api_response(200, "Email Created Successfully", email)
+    return api_response(200, "Email Created Successfully", EmailRead.model_validate(email))
 
 
 @router.put("/update/{id}", response_model=EmailRead)
