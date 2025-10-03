@@ -221,11 +221,11 @@ def _coerce_value_for_column(col_type, value, col_name: str):
                 else:
                     return float(v)
             except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Column '{col_name}' expects a number; got '{value}'.",
+                raise api_response(
+                    400,
+                    f"Column '{col_name}' expects a number; got '{value}'.",
                 )
-        raise HTTPException(400, f"Column '{col_name}' expects a number.")
+        raise api_response(400, f"Column '{col_name}' expects a number.")
     elif _is_bool_type(col_type):
         if isinstance(value, bool):
             return value
@@ -235,12 +235,12 @@ def _coerce_value_for_column(col_type, value, col_name: str):
                 return True
             if v in ("false", "0", "no"):
                 return False
-        raise HTTPException(400, f"Column '{col_name}' expects a boolean.")
+        raise api_response(400, f"Column '{col_name}' expects a boolean.")
     elif _is_datetime_type(col_type):
         if isinstance(value, str):
             # reuse your existing parse_date
             return parse_date(value)
-        raise HTTPException(400, f"Column '{col_name}' expects a datetime string.")
+        raise api_response(400, f"Column '{col_name}' expects a datetime string.")
     else:
         # string-like or other -> ensure string
         return str(value) if not isinstance(value, str) else value
@@ -279,6 +279,7 @@ def applyFilters(
     numberRange: Optional[List[str]] = None,
     customFilters: Optional[List[List[str]]] = None,
     otherFilters=None,
+    sort: Optional[str] = None,
 ):
     if otherFilters:
         # pass the current statement through the hook
@@ -297,37 +298,35 @@ def applyFilters(
     # Column-specific search
     if columnFilters:
         try:
-            filters = []
-            parsed_terms = (
-                ast.literal_eval(  # parsing work for all string, array, object, tupple
-                    columnFilters
-                )
-            )  # in js write=JSON.parse(columnFilters);
-            columnFilters = [
-                tuple(sublist) for sublist in parsed_terms
-            ]  # in js write=parsed_terms.map(sublist => tuple(sublist));
+            parsed_terms = ast.literal_eval(columnFilters)
+            columnFilters = [tuple(sublist) for sublist in parsed_terms]
 
+            # Group filters by column name
+            grouped = {}
             for col, value in columnFilters:
-                # if len(parts) > 1:
-                #     # e.g., Product.owner.full_name
-                #     rel_name, rel_col = parts[0], parts[1]
-                #     rel_model = getattr(Model, rel_name).property.mapper.class_
-                #     statement = statement.join(getattr(Model, rel_name))  # JOIN relation
-                #     attr = getattr(rel_model, rel_col)
-                # nested object filter
+                grouped.setdefault(col, []).append(value)
+
+            filters = []
+            for col, values in grouped.items():
                 attr, statement = resolve_column(Model, col, statement)
-
-                # optional handling formats
                 col_type = _get_column_type(attr)
-                value = _coerce_value_for_column(col_type, value, col)
 
-                if isinstance(value, str):
-                    filters.append(attr.ilike(f"%{value}%"))
-                else:
-                    filters.append(attr == value)
+                coerced_values = [
+                    _coerce_value_for_column(col_type, v, col) for v in values
+                ]
+
+                # If multiple values → OR
+                ors = []
+                for v in coerced_values:
+                    if isinstance(v, str):
+                        ors.append(attr.ilike(f"%{v}%"))
+                    else:
+                        ors.append(attr == v)
+                filters.append(or_(*ors))
 
             statement = statement.where(and_(*filters))
             return statement
+
         except Exception as e:
             return api_response(
                 400,
@@ -399,8 +398,31 @@ def applyFilters(
 
         statement = statement.where(and_(column >= start_date, column <= end_date))
 
-    return statement
+        # Sorting
 
+    if sort:
+        try:
+            column_name, direction = json.loads(sort)
+            attr, statement = resolve_column(Model, column_name, statement)
+            col_type = _get_column_type(attr)
+
+            # Case-insensitive sorting for strings
+            if _is_string_type(col_type):
+                order_expr = func.lower(attr)
+            else:
+                order_expr = attr
+
+            if direction.lower() in ["asc", "asc"]:
+                statement = statement.order_by(asc(order_expr))
+            elif direction.lower() in ["desc", "desc"]:
+                statement = statement.order_by(desc(order_expr))
+        except Exception as e:
+            return api_response(
+                400,
+                f"Invalid sort parameter: {e}",
+            )
+
+    return statement
 ```
 
 # Routing Methods

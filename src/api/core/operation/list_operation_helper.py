@@ -136,34 +136,31 @@ def applyFilters(
     # Column-specific search
     if columnFilters:
         try:
-            filters = []
-            parsed_terms = (
-                ast.literal_eval(  # parsing work for all string, array, object, tupple
-                    columnFilters
-                )
-            )  # in js write=JSON.parse(columnFilters);
-            columnFilters = [
-                tuple(sublist) for sublist in parsed_terms
-            ]  # in js write=parsed_terms.map(sublist => tuple(sublist));
+            parsed_terms = ast.literal_eval(columnFilters)
+            columnFilters = [tuple(sublist) for sublist in parsed_terms]
 
+            # Group filters by column name
+            grouped = {}
             for col, value in columnFilters:
-                # if len(parts) > 1:
-                #     # e.g., Product.owner.full_name
-                #     rel_name, rel_col = parts[0], parts[1]
-                #     rel_model = getattr(Model, rel_name).property.mapper.class_
-                #     statement = statement.join(getattr(Model, rel_name))  # JOIN relation
-                #     attr = getattr(rel_model, rel_col)
-                # nested object filter
+                grouped.setdefault(col, []).append(value)
+
+            filters = []
+            for col, values in grouped.items():
                 attr, statement = resolve_column(Model, col, statement)
-
-                # optional handling formats
                 col_type = _get_column_type(attr)
-                value = _coerce_value_for_column(col_type, value, col)
 
-                if isinstance(value, str):
-                    filters.append(attr.ilike(f"%{value}%"))
-                else:
-                    filters.append(attr == value)
+                coerced_values = [
+                    _coerce_value_for_column(col_type, v, col) for v in values
+                ]
+
+                # If multiple values → OR
+                ors = []
+                for v in coerced_values:
+                    if isinstance(v, str):
+                        ors.append(attr.ilike(f"%{v}%"))
+                    else:
+                        ors.append(attr == v)
+                filters.append(or_(*ors))
 
             statement = statement.where(and_(*filters))
             return statement
@@ -240,7 +237,7 @@ def applyFilters(
         statement = statement.where(and_(column >= start_date, column <= end_date))
 
         # Sorting
-    print("sort====>", sort)
+
     if sort:
         try:
             column_name, direction = json.loads(sort)
