@@ -97,7 +97,7 @@ def delete_role(
 
 # ✅ LIST
 @router.get("/list", response_model=list[ManufacturerRead])
-def list(query_params: ListQueryParams, user: requireSignin):
+def list(query_params: ListQueryParams):
     query_params = vars(query_params)
     searchFields = []
     return listRecords(

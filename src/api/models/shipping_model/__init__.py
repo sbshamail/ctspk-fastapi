@@ -1,1 +1,1 @@
-from .shippingModel import Shipping,ShippingCreate,ShippingRead,ShippingType,ShippingUpdate,ShippingActivate
+from .shippingModel import Shipping,ShippingCreate,ShippingRead,ShippingType,ShippingUpdate,ShippingActivate,GlobalActivate

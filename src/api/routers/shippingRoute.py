@@ -9,7 +9,8 @@ from src.api.models.shipping_model import (
     ShippingCreate,
     ShippingRead,
     ShippingUpdate,
-    ShippingActivate
+    ShippingActivate,
+    GlobalActivate 
 )
 from src.api.core.dependencies import (
     GetSession,
@@ -130,3 +131,22 @@ def patch_shipping_status(
     session.refresh(updated)
 
     return api_response(200, "Shipping status updated successfully", ShippingRead.model_validate(updated))
+# ✅ PATCH shipping global (toggle/verify)
+@router.patch("/{id}/global")
+def patch_shipping_status(
+    id: int,
+    request: GlobalActivate,
+    session: GetSession,
+    user=requirePermission(["system:*"]),  # 🔒 both allowed
+):
+    shipping = session.get(Shipping, id)
+    raiseExceptions((shipping, 404, "shipping not found"))
+
+    # only update status fields
+    updated = updateOp(shipping, request, session)
+
+    session.add(updated)
+    session.commit()
+    session.refresh(updated)
+
+    return api_response(200, "Shipping Global updated successfully", ShippingRead.model_validate(updated))
