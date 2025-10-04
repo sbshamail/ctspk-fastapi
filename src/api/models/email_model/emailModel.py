@@ -25,6 +25,7 @@ class Emailtemplate(TimeStampedModel, table=True):
 class EmailCreate(SQLModel):
     name: str
     subject: Optional[str] = None
+    slug: Optional[str] = None
     content: Optional[dict] = None
     html_content: Optional[str] = None
     is_active: bool = True
@@ -36,6 +37,7 @@ class EmailRead(TimeStampReadModel):
     content: Optional[dict] = None
     html_content: Optional[str] = None
     is_active: bool
+    slug: Optional[str] = None
 
 class EmailActivate(SQLModel):
     is_active: bool
@@ -46,7 +48,8 @@ class EmailUpdate(SQLModel):
     content: Optional[dict] = None
     html_content: Optional[str] = None
     is_active: bool = True
-
+    slug: Optional[str] = None
+    
 # NEW: Model for duplicate request
 class EmailDuplicate(SQLModel):
     new_name: str = Field(..., description="New name for the duplicated email template")
