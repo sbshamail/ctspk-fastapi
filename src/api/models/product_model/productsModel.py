@@ -31,7 +31,7 @@ class Product(TimeStampedModel, table=True):
     description: Optional[str] = None
     price: Optional[float] = None
     is_active: bool = Field(default=True)
-
+    weight: Optional[float] = Field(default=None, max_length=191)  # in kg
     sale_price: Optional[float] = None
     purchase_price: Optional[float] = None
     language: str = Field(default="en", max_length=191)
@@ -51,10 +51,13 @@ class Product(TimeStampedModel, table=True):
     meta_description: Optional[str] 
     return_policy: Optional[str] 
     shipping_info: Optional[str] 
-    tags:Optional[Dict[str, Any]] = Field(
+    
+    # CHANGED: From Dict to List
+    tags: Optional[List[str]] = Field(
         default=None,
         sa_column=Column(JSON),
     )
+    
     height: Optional[float] = Field(default=None, max_length=191)  # in cm
     width: Optional[float] = Field(default=None, max_length=191)
     length: Optional[float] = Field(default=None, max_length=191)
@@ -94,9 +97,6 @@ class Product(TimeStampedModel, table=True):
         back_populates="product"
     )
 
-    # categories: List["CategoryProduct"] = Relationship(back_populates="product")
-    # variation_options: List["VariationOption"] = Relationship(back_populates="product")
-
 
 class ProductCreate(SQLModel):
     name: str
@@ -104,6 +104,7 @@ class ProductCreate(SQLModel):
     image: Optional[Dict[str, Any]] = None
     gallery: Optional[List[Dict[str, Any]]] = None
     purchase_price: Optional[float] = None
+    weight: Optional[float] = None
     category_id: int
     manufacturer_id: Optional[int] = None
     price: float
@@ -127,8 +128,12 @@ class ProductCreate(SQLModel):
     meta_description: Optional[str] = None
     return_policy: Optional[str] = None
     shipping_info: Optional[str] = None
-    tags: Optional[Dict[str, Any]] = None
+    
+    # CHANGED: From Dict to List
+    tags: Optional[List[str]] = None
+    
     bar_code: Optional[str] = None
+
 
 class ProductUpdate(SQLModel):
     name: Optional[str] = None
@@ -141,6 +146,7 @@ class ProductUpdate(SQLModel):
     price: Optional[float] = None
     sale_price: Optional[float] = None
     purchase_price: Optional[float] = None
+    weight: Optional[float] = None
     max_price: Optional[float] = None
     min_price: Optional[float] = None
     shop_id: Optional[int] = None
@@ -159,8 +165,12 @@ class ProductUpdate(SQLModel):
     meta_description: Optional[str] = None
     return_policy: Optional[str] = None
     shipping_info: Optional[str] = None
-    tags: Optional[Dict[str, Any]] = None
+    
+    # CHANGED: From Dict to List
+    tags: Optional[List[str]] = None
+    
     bar_code: Optional[str] = None
+
 
 class ProductActivate(SQLModel):
     is_active: bool
@@ -195,6 +205,7 @@ class ProductRead(TimeStampReadModel):
     max_price: Optional[float] = None
     min_price: Optional[float] = None
     purchase_price: Optional[float] = None
+    weight: Optional[float] = None
     image: Optional[Dict[str, Any]] = None
     gallery: Optional[List[Dict[str, Any]]] = None
     is_active: bool
@@ -216,5 +227,8 @@ class ProductRead(TimeStampReadModel):
     meta_description: Optional[str] = None
     return_policy: Optional[str] = None
     shipping_info: Optional[str] = None
-    tags: Optional[Dict[str, Any]] = None
+    
+    # CHANGED: From Dict to List
+    tags: Optional[List[str]] = None
+    
     bar_code: Optional[str] = None
