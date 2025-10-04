@@ -46,11 +46,19 @@ class Product(TimeStampedModel, table=True):
     status: ProductStatus = Field(default=ProductStatus.PUBLISH)
     product_type: ProductType = Field(default=ProductType.SIMPLE)
     unit: Optional[str] = Field(default=None, max_length=191)
-
+    warranty: Optional[str] 
+    meta_title: Optional[str] = Field(default=None, max_length=250)
+    meta_description: Optional[str] 
+    return_policy: Optional[str] 
+    shipping_info: Optional[str] 
+    tags:Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSON),
+    )
     height: Optional[float] = Field(default=None, max_length=191)  # in cm
     width: Optional[float] = Field(default=None, max_length=191)
     length: Optional[float] = Field(default=None, max_length=191)
-    dimension_unit: Optional[str] = Field(default=None, max_length=10, nullable=True)
+    dimension_unit: Optional[str] = Field(default=None, max_length=30, nullable=True)
     is_feature: Optional[bool] = Field(default=None)
 
     image: Optional[Dict[str, Any]] = Field(
@@ -92,12 +100,12 @@ class Product(TimeStampedModel, table=True):
 
 class ProductCreate(SQLModel):
     name: str
-
     description: str
     image: Optional[Dict[str, Any]] = None
     gallery: Optional[List[Dict[str, Any]]] = None
     purchase_price: Optional[float] = None
     category_id: int
+    manufacturer_id: Optional[int] = None
     price: float
     sale_price: Optional[float] = None
     purchase_price: Optional[float] = None
@@ -114,12 +122,18 @@ class ProductCreate(SQLModel):
     length: Optional[float] = None
     dimension_unit: Optional[str] = None
     sku: Optional[str] = None
-
+    warranty: Optional[str] =  None
+    meta_title: Optional[str] = None
+    meta_description: Optional[str] = None
+    return_policy: Optional[str] = None
+    shipping_info: Optional[str] = None
+    tags: Optional[Dict[str, Any]] = None
 
 class ProductUpdate(SQLModel):
     name: Optional[str] = None
     is_active: Optional[bool] = True
     category_id: int = None
+    manufacturer_id: Optional[int] = None
     image: Optional[Dict[str, Any]] = None
     gallery: Optional[List[Dict[str, Any]]] = None
     description: Optional[str] = None
@@ -139,7 +153,12 @@ class ProductUpdate(SQLModel):
     length: Optional[float] = None
     dimension_unit: Optional[str] = None
     sku: Optional[str] = None
-
+    warranty: Optional[str] =  None
+    meta_title: Optional[str] = None
+    meta_description: Optional[str] = None
+    return_policy: Optional[str] = None
+    shipping_info: Optional[str] = None
+    tags: Optional[Dict[str, Any]] = None
 
 class ProductActivate(SQLModel):
     is_active: bool
@@ -183,9 +202,16 @@ class ProductRead(TimeStampReadModel):
     product_type: ProductType
     category: CategoryReadProduct
     shop: ShopReadForProduct
+    manufacturer_id: Optional[int] = None
     unit: Optional[str] = None
     dimension_unit: Optional[str] = None
     sku: Optional[str] = None
     height: Optional[float] = None
     width: Optional[float] = None
     length: Optional[float] = None
+    warranty: Optional[str] =  None
+    meta_title: Optional[str] = None
+    meta_description: Optional[str] = None
+    return_policy: Optional[str] = None
+    shipping_info: Optional[str] = None
+    tags: Optional[Dict[str, Any]] = None

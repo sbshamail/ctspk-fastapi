@@ -9,7 +9,8 @@ from src.api.models.email_model import (
     EmailCreate,
     EmailUpdate,
     EmailRead,
-    EmailActivate
+    EmailActivate,
+    EmailDuplicate   # NEW: Import the duplicate model
 )
 from src.api.core.dependencies import (
     GetSession,
@@ -80,7 +81,7 @@ def get_role(id_slug: str, session: GetSession):
 
     raiseExceptions((email, 404, "Email not found"))
     return api_response(
-        200, "Shipping Found", EmailRead.model_validate(email)
+        200, "Email Found", EmailRead.model_validate(email)  # FIXED: Changed "Shipping" to "Email"
     )
 
 
@@ -92,11 +93,11 @@ def delete_role(
     user=requirePermission("system:*"),
 ):
     email = session.get(Emailtemplate, id)
-    raiseExceptions((shipping, 404, "Email not found"))
+    raiseExceptions((email, 404, "Email not found"))  # FIXED: Changed "shipping" to "email"
 
     session.delete(email)
     session.commit()
-    return api_response(404, f"Email {email.id} deleted")
+    return api_response(200, f"Email {email.id} deleted")  # FIXED: Changed status code from 404 to 200
 
 
 # ✅ LIST
@@ -130,3 +131,49 @@ def patch_email_status(
     session.refresh(updated)
 
     return api_response(200, "Email status updated successfully", EmailRead.model_validate(updated))
+
+# NEW: Duplicate email template route
+@router.post("/duplicate/{id}")
+def duplicate_email(
+    id: int,
+    request: EmailDuplicate,
+    session: GetSession,
+    user=requirePermission("system:*"),
+):
+    # Get the original email template
+    email = session.get(Emailtemplate, id)
+    raiseExceptions((email, 404, "Original email template not found"))
+    
+    # Create a copy of the original template data
+    email_data = {
+        "name": request.new_name,
+        "subject": email.subject,
+        "is_active": request.is_active,
+        "language": email.language
+    }
+    
+    # Copy content if requested
+    if request.copy_content:
+        email_data["content"] = email.content
+        email_data["html_content"] = email.html_content
+    
+    # Create new email template instance
+    new_email = Emailtemplate(**email_data)
+    
+    # Generate unique slug for the new template
+    new_email.slug = uniqueSlugify(
+        session,
+        Emailtemplate,
+        request.new_name,
+    )
+    
+    # Save to database
+    session.add(new_email)
+    session.commit()
+    session.refresh(new_email)
+    
+    return api_response(
+        200, 
+        "Email template duplicated successfully", 
+        EmailRead.model_validate(new_email)
+    )

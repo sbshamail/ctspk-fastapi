@@ -1,1 +1,1 @@
-from .emailModel import Emailtemplate,EmailCreate,EmailRead,EmailUpdate,EmailActivate
+from .emailModel import Emailtemplate, EmailCreate, EmailRead, EmailUpdate, EmailActivate, EmailDuplicate
