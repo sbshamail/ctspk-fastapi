@@ -128,6 +128,7 @@ class ProductCreate(SQLModel):
     return_policy: Optional[str] = None
     shipping_info: Optional[str] = None
     tags: Optional[Dict[str, Any]] = None
+    bar_code: Optional[str] = None
 
 class ProductUpdate(SQLModel):
     name: Optional[str] = None
@@ -159,6 +160,7 @@ class ProductUpdate(SQLModel):
     return_policy: Optional[str] = None
     shipping_info: Optional[str] = None
     tags: Optional[Dict[str, Any]] = None
+    bar_code: Optional[str] = None
 
 class ProductActivate(SQLModel):
     is_active: bool
@@ -215,3 +217,4 @@ class ProductRead(TimeStampReadModel):
     return_policy: Optional[str] = None
     shipping_info: Optional[str] = None
     tags: Optional[Dict[str, Any]] = None
+    bar_code: Optional[str] = None

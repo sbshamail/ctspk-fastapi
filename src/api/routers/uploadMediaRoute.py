@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from sqlalchemy.exc import IntegrityError
 
 from typing import List, Optional
@@ -29,6 +30,26 @@ MEDIA_DIR = "/var/www/ctspk-media"
 os.makedirs(MEDIA_DIR, exist_ok=True)  # ensure folder exists
 
 
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename by:
+    - Replacing spaces with hyphens
+    - Removing special characters
+    - Ensuring safe filename
+    """
+    # Replace spaces with hyphens
+    filename = filename.replace(" ", "-")
+    
+    # Remove special characters except dots, hyphens, and underscores
+    filename = re.sub(r'[^a-zA-Z0-9._-]', '', filename)
+    
+    # Ensure filename is not empty
+    if not filename:
+        filename = "uploaded-file"
+    
+    return filename
+
+
 @router.post("/create")
 async def upload_images(
     session: GetSession,
@@ -37,50 +58,167 @@ async def upload_images(
     thumbnail: bool = False,
 ):
     saved_records = []
+    existing_files = []
+    errors = []
 
-    # 🔑 Save files to disk + build file_info dicts
-    saved_files = await uploadImage(files, user, thumbnail)
-
-    for file_info in saved_files:
-        existing_media = session.scalar(
-            select(UserMedia).where(
-                UserMedia.filename == file_info["filename"],
-                UserMedia.user_id == user["id"],  # if filename uniqueness is per user
+    # Process each file sequentially to avoid race conditions
+    for file in files:
+        try:
+            # Sanitize the filename - replace spaces with hyphens
+            original_filename = file.filename
+            sanitized_filename = sanitize_filename(original_filename)
+            
+            # Check if file already exists in database (with proper case handling)
+            existing_media = session.scalar(
+                select(UserMedia).where(
+                    UserMedia.filename.ilike(sanitized_filename),  # Use ilike for case-insensitive check
+                    UserMedia.user_id == user["id"],
+                )
             )
-        )
-        if existing_media:
-            return api_response(
-                400, f"File '{file_info['filename']}' already exists in database."
-            )
-        target_folder = f"media/{user['email']}/"
-        os.makedirs(target_folder, exist_ok=True)
+            
+            if existing_media:
+                # File already exists - return existing file info
+                existing_files.append(UserMediaRead.model_validate(existing_media))
+                continue
+            
+            # Check if file already exists on disk
+            target_folder = os.path.join(MEDIA_DIR, user["email"])
+            os.makedirs(target_folder, exist_ok=True)
+            file_path = os.path.join(target_folder, sanitized_filename)
+            
+            if os.path.exists(file_path):
+                # File exists on disk but not in DB - add to database
+                file_stats = os.stat(file_path)
+                size_mb = round(file_stats.st_size / (1024 * 1024), 2)
+                
+                # Create media record for existing file
+                media = UserMedia(
+                    user_id=user["id"],
+                    filename=sanitized_filename,
+                    extension=os.path.splitext(sanitized_filename)[1],
+                    original=f"{DOMAIN}/media/{user['email']}/{sanitized_filename}",
+                    size_mb=size_mb,
+                    thumbnail=None,  # You might want to generate thumbnail if needed
+                    media_type="image",
+                )
+                
+                try:
+                    session.add(media)
+                    session.commit()
+                    session.refresh(media)
+                    existing_files.append(UserMediaRead.model_validate(media))
+                    continue
+                except IntegrityError:
+                    # Handle race condition - another request might have added the same file
+                    session.rollback()
+                    existing_media = session.scalar(
+                        select(UserMedia).where(
+                            UserMedia.filename.ilike(sanitized_filename),
+                            UserMedia.user_id == user["id"],
+                        )
+                    )
+                    if existing_media:
+                        existing_files.append(UserMediaRead.model_validate(existing_media))
+                    continue
+            
+            # Create a new UploadFile object with sanitized filename for uploadImage function
+            content = await file.read()
+            
+            # Create temporary file for uploadImage processing
+            temp_files = []
+            try:
+                # Create a temporary file with sanitized name
+                temp_file_path = os.path.join(target_folder, f"temp_{sanitized_filename}")
+                with open(temp_file_path, "wb") as f:
+                    f.write(content)
+                
+                # Create UploadFile object for the uploadImage function
+                from fastapi import UploadFile
+                from io import BytesIO
+                
+                temp_upload_file = UploadFile(
+                    filename=sanitized_filename,
+                    file=BytesIO(content),
+                    size=len(content)
+                )
+                
+                # Upload the file using your existing uploadImage function
+                saved_files = await uploadImage([temp_upload_file], user, thumbnail)
+                
+                for file_info in saved_files:
+                    # Ensure we're using the sanitized filename
+                    file_info["filename"] = sanitize_filename(file_info["filename"])
+                    
+                    # Insert into database with error handling
+                    media = UserMedia(
+                        user_id=user["id"],
+                        filename=file_info["filename"],
+                        extension=file_info["extension"],
+                        original=file_info["original"],
+                        size_mb=file_info["size_mb"],
+                        thumbnail=file_info.get("thumbnail"),
+                        media_type="image",
+                    )
+                    
+                    try:
+                        session.add(media)
+                        session.flush()  # This will raise IntegrityError if duplicate
+                        saved_records.append(media)
+                    except IntegrityError:
+                        session.rollback()
+                        # File was added by another process, fetch the existing one
+                        existing_media = session.scalar(
+                            select(UserMedia).where(
+                                UserMedia.filename.ilike(file_info["filename"]),
+                                UserMedia.user_id == user["id"],
+                            )
+                        )
+                        if existing_media:
+                            existing_files.append(UserMediaRead.model_validate(existing_media))
+                        else:
+                            # This shouldn't happen, but just in case
+                            errors.append(f"Failed to upload {sanitized_filename}: duplicate constraint")
+                
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_file_path):
+                    os.remove(temp_file_path)
+                # Close the UploadFile
+                await temp_upload_file.close()
+                
+        except Exception as e:
+            errors.append(f"Error processing {file.filename}: {str(e)}")
+            continue
 
-        file_path = os.path.join(target_folder, file_info["filename"])
+    # Final commit for all successful operations
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        errors.append(f"Final commit failed: {str(e)}")
 
-        # ✅ Duplicate check
-        if os.path.exists(file_path):
-            return api_response(400, f"File '{file_info['filename']}' already exists.")
+    # Prepare response
+    response_data = ''
+    
+    if errors:
+        response_data = errors
 
-        # ✅ Insert each file as its own row
-        media = UserMedia(
-            user_id=user["id"],
-            filename=file_info["filename"],
-            extension=file_info["extension"],
-            original=file_info["original"],
-            size_mb=file_info["size_mb"],
-            thumbnail=file_info.get("thumbnail"),
-            media_type="image",
-        )
-        session.add(media)
-        session.flush()  # get `id` immediately
-        saved_records.append(media)
+    # Generate appropriate message
+    message_parts = []
+    if saved_records:
+        message_parts.append(f"Uploaded {len(saved_records)} new files")
+        response_data=[UserMediaRead.model_validate(m) for m in saved_records]
+    if existing_files:
+        message_parts.append(f"{len(existing_files)} files already exist")
+        response_data=existing_files
+    if errors:
+        message_parts.append(f"{len(errors)} errors occurred")
+    
+    message = ", ".join(message_parts) if message_parts else "No files processed"
 
-    session.commit()
-    return api_response(
-        200,
-        "Images uploaded successfully",
-        [UserMediaRead.model_validate(m) for m in saved_records],
-    )
+    status_code = 200 if not errors else 207  # 207 Multi-Status if there are errors
+
+    return api_response(status_code, message, response_data)
 
 
 # ✅ READ (single)
@@ -111,11 +249,14 @@ def list(query_params: ListQueryParams, user: requireSignin):
 # ----------------------------
 @router.get("/{filename}")
 async def get_image(user: requireSignin, filename: str):
+    # Sanitize the filename for consistency
+    sanitized_filename = sanitize_filename(filename)
+    
     # build the user folder path
     safe_email = user["email"]
     user_dir = os.path.join(MEDIA_DIR, safe_email)
 
-    file_path = os.path.join(user_dir, filename)
+    file_path = os.path.join(user_dir, sanitized_filename)
 
     if not os.path.isfile(file_path):
         return api_response(404, "File not found")
@@ -124,7 +265,10 @@ async def get_image(user: requireSignin, filename: str):
 
 @router.get("/{email}/{filename}")
 async def get_image(email: str, filename: str):
-    file_path = os.path.join(MEDIA_DIR, email, filename)
+    # Sanitize the filename for consistency
+    sanitized_filename = sanitize_filename(filename)
+    
+    file_path = os.path.join(MEDIA_DIR, email, sanitized_filename)
     if not os.path.isfile(file_path):
         api_response(404, "File not found")
     return FileResponse(file_path)
@@ -145,28 +289,35 @@ async def get_multiple_images(user: requireSignin, data: FilenameList):
     results = []
 
     for filename in data.filenames:
-        file_path = os.path.join(user_dir, filename)
+        # Sanitize the filename for consistency
+        sanitized_filename = sanitize_filename(filename)
+        
+        file_path = os.path.join(user_dir, sanitized_filename)
         if os.path.isfile(file_path):
-            name, ext = os.path.splitext(filename)
+            name, ext = os.path.splitext(sanitized_filename)
             size_bytes = os.path.getsize(file_path)
             size_kb = round(size_bytes / 1024, 2)
             results.append(
                 {
-                    "filename": filename,
+                    "filename": sanitized_filename,
+                    "original_filename": filename,  # Keep original name for reference
                     "extension": ext.lower(),
                     "size_kb": size_kb,
-                    "original": f"{DOMAIN}/media/{user['email']}/{filename}",
+                    "original": f"{DOMAIN}/media/{user['email']}/{sanitized_filename}",
                     "thumbnail": f"{DOMAIN}/media/{user['email']}/{name}.webp",
                 }
             )
         else:
-            results.append({"filename": filename, "error": "File not found"})
+            results.append({
+                "filename": filename,
+                "sanitized_filename": sanitized_filename,
+                "error": "File not found"
+            })
 
     return api_response(200, "Images Found", data=results)
 
 
 # Delete Multiple
-
 
 def delete_media_items(
     session: GetSession,
@@ -185,7 +336,6 @@ def delete_media_items(
         user_id: int (owner restriction)
         ids: list of media IDs to delete
         filenames: list of filenames to delete (case-insensitive)
-
     Returns:
         List of deleted UserMedia rows
     """
@@ -198,7 +348,9 @@ def delete_media_items(
     if ids:
         stmt = stmt.where(UserMedia.id.in_(ids))
     if filenames:
-        stmt = stmt.where(UserMedia.filename.in_([f.lower() for f in filenames]))
+        # Sanitize filenames for consistency
+        sanitized_filenames = [sanitize_filename(f) for f in filenames]
+        stmt = stmt.where(UserMedia.filename.in_([f.lower() for f in sanitized_filenames]))
 
     media_records = session.exec(stmt).all()
     if not media_records:
@@ -283,26 +435,3 @@ async def delete_by_filenames(
         "Deleted successfully",
         [UserMediaRead.model_validate(m) for m in deleted],
     )
-
-
-# @router.delete("/delete-multiple")
-# async def delete_multiple_images(user: requireSignin, data: FilenameList):
-#     user_dir = os.path.join(MEDIA_DIR, user["email"])
-#     results = []
-
-#     for filename in data.filenames:
-#         file_path = os.path.join(user_dir, filename)
-#         if os.path.isfile(file_path):
-#             try:
-#                 os.remove(file_path)
-#                 results.append({"filename": filename, "status": "deleted"})
-#             except Exception as e:
-#                 api_response(
-#                     200,
-#                     "Delete Images Successfully",
-#                     data={"filename": filename, "status": "error", "detail": str(e)},
-#                 )
-#         else:
-#             api_response(200, "Not Found", data=filename)
-
-#     return api_response(200, "Delete Images Successfully", data=results)
