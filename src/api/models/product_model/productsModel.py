@@ -9,7 +9,14 @@ from src.api.models.category_model.categoryModel import CategoryRead
 from src.api.models.baseModel import TimeStampReadModel, TimeStampedModel
 
 if TYPE_CHECKING:
-    from src.api.models import Shop, Category, Cart, Manufacturer, AttributeProduct,VariationOption
+    from src.api.models import (
+        Shop,
+        Category,
+        Cart,
+        Manufacturer,
+        AttributeProduct,
+        VariationOption,
+    )
 
 
 class ProductStatus(str, Enum):
@@ -46,18 +53,18 @@ class Product(TimeStampedModel, table=True):
     status: ProductStatus = Field(default=ProductStatus.PUBLISH)
     product_type: ProductType = Field(default=ProductType.SIMPLE)
     unit: Optional[str] = Field(default=None, max_length=191)
-    warranty: Optional[str] 
+    warranty: Optional[str]
     meta_title: Optional[str] = Field(default=None, max_length=250)
-    meta_description: Optional[str] 
-    return_policy: Optional[str] 
-    shipping_info: Optional[str] 
-    
+    meta_description: Optional[str]
+    return_policy: Optional[str]
+    shipping_info: Optional[str]
+
     # CHANGED: From Dict to List
     tags: Optional[List[str]] = Field(
         default=None,
         sa_column=Column(JSON),
     )
-    
+
     height: Optional[float] = Field(default=None, max_length=191)  # in cm
     width: Optional[float] = Field(default=None, max_length=191)
     length: Optional[float] = Field(default=None, max_length=191)
@@ -97,6 +104,8 @@ class Product(TimeStampedModel, table=True):
         back_populates="product"
     )
     variation_options: List["VariationOption"] = Relationship(back_populates="product")
+    order_products: List["OrderProduct"] = Relationship(back_populates="product")
+
 
 class ProductCreate(SQLModel):
     name: str
@@ -123,15 +132,15 @@ class ProductCreate(SQLModel):
     length: Optional[float] = None
     dimension_unit: Optional[str] = None
     sku: Optional[str] = None
-    warranty: Optional[str] =  None
+    warranty: Optional[str] = None
     meta_title: Optional[str] = None
     meta_description: Optional[str] = None
     return_policy: Optional[str] = None
     shipping_info: Optional[str] = None
-    
+
     # CHANGED: From Dict to List
     tags: Optional[List[str]] = None
-    
+
     bar_code: Optional[str] = None
 
 
@@ -160,15 +169,15 @@ class ProductUpdate(SQLModel):
     length: Optional[float] = None
     dimension_unit: Optional[str] = None
     sku: Optional[str] = None
-    warranty: Optional[str] =  None
+    warranty: Optional[str] = None
     meta_title: Optional[str] = None
     meta_description: Optional[str] = None
     return_policy: Optional[str] = None
     shipping_info: Optional[str] = None
-    
+
     # CHANGED: From Dict to List
     tags: Optional[List[str]] = None
-    
+
     bar_code: Optional[str] = None
 
 
@@ -222,13 +231,13 @@ class ProductRead(TimeStampReadModel):
     height: Optional[float] = None
     width: Optional[float] = None
     length: Optional[float] = None
-    warranty: Optional[str] =  None
+    warranty: Optional[str] = None
     meta_title: Optional[str] = None
     meta_description: Optional[str] = None
     return_policy: Optional[str] = None
     shipping_info: Optional[str] = None
-    
+
     # CHANGED: From Dict to List
     tags: Optional[List[str]] = None
-    
+
     bar_code: Optional[str] = None

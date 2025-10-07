@@ -2,13 +2,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlmodel import SQLModel
 from fastapi.middleware.cors import CORSMiddleware
-
 from src.api.core.middleware.error_handling import register_exception_handlers
 from src.api.routers.attribute import (
     attributeRoute,
     attributeValueRoute,
     attributeProductRoute,
 )
+from .lib.db_con import engine
+
 from src.api.routers import (
     # user
     authRoute,
@@ -31,11 +32,11 @@ from src.api.routers import (
     manufacturerRoute,
     # shipping
     shippingRoute,
-     # banner
+    # banner
     bannerRoute,
     # Email Template
     emailRoute,
-    # order 
+    # order
     orderRoute,
     # Address
     addressRoute,
@@ -47,6 +48,14 @@ from src.api.routers import (
 # Define app lifespan — this runs once when the app starts and when it shuts down
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # # --- Runs once on startup ---
+    # print("🟢 Checking if tables exist...")
+
+    # # Create all tables that are missing (safe – only creates non-existent ones)
+    # SQLModel.metadata.create_all(engine)
+    # print("✅ All tables verified / created.")
+    # # --- Runs once on shutdown ---
+    # print("🔴 App shutting down...")
 
     yield  # 👈 after this, FastAPI starts handling requests
 
@@ -99,9 +108,9 @@ app.include_router(bannerRoute.router)
 app.include_router(shippingRoute.router)
 # Email Template
 app.include_router(emailRoute.router)
-# Order 
+# Order
 app.include_router(orderRoute.router)
-# Address 
+# Address
 app.include_router(addressRoute.router)
-# Coupon 
+# Coupon
 app.include_router(couponRoute.router)
