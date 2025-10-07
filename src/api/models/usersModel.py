@@ -7,7 +7,7 @@ from src.api.models.role_model.roleModel import RoleRead
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 if TYPE_CHECKING:
-    from src.api.models import UserRole, Role, Shop, UserShop, UserMedia
+    from src.api.models import UserRole, Role, Shop, UserShop, UserMedia,Order,Address
 
 
 class User(TimeStampedModel, table=True):
@@ -31,7 +31,21 @@ class User(TimeStampedModel, table=True):
         sa_relationship_kwargs={"foreign_keys": "Shop.owner_id"},  # ✅ correct
     )
     user_shops: list["UserShop"] = Relationship(back_populates="user")
-
+    #  order model
+    customer_orders: List["Order"] = Relationship(
+        back_populates="customer",
+        sa_relationship_kwargs={
+            "foreign_keys": "[Order.customer_id]"
+        }
+    )
+    
+    fullfillment_orders: List["Order"] = Relationship(
+        back_populates="fullfillment_user",
+        sa_relationship_kwargs={
+            "foreign_keys": "[Order.fullfillment_id]"
+        }
+    )
+    addresses: list["Address"] = Relationship(back_populates="customer")
     # As fulfillment user (user assigned to fulfill orders)
     # fulfillment_orders: List["Order"] = Relationship(
     #     back_populates="fulfillment_user",

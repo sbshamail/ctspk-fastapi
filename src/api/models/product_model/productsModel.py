@@ -9,7 +9,7 @@ from src.api.models.category_model.categoryModel import CategoryRead
 from src.api.models.baseModel import TimeStampReadModel, TimeStampedModel
 
 if TYPE_CHECKING:
-    from src.api.models import Shop, Category, Cart, Manufacturer, AttributeProduct
+    from src.api.models import Shop, Category, Cart, Manufacturer, AttributeProduct,VariationOption
 
 
 class ProductStatus(str, Enum):
@@ -96,7 +96,7 @@ class Product(TimeStampedModel, table=True):
     attributes: Optional[List["AttributeProduct"]] = Relationship(
         back_populates="product"
     )
-
+    variation_options: List["VariationOption"] = Relationship(back_populates="product")
 
 class ProductCreate(SQLModel):
     name: str

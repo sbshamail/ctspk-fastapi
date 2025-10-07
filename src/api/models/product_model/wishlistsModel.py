@@ -33,3 +33,4 @@ class WishlistRead(TimeStampReadModel):
     id: int
     user_id: int
     product_id: int
+    variation_option_id: Optional[int]

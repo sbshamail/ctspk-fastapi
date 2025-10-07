@@ -19,6 +19,9 @@ class Category(TimeStampedModel, table=True):
     icon: Optional[str] = Field(max_length=191)
     image: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
     details: Optional[str] = None
+    seo_description:Optional[str] = None
+    seo_keywords:Optional[str] = None
+    seo_title:Optional[str] = None
     # own forien id
     parent_id: Optional[int] = Field(default=None, foreign_key="categories.id")
     root_id: Optional[int] = Field(foreign_key="categories.id", index=True)
@@ -62,7 +65,9 @@ class CategoryCreate(SQLModel):
     is_active: bool = True
     icon: Optional[str] = None
     admin_commission_rate: Optional[float] = None
-
+    seo_description:Optional[str] = None
+    seo_keywords:Optional[str] = None
+    seo_title:Optional[str] = None
 
 class CategoryUpdate(SQLModel):
     name: Optional[str] = None
@@ -72,7 +77,9 @@ class CategoryUpdate(SQLModel):
     image: Optional[Dict[str, Any]] = None
     icon: Optional[str] = None
     admin_commission_rate: Optional[float] = None
-
+    seo_description:Optional[str] = None
+    seo_keywords:Optional[str] = None
+    seo_title:Optional[str] = None
 
 class CategoryActivate(SQLModel):
     is_active: bool
@@ -88,7 +95,9 @@ class CategoryRead(TimeStampReadModel):
     slug: Optional[str] = None
     is_active: bool
     parent_id: Optional[int] = None
-
+    seo_description:Optional[str] = None
+    seo_keywords:Optional[str] = None
+    seo_title:Optional[str] = None
 
 class CategoryReadNested(TimeStampReadModel):
     id: int

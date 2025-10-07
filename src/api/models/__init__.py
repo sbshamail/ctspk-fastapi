@@ -38,6 +38,17 @@ from .email_model.emailModel import Emailtemplate
 # shipping
 from .shipping_model.shippingModel import Shipping
 
+# orders
+from .order_model.orderModel import Order,OrderProduct,OrderStatus
+
+# VariationOption
+from .product_model.variationOptionModel import VariationOption
+
+# customer address
+from .addressModel import Address
+
+# Coupon
+from .couponModel import Coupon
 # from .product_model import ProductPurchase, Type, VariationOption, Wishlist
 
 
