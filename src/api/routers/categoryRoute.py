@@ -1,4 +1,5 @@
 import ast
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Query
 from sqlalchemy import select
@@ -38,23 +39,29 @@ def calculate_category_level(session, parent_id: Optional[int]) -> int:
 def create(
     request: CategoryCreate, session: GetSession, user=requirePermission("category")
 ):
-    # auto set level
+    """Create a new category with auto-level and root assignment."""
+    # 1️⃣ Calculate hierarchical level
     level = calculate_category_level(session, request.parent_id)
+    # 2️⃣ Initialize model
     data = Category(**request.model_dump(), level=level)
 
-    # generate unique slug
+    # 3️⃣ Generate unique slug
     data.slug = uniqueSlugify(session, Category, data.name)
 
     # add to session
     session.add(data)
     session.flush()  # assigns 'id' without committing
 
-    # set root_id based on parent
+    # 4️⃣ Determine root_id
     if data.parent_id is None:
         data.root_id = data.id  # top-level category
     else:
         parent = session.get(Category, data.parent_id)
         data.root_id = parent.root_id if parent.root_id else parent.id
+
+        # Top-level root fix
+    if data.root_id is None:
+        data.root_id = data.id
 
     session.commit()  # commit everything in one transaction
     session.refresh(data)
@@ -64,67 +71,52 @@ def create(
     )
 
 
-# @router.put("/update/{id}")
-# def update(
-#     id: int,
-#     request: CategoryUpdate,
-#     session: GetSession,
-#     user=requirePermission("category"),
-# ):
-#     updateData = session.get(Category, id)
-#     raiseExceptions((updateData, 404, "Category not found"))
+@router.put("/update/{id}")
+def update_category(
+    id: int,
+    request: CategoryUpdate,
+    session: GetSession,
+    user=requirePermission("category"),
+):
+    """Update category safely, preserving tree structure."""
+    category = session.get(Category, id)
+    raiseExceptions((category, 404, "Category not found"))
 
-#     # if parent_id is being changed, recalc level and root_id
-#     if request.parent_id is not None and request.parent_id != updateData.parent_id:
-#         level = calculate_category_level(session, request.parent_id)
-#         updateData.level = level
+    # Check if parent changed
+    if request.parent_id is not None and request.parent_id != category.parent_id:
+        # Cannot set parent to itself or its children
+        if request.parent_id == id:
+            api_response(400, "A category cannot be its own parent")
 
-#         parent = session.get(Category, request.parent_id)
-#         updateData.root_id = parent.root_id if parent.root_id else parent.id
+        # Verify parent validity
+        parent = session.get(Category, request.parent_id)
+        if not parent:
+            api_response(400, "New parent category not found")
 
-#         updateData.parent_id = request.parent_id
+        if parent.level >= 3:
+            api_response(400, "Cannot move under a level 3 category")
 
-#     data = updateOp(updateData, request, session)
+        # ✅ Update level and root based on new parent
+        category.level = parent.level + 1
+        category.root_id = parent.root_id if parent.root_id else parent.id
+        category.parent_id = request.parent_id
 
-#     if data.name:
-#         data.slug = uniqueSlugify(session, Category, data.name)
+    # Apply other updates dynamically
+    for key, value in request.model_dump(exclude_unset=True).items():
+        setattr(category, key, value)
 
-#     session.commit()
-#     session.refresh(updateData)
+    # Slug update if name changed
+    if request.name:
+        category.slug = uniqueSlugify(session, Category, request.name)
+        category.updated_at = datetime.now(timezone.utc)
 
-#     return api_response(
-#         200,
-#         "Category Updated Successfully",
-#         CategoryReadNested.model_validate(updateData),
-#     )
+    session.add(category)
+    session.commit()
+    session.refresh(category)
 
-
-# @router.put("/update/{id}")
-# def update(
-#     id: int,
-#     request: CategoryUpdate,
-#     session: GetSession,
-#     user=requirePermission("category"),
-# ):
-
-#     updateData = session.get(Category, id)  # Like findById
-#     raiseExceptions((updateData, 404, "Category not found"))
-#     # if parent_id is being changed, recalc level
-#     if request.parent_id is not None:
-#         level = calculate_category_level(session, request.parent_id)
-#         updateData.level = level  # inject auto-level
-
-#     data = updateOp(updateData, request, session)
-#     if data.name:
-#         data.slug = uniqueSlugify(session, Category, data.name)
-
-#     session.commit()
-#     session.refresh(updateData)
-#     return api_response(
-#         200,
-#         "Category Update Successfully",
-#         CategoryReadNested.model_validate(updateData),
-#     )
+    return api_response(
+        200, "Category updated successfully", CategoryRead.model_validate(category)
+    )
 
 
 @router.get(
