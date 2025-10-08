@@ -68,3 +68,10 @@ SET root_id = ch.root_id
 FROM category_hierarchy ch
 WHERE c.id = ch.id;
 ```
+
+## alembic downgrade
+
+```sql
+UPDATE alembic_version SET version_num = '81f3cc9d2bfb';
+
+```

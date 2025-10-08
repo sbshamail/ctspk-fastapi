@@ -64,10 +64,9 @@ class Order(TimeStampedModel, table=True):
     logistics_provider: Optional[int] = Field(default=None)
     delivery_fee: Optional[float] = Field(default=None)
     delivery_time: Optional[str] = Field(default=None, max_length=191)
-    order_status: OrderStatusEnum = Field(default=OrderStatusEnum.PENDING)
-    payment_status: PaymentStatusEnum = Field(default=PaymentStatusEnum.PENDING)
-    # order_status: OrderStatusEnum = Field(default=OrderStatusEnum.PENDING, sa_column=Column(Enum(OrderStatusEnum)))
-    # payment_status: PaymentStatusEnum = Field(default=PaymentStatusEnum.PENDING, sa_column=Column(Enum(PaymentStatusEnum)))
+    order_status: Optional[str] = Field(default="order-pending")
+    payment_status: Optional[str] = Field(default="payment-pending")
+
     fullfillment_id: Optional[int] = Field(
         default=None, foreign_key="users.id"
     )  # Foreign key to users
@@ -89,7 +88,9 @@ class Order(TimeStampedModel, table=True):
         sa_relationship_kwargs={"foreign_keys": "[Order.shop_id]"},
     )
 
-    order_products: List["OrderProduct"] = Relationship(back_populates="orders")
+    order_products: Optional[List["OrderProduct"]] = Relationship(
+        back_populates="orders"
+    )
     # order_status_history: Optional["OrderStatus"] = Relationship(back_populates="order")
     order_status_history: Optional["OrderStatus"] = Relationship(
         back_populates="orders",
@@ -177,7 +178,7 @@ class OrderCreate(SQLModel):
     logistics_provider: Optional[int] = None
     delivery_fee: Optional[float] = None
     delivery_time: Optional[str] = None
-    order_products: List[OrderProductCreate]
+    order_products: Optional[List[OrderProductCreate]] = None
 
 
 class OrderUpdate(SQLModel):

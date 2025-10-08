@@ -17,7 +17,7 @@ from src.api.models.order_model import (
     OrderProduct,
     OrderStatus,
     OrderStatusEnum,
-    PaymentStatusEnum
+    PaymentStatusEnum,
 )
 from src.api.models.product_model import Product
 from src.api.models.category_model import Category
@@ -28,102 +28,111 @@ from decimal import Decimal
 
 router = APIRouter(prefix="/order", tags=["Order"])
 
+
 def generate_tracking_number():
     """Generate unique tracking number"""
     return f"TRK-{uuid.uuid4().hex[:12].upper()}"
 
-def calculate_admin_commission(session, product_id: int, unit_price: float, order_quantity: str) -> Decimal:
+
+def calculate_admin_commission(
+    session, product_id: int, unit_price: float, order_quantity: str
+) -> Decimal:
     """Calculate admin commission based on product's category commission rate"""
     try:
         # Get the product with its category
         product = session.exec(
             select(Product).where(Product.id == product_id)
-        ).first()
-        
+        ).scalar_one_or_none()
+
         if not product or not product.category_id:
-            return Decimal('0.00')
-        
+            return Decimal("0.00")
+
         # Get the category with commission rate
         category = session.get(Category, product.category_id)
         if not category or not category.admin_commission_rate:
-            return Decimal('0.00')
-        
+            return Decimal("0.00")
+
         # Parse order quantity (assuming it's a numeric string)
         quantity = float(order_quantity)
-        
+
         # Calculate commission: (unit_price * quantity) * (commission_rate / 100)
-        commission_amount = (unit_price * quantity) * (category.admin_commission_rate / 100)
-        
+        commission_amount = (unit_price * quantity) * (
+            category.admin_commission_rate / 100
+        )
+
         return Decimal(str(round(commission_amount, 2)))
-    
+
     except (ValueError, TypeError) as e:
         Print(f"Error calculating commission: {e}")
-        return Decimal('0.00')
+        return Decimal("0.00")
+
 
 def update_order_status_history(session, order_id: int, status_field: str):
     """Update order status history when order status changes"""
-    order_status = session.exec(select(OrderStatus).where(OrderStatus.order_id == order_id)).first()
-    
+    order_status = session.exec(
+        select(OrderStatus).where(OrderStatus.order_id == order_id)
+    ).first()
+
     if not order_status:
         order_status = OrderStatus(order_id=order_id)
         session.add(order_status)
-    
+
     # Set the corresponding date field to current datetime
     setattr(order_status, status_field, datetime.now())
     session.add(order_status)
 
+
 @router.post("/create")
-def create(
-    request: OrderCreate, 
-    session: GetSession, 
-    user=requirePermission("order")
-):
+def create(request: OrderCreate, session: GetSession, user=requirePermission("order")):
     # Generate tracking number
     tracking_number = generate_tracking_number()
-    
+
     # Create order
-    order_data = request.model_dump(exclude={'order_products'})
+    order_data = request.model_dump(exclude={"order_products"})
     order = Order(**order_data, tracking_number=tracking_number)
-    
+
     session.add(order)
     session.flush()  # Get the order ID
-    
-    total_admin_commission = Decimal('0.00')
-    
+
+    total_admin_commission = Decimal("0.00")
+
     # Create order products with commission calculation
     for product_data in request.order_products:
         # Calculate admin commission for this product
         admin_commission = calculate_admin_commission(
-            session, 
-            product_data.product_id, 
-            product_data.unit_price, 
-            product_data.order_quantity
+            session,
+            product_data.product_id,
+            product_data.unit_price,
+            product_data.order_quantity,
         )
-        
+
         # Add to total commission
         total_admin_commission += admin_commission
-        
+        variation_id = product_data.variation_option_id or None
+
         # Create order product with calculated commission
         order_product = OrderProduct(
-            **product_data.model_dump(),
+            **product_data.model_dump(exclude={"variation_option_id"}),
+            variation_option_id=variation_id,
             order_id=order.id,
-            admin_commission=admin_commission
+            admin_commission=admin_commission,
         )
         session.add(order_product)
-    
+
     # Update order with total admin commission
     order.admin_commission_amount = total_admin_commission
-    
+
     # Create initial order status history
     order_status = OrderStatus(order_id=order.id, order_pending_date=datetime.now())
     session.add(order_status)
-    
+
     session.commit()
     session.refresh(order)
-    
+
     return api_response(
         201, "Order Created Successfully", OrderReadNested.model_validate(order)
     )
+
 
 @router.put("/update/{id}")
 def update(
@@ -134,13 +143,13 @@ def update(
 ):
     order = session.get(Order, id)
     raiseExceptions((order, 404, "Order not found"))
-    
+
     # Track status changes for history
     old_order_status = order.order_status
     old_payment_status = order.payment_status
-    
+
     data = updateOp(order, request, session)
-    
+
     # Update status history if order status changed
     if request.order_status and request.order_status != old_order_status:
         status_field_map = {
@@ -155,47 +164,48 @@ def update(
             OrderStatusEnum.AT_DISTRIBUTION_CENTER: "order_at_distribution_center_date",
             OrderStatusEnum.PACKED: "order_packed_date",
         }
-        
+
         status_field = status_field_map.get(request.order_status)
         if status_field:
             update_order_status_history(session, order.id, status_field)
-    
+
     # Recalculate commission if order products are updated
-    if hasattr(request, 'order_products') and request.order_products:
+    if hasattr(request, "order_products") and request.order_products:
         # Remove existing order products
         existing_products = session.exec(
             select(OrderProduct).where(OrderProduct.order_id == id)
         ).all()
         for op in existing_products:
             session.delete(op)
-        
+
         # Add new order products with recalculated commission
-        total_admin_commission = Decimal('0.00')
+        total_admin_commission = Decimal("0.00")
         for product_data in request.order_products:
             admin_commission = calculate_admin_commission(
-                session, 
-                product_data.product_id, 
-                product_data.unit_price, 
-                product_data.order_quantity
+                session,
+                product_data.product_id,
+                product_data.unit_price,
+                product_data.order_quantity,
             )
             total_admin_commission += admin_commission
-            
+
             order_product = OrderProduct(
                 **product_data.model_dump(),
                 order_id=order.id,
-                admin_commission=admin_commission
+                admin_commission=admin_commission,
             )
             session.add(order_product)
-        
+
         # Update total commission
         order.admin_commission_amount = total_admin_commission
-    
+
     session.commit()
     session.refresh(order)
-    
+
     return api_response(
         200, "Order Updated Successfully", OrderReadNested.model_validate(order)
     )
+
 
 # ... (rest of the routes remain the same as previous implementation)
 @router.patch("/{id}/status")
@@ -207,12 +217,12 @@ def update_status(
 ):
     order = session.get(Order, id)
     raiseExceptions((order, 404, "Order not found"))
-    
+
     # Update order status
     if request.order_status:
         old_status = order.order_status
         order.order_status = request.order_status
-        
+
         # Update status history
         status_field_map = {
             OrderStatusEnum.PENDING: "order_pending_date",
@@ -226,45 +236,41 @@ def update_status(
             OrderStatusEnum.AT_DISTRIBUTION_CENTER: "order_at_distribution_center_date",
             OrderStatusEnum.PACKED: "order_packed_date",
         }
-        
+
         status_field = status_field_map.get(request.order_status)
         if status_field:
             update_order_status_history(session, order.id, status_field)
-    
+
     # Update payment status
     if request.payment_status:
         order.payment_status = request.payment_status
-    
+
     session.add(order)
     session.commit()
     session.refresh(order)
-    
+
     return api_response(
         200, "Order Status Updated Successfully", OrderRead.model_validate(order)
     )
 
+
 @router.get("/read/{id}", response_model=OrderReadNested)
-def get(
-    id: int, 
-    session: GetSession,
-    user=requirePermission("order")
-):
+def get(id: int, session: GetSession, user=requirePermission("order")):
     order = session.get(Order, id)
     raiseExceptions((order, 404, "Order not found"))
-    
+
     return api_response(200, "Order Found", OrderReadNested.model_validate(order))
 
+
 @router.get("/tracking/{tracking_number}", response_model=OrderReadNested)
-def get_by_tracking(
-    tracking_number: str, 
-    session: GetSession
-):
+def get_by_tracking(tracking_number: str, session: GetSession):
     order = session.exec(
         select(Order).where(Order.tracking_number == tracking_number)
     ).first()
     raiseExceptions((order, 404, "Order not found"))
-    
+
     return api_response(200, "Order Found", OrderReadNested.model_validate(order))
+
 
 @router.delete("/delete/{id}")
 def delete(
@@ -274,27 +280,28 @@ def delete(
 ):
     order = session.get(Order, id)
     raiseExceptions((order, 404, "Order not found"))
-    
+
     # Delete related order products first
     order_products = session.exec(
         select(OrderProduct).where(OrderProduct.order_id == id)
     ).all()
-    
+
     for op in order_products:
         session.delete(op)
-    
+
     # Delete order status history
     order_status = session.exec(
         select(OrderStatus).where(OrderStatus.order_id == id)
     ).first()
     if order_status:
         session.delete(order_status)
-    
+
     # Delete order
     session.delete(order)
     session.commit()
-    
+
     return api_response(200, f"Order {order.tracking_number} deleted successfully")
+
 
 @router.get("/list", response_model=list[OrderReadNested])
 def list_orders(
@@ -315,20 +322,20 @@ def list_orders(
         "dateRange": dateRange,
         "numberRange": numberRange,
     }
-    
+
     searchFields = ["tracking_number", "customer_contact", "customer_name"]
-    
+
     # Add status filters
     if order_status:
         if "columnFilters" not in filters or not filters["columnFilters"]:
             filters["columnFilters"] = []
         filters["columnFilters"].append(["order_status", order_status.value])
-    
+
     if payment_status:
         if "columnFilters" not in filters or not filters["columnFilters"]:
             filters["columnFilters"] = []
         filters["columnFilters"].append(["payment_status", payment_status.value])
-    
+
     result = listop(
         session=session,
         Model=Order,
@@ -338,16 +345,17 @@ def list_orders(
         page=page,
         limit=limit,
         join_options=[
-       #     selectinload(Order.order_products),
-       #     selectinload(Order.order_status_history)
+            #     selectinload(Order.order_products),
+            #     selectinload(Order.order_status_history)
         ],
     )
-    
+
     if not result["data"]:
         return api_response(404, "No orders found")
-    
+
     orders = result["data"]
     return api_response(200, "Orders found", orders, result["total"])
+
 
 @router.get("/customer/{customer_id}", response_model=list[OrderReadNested])
 def get_customer_orders(
@@ -358,10 +366,8 @@ def get_customer_orders(
     limit: int = Query(200, ge=1, le=200),
 ):
     """Get orders for a specific customer"""
-    filters = {
-        "columnFilters": [["customer_id", str(customer_id)]]
-    }
-    
+    filters = {"columnFilters": [["customer_id", str(customer_id)]]}
+
     result = listop(
         session=session,
         Model=Order,
@@ -371,13 +377,13 @@ def get_customer_orders(
         page=page,
         limit=limit,
         join_options=[
-        #    selectinload(Order.order_products),
-        #    selectinload(Order.order_status_history)
+            #    selectinload(Order.order_products),
+            #    selectinload(Order.order_status_history)
         ],
     )
-    
+
     if not result["data"]:
         return api_response(404, "No orders found for this customer")
-    
+
     orders = result["data"]
     return api_response(200, "Customer orders found", orders, result["total"])
