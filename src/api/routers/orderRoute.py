@@ -344,17 +344,13 @@ def list_orders(
         skip=skip,
         page=page,
         limit=limit,
-        join_options=[
-            #     selectinload(Order.order_products),
-            #     selectinload(Order.order_status_history)
-        ],
     )
 
     if not result["data"]:
         return api_response(404, "No orders found")
 
-    orders = result["data"]
-    return api_response(200, "Orders found", orders, result["total"])
+    list_data = [OrderReadNested.model_validate(prod) for prod in result["data"]]
+    return api_response(200, "Orders found", list_data, result["total"])
 
 
 @router.get("/customer/{customer_id}", response_model=list[OrderReadNested])
