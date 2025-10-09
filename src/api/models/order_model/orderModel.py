@@ -8,7 +8,7 @@ from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 from enum import Enum as PyEnum
 
 if TYPE_CHECKING:
-    from src.api.models import User, Shop, Product, VariationOption, Category
+    from src.api.models import User, Shop, Product, VariationOption, Category,Review
 
 
 class OrderStatusEnum(str, PyEnum):
@@ -99,7 +99,7 @@ class Order(TimeStampedModel, table=True):
             "uselist": False,  # One-to-one relationship
         },
     )
-
+    reviews: Optional["Review"] = Relationship(back_populates="order")
 
 class OrderProduct(TimeStampedModel, table=True):
     __tablename__: Literal["order_product"] = "order_product"

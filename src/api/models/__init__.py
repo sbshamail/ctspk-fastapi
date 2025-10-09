@@ -49,9 +49,12 @@ from .addressModel import Address
 
 # Coupon
 from .couponModel import Coupon
+# wishlist
+from .product_model.wishlistsModel import Wishlist
 # from .product_model import ProductPurchase, Type, VariationOption, Wishlist
 
-
+# Review
+from .reviewModel import Review
 # # attribute
 # from .attributes_model import Attribute, AttributeValue, AttributeProduct
 

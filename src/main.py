@@ -28,6 +28,8 @@ from src.api.routers import (
     uploadMediaRoute,
     # cart
     cartRoute,
+    # wishlist
+    wishlistRoute,
     # manufacturer
     manufacturerRoute,
     # shipping
@@ -38,6 +40,8 @@ from src.api.routers import (
     emailRoute,
     # order
     orderRoute,
+    # Review
+    reviewRoute,
     # Address
     addressRoute,
     # coupon
@@ -100,6 +104,8 @@ app.include_router(attributeValueRoute.router)
 app.include_router(attributeProductRoute.router)
 # Cart
 app.include_router(cartRoute.router)
+# wishlist
+app.include_router(wishlistRoute.router)
 # Manufacturer
 app.include_router(manufacturerRoute.router)
 # Banner
@@ -110,6 +116,8 @@ app.include_router(shippingRoute.router)
 app.include_router(emailRoute.router)
 # Order
 app.include_router(orderRoute.router)
+# Review
+app.include_router(reviewRoute.router)
 # Address
 app.include_router(addressRoute.router)
 # Coupon

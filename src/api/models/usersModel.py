@@ -7,7 +7,7 @@ from src.api.models.role_model.roleModel import RoleRead
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 if TYPE_CHECKING:
-    from src.api.models import UserRole, Role, Shop, UserShop, UserMedia,Order,Address
+    from src.api.models import UserRole, Role, Shop, UserShop, UserMedia,Order,Address,Wishlist,Review
 
 
 class User(TimeStampedModel, table=True):
@@ -46,6 +46,8 @@ class User(TimeStampedModel, table=True):
         }
     )
     addresses: list["Address"] = Relationship(back_populates="customer")
+    wishlists: Optional["Wishlist"] = Relationship(back_populates="user")
+    reviews: Optional["Review"] = Relationship(back_populates="user")
     # As fulfillment user (user assigned to fulfill orders)
     # fulfillment_orders: List["Order"] = Relationship(
     #     back_populates="fulfillment_user",

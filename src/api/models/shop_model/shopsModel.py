@@ -7,7 +7,7 @@ from src.api.models.usersModel import UserReadBase
 from src.api.models.baseModel import TimeStampReadModel, TimeStampedModel
 
 if TYPE_CHECKING:
-    from src.api.models import User, UserShop, Product,Order
+    from src.api.models import User, UserShop, Product,Order,Review
 
 
 class Shop(TimeStampedModel, table=True):
@@ -40,6 +40,8 @@ class Shop(TimeStampedModel, table=True):
             "foreign_keys": "[Order.shop_id]"
         }
     )
+    reviews: Optional["Review"] = Relationship(back_populates="shop")
+
 class ShopCreate(SQLModel):
     name: str
     description: Optional[str] = None

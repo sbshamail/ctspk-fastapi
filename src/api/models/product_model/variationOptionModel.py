@@ -5,7 +5,7 @@ from sqlmodel import SQLModel, Field, Relationship
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 if TYPE_CHECKING:
-    from src.api.models import Product
+    from src.api.models import Product,Wishlist,Review
 
 
 class VariationOption(TimeStampedModel, table=True):
@@ -27,8 +27,8 @@ class VariationOption(TimeStampedModel, table=True):
 
     # relationships
     product: "Product" = Relationship(back_populates="variation_options")
-
-
+    wishlists: Optional["Wishlist"] = Relationship(back_populates="variation_option")
+    reviews: Optional["Review"] = Relationship(back_populates="variation_option")
 class VariationOptionCreate(SQLModel):
     title: str
     price: str
