@@ -55,6 +55,9 @@ from .product_model.wishlistsModel import Wishlist
 
 # Review
 from .reviewModel import Review
+
+# FAQ
+from .faqModel import FAQ
 # # attribute
 # from .attributes_model import Attribute, AttributeValue, AttributeProduct
 

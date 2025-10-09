@@ -46,6 +46,8 @@ from src.api.routers import (
     addressRoute,
     # coupon
     couponRoute,
+    # FAQ
+    faqRoute,
 )
 
 
@@ -122,3 +124,5 @@ app.include_router(reviewRoute.router)
 app.include_router(addressRoute.router)
 # Coupon
 app.include_router(couponRoute.router)
+# FAQ
+app.include_router(faqRoute.router)
