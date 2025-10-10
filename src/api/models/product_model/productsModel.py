@@ -18,7 +18,8 @@ if TYPE_CHECKING:
         VariationOption,
         Wishlist,
         OrderProduct,
-        Review
+        Review,
+        ReturnItem
     )
 
 
@@ -110,6 +111,7 @@ class Product(TimeStampedModel, table=True):
     order_products: List["OrderProduct"] = Relationship(back_populates="product")
     wishlists: Optional["Wishlist"] = Relationship(back_populates="product")
     reviews: Optional["Review"] = Relationship(back_populates="product")
+    #return_items: Optional["ReturnItem"] = Relationship(back_populates="product")
 
 class ProductCreate(SQLModel):
     name: str

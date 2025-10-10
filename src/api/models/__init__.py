@@ -58,6 +58,8 @@ from .reviewModel import Review
 
 # FAQ
 from .faqModel import FAQ
+# Return Product
+from .returnModel import ReturnItem,ReturnRequest,WalletTransaction,UserWallet
 # # attribute
 # from .attributes_model import Attribute, AttributeValue, AttributeProduct
 
@@ -86,6 +88,10 @@ __all__ = [
     # shop
     "Shop",
     "UserShop",
+    "ReturnItem",
+    "ReturnRequest",
+    "WalletTransaction",
+    "UserWallet"
     # # product
     # "Product",
     # "ProductPurchase",

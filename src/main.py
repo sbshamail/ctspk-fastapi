@@ -48,6 +48,10 @@ from src.api.routers import (
     couponRoute,
     # FAQ
     faqRoute,
+    # Return
+    returnRoute,
+    # wallet
+    walletRoute,
 )
 
 
@@ -126,3 +130,7 @@ app.include_router(addressRoute.router)
 app.include_router(couponRoute.router)
 # FAQ
 app.include_router(faqRoute.router)
+# Return
+app.include_router(returnRoute.router)
+# Wallet
+app.include_router(walletRoute.router)
