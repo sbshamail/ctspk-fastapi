@@ -20,8 +20,8 @@ class AttributeProduct(TimeStampedModel, table=True):
     attribute_value: "AttributeValue" = Relationship(
         back_populates="attributes_products"
     )
-    product: "Product" = Relationship(back_populates="attributes")
-
+    #product: "Product" = Relationship(back_populates="attributes")
+    
 
 class AttributeProductCreate(SQLModel):
     attribute_value_id: int

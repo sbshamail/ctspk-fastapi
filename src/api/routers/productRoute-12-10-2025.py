@@ -8,7 +8,6 @@ from src.api.core.middleware import handle_async_wrapper
 from src.api.core.utility import uniqueSlugify
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.response import api_response, raiseExceptions
-from src.api.utils.video_processor import VideoProcessor
 from src.api.models.product_model.productsModel import (
     Product,
     ProductCreate,
@@ -73,74 +72,6 @@ def create_variations_for_product(session, product_id: int, variations_data: Lis
     return variations
 
 
-def update_variations_for_product(session, product_id: int, variations_data: List[VariationData], base_sku: str):
-    """Update variation options for a variable product"""
-    # Delete existing variations
-    existing_variations = session.exec(
-        select(VariationOption).where(VariationOption.product_id == product_id)
-    ).all()
-    
-    for variation in existing_variations:
-        session.delete(variation)
-    
-    session.commit()
-    
-    # Create new variations
-    return create_variations_for_product(session, product_id, variations_data, base_sku)
-
-
-def get_product_with_enhanced_data(session, product_id: int):
-    """Get product with enhanced data for variable and grouped products"""
-    product = session.get(Product, product_id)
-    if not product:
-        return None
-    
-    # Calculate total quantity for variable products
-    total_quantity = 0
-    variations_data = []
-    
-    if product.product_type == ProductType.VARIABLE:
-        variations = session.exec(
-            select(VariationOption).where(VariationOption.product_id == product_id)
-        ).all()
-        
-        for variation in variations:
-            total_quantity += variation.quantity
-            variations_data.append(variation)
-    
-    # Enhance grouped products with product names and SKUs
-    enhanced_grouped_products = []
-    if product.product_type == ProductType.GROUPED and product.grouped_products:
-        for grouped_item in product.grouped_products:
-            grouped_product = session.get(Product, grouped_item.get('product_id'))
-            if grouped_product:
-                enhanced_item = {
-                    'id': grouped_item.get('id'),  # Use the ID from grouped_products if exists
-                    'product_id': grouped_item.get('product_id'),
-                    'product_name': grouped_product.name,
-                    'product_sku': grouped_product.sku,
-                    'quantity': grouped_item.get('quantity', 1)
-                }
-                enhanced_grouped_products.append(enhanced_item)
-    
-    # Convert to ProductRead with enhanced data
-    product_data = ProductRead.model_validate(product)
-    
-    # Add enhanced data
-    if hasattr(product_data, 'variations'):
-        product_data.variations = variations_data
-    
-    if hasattr(product_data, 'grouped_products'):
-        product_data.grouped_products = enhanced_grouped_products
-    
-    # Add total quantity for variable products
-    if product.product_type == ProductType.VARIABLE:
-        product_data.total_quantity = total_quantity
-        product_data.quantity = total_quantity  # Update main quantity as well
-    
-    return product_data
-
-
 # ✅ CREATE
 @router.post("/create")
 @handle_async_wrapper
@@ -165,28 +96,23 @@ def create(
         if existing_product:
             return api_response(400, "SKU already exists")
     
-    # Calculate min and max prices and total quantity
-    total_quantity = 0
+    # Calculate min and max prices
     if request.product_type == ProductType.SIMPLE:
         min_price = request.price
         max_price = request.price
-        total_quantity = request.quantity or 0
     elif request.product_type == ProductType.VARIABLE and request.variations:
         prices = [var.price for var in request.variations]
         min_price = min(prices)
         max_price = max(prices)
-        total_quantity = sum(var.quantity for var in request.variations)
     else:
         min_price = request.min_price or request.price
         max_price = request.max_price or request.price
-        total_quantity = request.quantity or 0
     
     # Prepare product data
     product_data = request.model_dump(exclude={'attributes', 'variations', 'grouped_products'})
     product_data.update({
         'min_price': min_price,
         'max_price': max_price,
-        'quantity': total_quantity,  # Set total quantity
         'attributes': [attr.model_dump() for attr in request.attributes] if request.attributes else None,
         'grouped_products': [item.model_dump() for item in request.grouped_products] if request.grouped_products else None
     })
@@ -201,9 +127,7 @@ def create(
     if request.product_type == ProductType.VARIABLE and request.variations:
         create_variations_for_product(session, data.id, request.variations, data.sku)
     
-    # Return enhanced product data
-    enhanced_product = get_product_with_enhanced_data(session, data.id)
-    return api_response(200, "Product Created Successfully", enhanced_product)
+    return api_response(200, "Product Created Successfully", ProductRead.model_validate(data))
 
 
 # ✅ UPDATE
@@ -233,18 +157,8 @@ def update(
         if existing_product:
             return api_response(400, "SKU already exists")
 
-    # Calculate total quantity for variable products
-    total_quantity = updateData.quantity
-    if request.product_type == ProductType.VARIABLE and request.variations:
-        total_quantity = sum(var.quantity for var in request.variations)
-    elif request.quantity is not None:
-        total_quantity = request.quantity
-
     # Prepare update data
     update_data = request.model_dump(exclude_none=True, exclude={'attributes', 'variations', 'grouped_products'})
-    
-    # Update quantity
-    update_data['quantity'] = total_quantity
     
     if request.attributes is not None:
         update_data['attributes'] = [attr.model_dump() for attr in request.attributes]
@@ -257,16 +171,10 @@ def update(
     if data.name:
         data.slug = uniqueSlugify(session, Product, data.name)
 
-    # Update variations for variable products
-    if request.product_type == ProductType.VARIABLE and request.variations:
-        update_variations_for_product(session, data.id, request.variations, data.sku)
-
     session.commit()
     session.refresh(data)
     
-    # Return enhanced product data
-    enhanced_product = get_product_with_enhanced_data(session, data.id)
-    return api_response(200, "Product Updated Successfully", enhanced_product)
+    return api_response(200, "Product Updated Successfully", ProductRead.model_validate(data))
 
 
 @router.get(
@@ -276,18 +184,13 @@ def update(
 def get(id_slug: str, session: GetSession):
     # Check if it's an integer ID
     if id_slug.isdigit():
-        product_id = int(id_slug)
-        product = session.get(Product, product_id)
+        read = session.get(Product, int(id_slug))
     else:
         # Otherwise treat as slug
-        product = session.exec(select(Product).where(Product.slug.ilike(id_slug))).first()
-        product_id = product.id if product else None
-    
-    raiseExceptions((product, 404, "Product not found"))
+        read = session.exec(select(Product).where(Product.slug.ilike(id_slug))).first()
+    raiseExceptions((read, 404, "Product not found"))
 
-    # Return enhanced product data
-    enhanced_product = get_product_with_enhanced_data(session, product_id)
-    return api_response(200, "Product Found", enhanced_product)
+    return api_response(200, "Product Found", ProductRead.model_validate(read))
 
 
 # ✅ DELETE
@@ -300,14 +203,6 @@ def delete(
     product = session.get(Product, id)
     raiseExceptions((product, 404, "Product not found"))
 
-    # Delete variations first
-    if product.product_type == ProductType.VARIABLE:
-        variations = session.exec(
-            select(VariationOption).where(VariationOption.product_id == id)
-        ).all()
-        for variation in variations:
-            session.delete(variation)
-
     session.delete(product)
     session.commit()
     return api_response(200, f"Product {product.name} deleted")
@@ -316,20 +211,15 @@ def delete(
 @router.get("/list")
 def list(query_params: ListQueryParams, session: GetSession):
     try:
+        # Simple list implementation without complex relationships
         statement = select(Product)
         products = session.exec(statement).all()
-        
-        # Enhance each product data
-        enhanced_products = []
-        for product in products:
-            enhanced_product = get_product_with_enhanced_data(session, product.id)
-            enhanced_products.append(enhanced_product)
         
         return api_response(
             200,
             "Products found",
-            enhanced_products,
-            len(enhanced_products)
+            [ProductRead.model_validate(p) for p in products],
+            len(products)
         )
     except Exception as e:
         return api_response(500, f"Error fetching products: {str(e)}")
@@ -351,30 +241,4 @@ def patch_product_status(
     session.commit()
     session.refresh(updated)
 
-    # Return enhanced product data
-    enhanced_product = get_product_with_enhanced_data(session, id)
-    return api_response(200, "Product status updated successfully", enhanced_product)
-
-# Add this new route to your productRoute.py
-@router.post("/process-video-url")
-def process_video_url(request: dict, session: GetSession):
-    """Process video URL and return video data"""
-    try:
-        url = request.get('url', '')
-        
-        if not url:
-            return api_response(400, "URL is required")
-        
-        if not VideoProcessor.is_supported_video_url(url):
-            return api_response(400, "Unsupported video platform. Supported: YouTube, Vimeo, Dailymotion")
-        
-        video_data = VideoProcessor.process_video_url(url)
-        
-        if video_data:
-            return api_response(200, "Video data extracted successfully", video_data)
-        else:
-            return api_response(400, "Could not extract video data from the URL")
-            
-    except Exception as e:
-        print(f"Error processing video URL: {str(e)}")
-        return api_response(500, f"Error processing video URL: {str(e)}")
+    return api_response(200, "Product status updated successfully", ProductRead.model_validate(updated))

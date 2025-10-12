@@ -61,6 +61,7 @@ from .faqModel import FAQ
 # Return Product
 from .returnModel import ReturnItem,ReturnRequest,WalletTransaction,UserWallet
 # # attribute
+from .product_model.importHistoryModel import ProductImportHistory
 # from .attributes_model import Attribute, AttributeValue, AttributeProduct
 
 # # tag

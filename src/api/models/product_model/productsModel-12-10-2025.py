@@ -14,6 +14,7 @@ if TYPE_CHECKING:
         Category,
         Cart,
         Manufacturer,
+        # AttributeProduct,  # REMOVED: This is causing the error
         VariationOption,
         Wishlist,
         OrderProduct,
@@ -109,11 +110,17 @@ class Product(TimeStampedModel, table=True):
         foreign_key="manufacturers.id", index=True, default=None
     )
 
-    # relationships
+    # relationships - REMOVED AttributeProduct relationship
     shop: Optional["Shop"] = Relationship(back_populates="products")
     category: Optional["Category"] = Relationship(back_populates="products")
     carts: Optional[list["Cart"]] = Relationship(back_populates="product")
     manufacturer: Optional["Manufacturer"] = Relationship(back_populates="products")
+
+    # REMOVED: attributes relationship since we're using JSON field
+    # attributes: Optional[List["AttributeProduct"]] = Relationship(
+    #     back_populates="product"
+    # )
+    
     variation_options: List["VariationOption"] = Relationship(back_populates="product")
     order_products: List["OrderProduct"] = Relationship(back_populates="product")
     wishlists: Optional["Wishlist"] = Relationship(back_populates="product")
@@ -130,7 +137,6 @@ class ProductAttribute(SQLModel):
     id: int
     name: str
     values: List[ProductAttributeValue]
-    selected_values: Optional[List[int]] = None  # ADDED: Track selected values
     is_visible: bool = True
     is_variation: bool = True
 
@@ -149,10 +155,7 @@ class VariationData(SQLModel):
 
 
 class GroupedProductItem(SQLModel):
-    id: Optional[int] = None  # ADDED: For tracking in frontend
     product_id: int
-    product_name: Optional[str] = None  # ADDED: For display
-    product_sku: Optional[str] = None  # ADDED: For display
     quantity: int = 1
 
 
@@ -259,14 +262,10 @@ class VariationOptionReadForProduct(SQLModel):
     id: int
     title: str
     price: str
-    sale_price: Optional[str] = None
-    purchase_price: Optional[float] = None
     quantity: int
     options: Dict[str, Any]
     image: Optional[Dict[str, Any]] = None
     sku: Optional[str] = None
-    bar_code: Optional[str] = None
-    is_active: bool
 
 
 class ProductRead(TimeStampReadModel):
@@ -307,4 +306,3 @@ class ProductRead(TimeStampReadModel):
     variations: Optional[List[VariationOptionReadForProduct]] = None
     variations_count: Optional[int] = 0
     grouped_products: Optional[List[Dict[str, Any]]] = None
-    total_quantity: Optional[int] = 0  # ADDED: For variable products
