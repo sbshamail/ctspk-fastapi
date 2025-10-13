@@ -11,13 +11,9 @@ from src.api.core.dependencies import GetSession, requirePermission
 from src.api.core.response import api_response, raiseExceptions
 from src.api.models.product_model.productsModel import (
     Product, ProductType, ProductStatus,
-    ProductAttribute, VariationData, GroupedProductItem,
-    GroupedProductPricingType, GroupedProductConfig
+    ProductAttribute, VariationData, GroupedProductItem
 )
 from src.api.models.product_model.importHistoryModel import ProductImportHistory
-from src.api.models.product_model.productPurchaseModel import (
-    ProductPurchase, PurchaseType, TransactionType
-)
 from src.api.models.category_model.categoryModel import Category
 from src.api.models.manufacturer_model.manufacturerModel import Manufacturer
 from src.api.models.product_model.variationOptionModel import VariationOption
@@ -40,12 +36,10 @@ class ProductImportService:
         # Load categories
         categories = self.session.exec(select(Category)).all()
         self.categories_map = {cat.name.lower(): cat.id for cat in categories}
-        self.categories_map.update({str(cat.id): cat.id for cat in categories})
         
         # Load manufacturers
         manufacturers = self.session.exec(select(Manufacturer)).all()
         self.manufacturers_map = {mfg.name.lower(): mfg.id for mfg in manufacturers}
-        self.manufacturers_map.update({str(mfg.id): mfg.id for mfg in manufacturers})
         
     def update_import_history(self, status: str = None, errors: List = None, imported_products: List = None):
         """Update import history record"""
@@ -106,14 +100,6 @@ class ProductImportService:
         if category_key in self.categories_map:
             return self.categories_map[category_key]
         else:
-            # Try to find by ID
-            try:
-                category_id = int(category_name)
-                if str(category_id) in self.categories_map:
-                    return category_id
-            except ValueError:
-                pass
-                
             raise ValueError(f"Category '{category_name}' not found in database. Please create category first.")
     
     def get_manufacturer_id(self, manufacturer_name: str) -> Optional[int]:
@@ -126,65 +112,7 @@ class ProductImportService:
         if manufacturer_key in self.manufacturers_map:
             return self.manufacturers_map[manufacturer_key]
         else:
-            # Try to find by ID
-            try:
-                manufacturer_id = int(manufacturer_name)
-                if str(manufacturer_id) in self.manufacturers_map:
-                    return manufacturer_id
-            except ValueError:
-                pass
-                
             raise ValueError(f"Manufacturer '{manufacturer_name}' not found in database. Please create manufacturer first.")
-
-    def create_purchase_record(self, product_id: int, quantity: int, purchase_price: float, 
-                             shop_id: int, added_by: int, notes: str = None, product_name: str = None):
-        """Create purchase record for imported products"""
-        try:
-            # Get current stock before addition
-            product = self.session.get(Product, product_id)
-            previous_stock = product.quantity if product else 0
-            new_stock = previous_stock + quantity
-            
-            # Get import history for reference
-            import_history = None
-            if self.import_history_id:
-                import_history = self.session.get(ProductImportHistory, self.import_history_id)
-            
-            purchase = ProductPurchase(
-                product_id=product_id,
-                quantity=quantity,
-                purchase_price=purchase_price,
-                shop_id=shop_id,
-                purchase_type=PurchaseType.DEBIT,
-                transaction_type=TransactionType.STOCK_ADDITION,
-                reference_number=f"IMP-{uuid.uuid4().hex[:8].upper()}",
-                supplier_name="Import System",
-                notes=notes or f"Initial stock added for product: {product_name or 'Unknown'} via Excel import",
-                added_by=added_by,
-                previous_stock=previous_stock,
-                new_stock=new_stock,
-                transaction_details={
-                    "import_method": "excel_import",
-                    "original_filename": import_history.original_filename if import_history else "Unknown",
-                    "import_id": self.import_history_id,
-                    "product_name": product_name
-                }
-            )
-            
-            self.session.add(purchase)
-            self.session.commit()
-            
-            # Update product's total purchased quantity
-            if product:
-                product.total_purchased_quantity += quantity
-                self.session.add(product)
-                self.session.commit()
-                
-            return purchase
-            
-        except Exception as e:
-            self.session.rollback()
-            raise ValueError(f"Error creating purchase record: {str(e)}")
 
     def parse_simple_product(self, row: pd.Series, shop_id: int) -> Dict[str, Any]:
         """Parse simple product data from Excel row"""
@@ -212,7 +140,7 @@ class ProductImportService:
             quantity = int(row.get('quantity', 0)) if pd.notna(row.get('quantity')) else 0
             weight = float(row.get('weight', 0)) if pd.notna(row.get('weight')) else None
             sale_price = float(row.get('sale_price')) if pd.notna(row.get('sale_price')) else None
-            purchase_price = float(row.get('purchase_price', 0)) if pd.notna(row.get('purchase_price')) else 0
+            purchase_price = float(row.get('purchase_price')) if pd.notna(row.get('purchase_price')) else None
             unit = str(row.get('unit', 'pcs')).strip()
             tags = [tag.strip() for tag in str(row.get('tags', '')).split(',') if tag.strip()]
             
@@ -267,9 +195,6 @@ class ProductImportService:
             min_price = min(prices) if prices else 0
             max_price = max(prices) if prices else 0
             
-            # Calculate total quantity from variations
-            total_quantity = sum(var.quantity for var in variations)
-            
             return {
                 'name': name,
                 'description': str(main_row.get('description', '')).strip(),
@@ -281,8 +206,6 @@ class ProductImportService:
                 'sku': generate_unique_sku(self.session),
                 'min_price': min_price,
                 'max_price': max_price,
-                'quantity': total_quantity,
-                'purchase_price': 0,  # Will be calculated from variations
                 'attributes': attributes,
                 'variations': variations
             }
@@ -344,7 +267,7 @@ class ProductImportService:
                 price = float(row['price']) if pd.notna(row['price']) else 0
                 quantity = int(row.get('quantity', 0)) if pd.notna(row.get('quantity')) else 0
                 sale_price = float(row.get('sale_price')) if pd.notna(row.get('sale_price')) else None
-                purchase_price = float(row.get('purchase_price', 0)) if pd.notna(row.get('purchase_price')) else 0
+                purchase_price = float(row.get('purchase_price')) if pd.notna(row.get('purchase_price')) else None
                 sku = str(row.get('sku', '')).strip() or f"{generate_unique_sku(self.session)}-V{idx+1}"
                 bar_code = str(row.get('bar_code', '')).strip()
                 
@@ -385,9 +308,6 @@ class ProductImportService:
             # Parse grouped products
             grouped_products = self.parse_grouped_products(df)
             
-            # Parse grouped product configuration
-            grouped_config = self.parse_grouped_config(main_row)
-            
             return {
                 'name': name,
                 'description': str(main_row.get('description', '')).strip(),
@@ -397,13 +317,9 @@ class ProductImportService:
                 'status': ProductStatus.PUBLISH,
                 'shop_id': shop_id,
                 'sku': generate_unique_sku(self.session),
-                'min_price': 0,  # Will be calculated
-                'max_price': 0,  # Will be calculated
-                'price': 0,      # Will be calculated
-                'quantity': 0,   # Will be calculated from constituent products
-                'purchase_price': 0,
-                'grouped_products': grouped_products,
-                'grouped_products_config': grouped_config
+                'min_price': 0,
+                'max_price': 0,
+                'grouped_products': grouped_products
             }
         except Exception as e:
             raise ValueError(f"Error parsing grouped product: {str(e)}")
@@ -430,15 +346,10 @@ class ProductImportService:
                     raise ValueError(f"Product not found: {product_id_str}")
                 
                 quantity = int(row.get('quantity', 1)) if pd.notna(row.get('quantity')) else 1
-                is_free = bool(row.get('is_free', False)) if pd.notna(row.get('is_free')) else False
                 
                 grouped_products.append(GroupedProductItem(
                     product_id=product.id,
-                    quantity=quantity,
-                    is_free=is_free,
-                    product_name=product.name,
-                    product_sku=product.sku,
-                    product_price=product.sale_price or product.price
+                    quantity=quantity
                 ))
                 
             except Exception as e:
@@ -446,34 +357,8 @@ class ProductImportService:
         
         return grouped_products
     
-    def parse_grouped_config(self, row: pd.Series) -> GroupedProductConfig:
-        """Parse grouped product configuration from Excel row"""
-        try:
-            pricing_type = str(row.get('pricing_type', 'fixed_price')).strip()
-            discount_value = float(row.get('discount_value', 0)) if pd.notna(row.get('discount_value')) else None
-            fixed_price = float(row.get('fixed_price', 0)) if pd.notna(row.get('fixed_price')) else None
-            
-            # Map string to enum
-            pricing_type_map = {
-                'fixed_discount': GroupedProductPricingType.FIXED_DISCOUNT,
-                'percentage_discount': GroupedProductPricingType.PERCENTAGE_DISCOUNT,
-                'free_item': GroupedProductPricingType.FREE_ITEM,
-                'fixed_price': GroupedProductPricingType.FIXED_PRICE
-            }
-            
-            return GroupedProductConfig(
-                pricing_type=pricing_type_map.get(pricing_type, GroupedProductPricingType.FIXED_PRICE),
-                discount_value=discount_value,
-                fixed_price=fixed_price
-            )
-        except Exception as e:
-            # Return default config if parsing fails
-            return GroupedProductConfig(
-                pricing_type=GroupedProductPricingType.FIXED_PRICE
-            )
-    
-    def create_product(self, product_data: Dict[str, Any], added_by: int) -> Product:
-        """Create product in database with purchase tracking"""
+    def create_product(self, product_data: Dict[str, Any]) -> Product:
+        """Create product in database"""
         try:
             # Create main product
             product = Product(
@@ -481,7 +366,7 @@ class ProductImportService:
                 description=product_data.get('description', ''),
                 price=product_data.get('price', 0),
                 sale_price=product_data.get('sale_price'),
-                purchase_price=product_data.get('purchase_price', 0),
+                purchase_price=product_data.get('purchase_price'),
                 quantity=product_data.get('quantity', 0),
                 weight=product_data.get('weight'),
                 category_id=product_data['category_id'],
@@ -505,32 +390,14 @@ class ProductImportService:
             # Add grouped products for grouped products
             if product_data['product_type'] == ProductType.GROUPED and 'grouped_products' in product_data:
                 product.grouped_products = [item.dict() for item in product_data['grouped_products']]
-                if 'grouped_products_config' in product_data:
-                    product.grouped_products_config = product_data['grouped_products_config'].dict()
             
             self.session.add(product)
             self.session.commit()
             self.session.refresh(product)
             
-            # Create purchase record for the initial quantity if it's a simple product
-            if (product_data['product_type'] == ProductType.SIMPLE and 
-                product_data.get('quantity', 0) > 0 and 
-                product_data.get('purchase_price', 0) > 0):
-                
-                purchase_notes = f"Initial stock added for new product: {product_data['name']} via import"
-                self.create_purchase_record(
-                    product_id=product.id,
-                    quantity=product_data['quantity'],
-                    purchase_price=product_data['purchase_price'],
-                    shop_id=product_data['shop_id'],
-                    added_by=added_by,
-                    notes=purchase_notes,
-                    product_name=product_data['name']
-                )
-            
             # Create variations for variable products
             if product_data['product_type'] == ProductType.VARIABLE and 'variations' in product_data:
-                self.create_variations(product.id, product_data['variations'], added_by, product_data['shop_id'])
+                self.create_variations(product.id, product_data['variations'])
             
             return product
             
@@ -538,8 +405,8 @@ class ProductImportService:
             self.session.rollback()
             raise ValueError(f"Error creating product: {str(e)}")
     
-    def create_variations(self, product_id: int, variations: List[VariationData], added_by: int, shop_id: int):
-        """Create variation options for variable product with purchase tracking"""
+    def create_variations(self, product_id: int, variations: List[VariationData]):
+        """Create variation options for variable product"""
         for variation in variations:
             try:
                 # Create title from attributes
@@ -563,20 +430,6 @@ class ProductImportService:
                 )
                 
                 self.session.add(variation_option)
-                self.session.flush()  # Flush to get variation ID
-                
-                # Create purchase record for variation stock
-                if variation.quantity > 0 and variation.purchase_price > 0:
-                    purchase_notes = f"Initial stock added for variation: {title} via import"
-                    self.create_purchase_record(
-                        product_id=product_id,
-                        quantity=variation.quantity,
-                        purchase_price=variation.purchase_price,
-                        shop_id=shop_id,
-                        added_by=added_by,
-                        notes=purchase_notes,
-                        product_name=title
-                    )
                 
             except Exception as e:
                 raise ValueError(f"Error creating variation: {str(e)}")
@@ -599,7 +452,7 @@ def import_products_from_excel(
     user=requirePermission("product_create", "shop_admin"),
 ):
     """
-    Import products from Excel file with shop validation and purchase tracking
+    Import products from Excel file with shop validation
     Only imports products if category and manufacturer exist in database
     """
     import_history = None
@@ -709,7 +562,7 @@ def import_products_from_excel(
                                 row_shop_id = shop_id
                             
                             product_data = import_service.parse_simple_product(row, row_shop_id)
-                            product = import_service.create_product(product_data, user.get("id"))
+                            product = import_service.create_product(product_data)
                             results['successful'] += 1
                             results['imported_products'].append({
                                 'product_id': product.id,
@@ -717,9 +570,7 @@ def import_products_from_excel(
                                 'sku': product.sku,
                                 'type': 'simple',
                                 'sheet': sheet_name,
-                                'row': idx + 2,
-                                'quantity': product.quantity,
-                                'purchase_price': product.purchase_price
+                                'row': idx + 2
                             })
                         except Exception as e:
                             results['failed'] += 1
@@ -729,7 +580,7 @@ def import_products_from_excel(
                 elif product_type == ProductType.VARIABLE:
                     try:
                         product_data = import_service.parse_variable_product(df, shop_id)
-                        product = import_service.create_product(product_data, user.get("id"))
+                        product = import_service.create_product(product_data)
                         results['successful'] += 1
                         results['imported_products'].append({
                             'product_id': product.id,
@@ -737,8 +588,7 @@ def import_products_from_excel(
                             'sku': product.sku,
                             'type': 'variable',
                             'sheet': sheet_name,
-                            'variations': len(product_data.get('variations', [])),
-                            'total_quantity': product.quantity
+                            'variations': len(product_data.get('variations', []))
                         })
                     except Exception as e:
                         results['failed'] += 1
@@ -748,7 +598,7 @@ def import_products_from_excel(
                 elif product_type == ProductType.GROUPED:
                     try:
                         product_data = import_service.parse_grouped_product(df, shop_id)
-                        product = import_service.create_product(product_data, user.get("id"))
+                        product = import_service.create_product(product_data)
                         results['successful'] += 1
                         results['imported_products'].append({
                             'product_id': product.id,
@@ -899,11 +749,6 @@ def get_import_history_detail(
                     manufacturer = session.get(Manufacturer, product.manufacturer_id)
                     manufacturer_name = manufacturer.name if manufacturer else "Unknown"
                 
-                # Get purchase records for this product
-                purchase_records = session.exec(
-                    select(ProductPurchase).where(ProductPurchase.product_id == product.id)
-                ).all()
-                
                 imported_products_details.append({
                     'id': product.id,
                     'name': product.name,
@@ -915,10 +760,7 @@ def get_import_history_detail(
                     'manufacturer': manufacturer_name,
                     'type': product_info.get('type'),
                     'sheet': product_info.get('sheet'),
-                    'row': product_info.get('row'),
-                    'total_purchased_quantity': product.total_purchased_quantity,
-                    'total_sold_quantity': product.total_sold_quantity,
-                    'purchase_records_count': len(purchase_records)
+                    'row': product_info.get('row')
                 })
         
         response_data = {
@@ -987,7 +829,7 @@ def export_products_to_excel(
     user=requirePermission("product_view", "shop_admin"),
 ):
     """
-    Export products to Excel with filters including purchase and sales data
+    Export products to Excel with filters
     """
     try:
         # Build query based on user's shops and filters
@@ -1044,9 +886,6 @@ def export_products_to_excel(
                 manufacturer = session.get(Manufacturer, product.manufacturer_id)
                 manufacturer_name = manufacturer.name if manufacturer else "Unknown"
             
-            # Calculate current stock value
-            current_stock_value = product.purchase_price * product.quantity if product.purchase_price else 0
-            
             product_data.append({
                 'ID': product.id,
                 'Name': product.name,
@@ -1056,9 +895,7 @@ def export_products_to_excel(
                 'Price': product.price,
                 'Sale Price': product.sale_price or '',
                 'Purchase Price': product.purchase_price or '',
-                'Current Quantity': product.quantity,
-                'Total Purchased': product.total_purchased_quantity,
-                'Total Sold': product.total_sold_quantity,
+                'Quantity': product.quantity,
                 'Weight': product.weight or '',
                 'Category': category_name,
                 'Manufacturer': manufacturer_name,
@@ -1069,9 +906,7 @@ def export_products_to_excel(
                 'Tags': ', '.join(product.tags) if product.tags else '',
                 'Created At': product.created_at.strftime("%Y-%m-%d %H:%M:%S") if product.created_at else '',
                 'Min Price': product.min_price,
-                'Max Price': product.max_price,
-                'Current Stock Value': current_stock_value,
-                'In Stock': 'Yes' if product.in_stock else 'No'
+                'Max Price': product.max_price
             })
         
         # Create Excel file
@@ -1124,7 +959,7 @@ def download_import_template(
     user=requirePermission("product_create", "shop_admin"),
 ):
     """
-    Download Excel template for product import with shop selection and purchase tracking
+    Download Excel template for product import with shop selection
     """
     try:
         # Get user's shops for the template
@@ -1144,7 +979,7 @@ def download_import_template(
                     'description': 'This is a sample simple product',
                     'price': 29.99,
                     'sale_price': 24.99,
-                    'purchase_price': 15.00,  # Required for purchase tracking
+                    'purchase_price': 15.00,
                     'quantity': 100,
                     'weight': 0.5,
                     'category': 'Electronics',  # Must exist in database
@@ -1166,25 +1001,10 @@ def download_import_template(
                     'attribute_color': 'Red',
                     'price': 19.99,
                     'sale_price': 17.99,
-                    'purchase_price': 8.00,  # Purchase price for this variation
+                    'purchase_price': 8.00,
                     'quantity': 25,
                     'sku': 'SK-TSHIRT-S-RED',
                     'bar_code': '1234567890125'
-                },
-                {
-                    'shop_id': user_shops[0].get("id"),
-                    'name': 'Sample T-Shirt',
-                    'description': 'A sample variable product with size and color options',
-                    'category': 'Clothing',
-                    'manufacturer': 'FashionCo',
-                    'attribute_size': 'Medium',
-                    'attribute_color': 'Blue',
-                    'price': 21.99,
-                    'sale_price': 19.99,
-                    'purchase_price': 9.00,
-                    'quantity': 30,
-                    'sku': 'SK-TSHIRT-M-BLUE',
-                    'bar_code': '1234567890126'
                 }
             ],
             'Grouped_Products': [
@@ -1195,10 +1015,7 @@ def download_import_template(
                     'category': 'Electronics',  # Must exist in database
                     'manufacturer': 'TechBundle',  # Must exist in database
                     'grouped_product_id': 'SK-SIMPLE-001',  # Must exist in database
-                    'quantity': 1,
-                    'is_free': False,
-                    'pricing_type': 'fixed_price',
-                    'fixed_price': 199.99
+                    'quantity': 1
                 }
             ]
         }
