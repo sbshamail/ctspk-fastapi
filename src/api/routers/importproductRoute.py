@@ -2,8 +2,8 @@
 import pandas as pd
 import io
 import uuid
-from fastapi import APIRouter, UploadFile, File, Depends, Query
-from sqlmodel import Session, select, desc, func
+from fastapi import APIRouter, UploadFile, File, Depends, Query, HTTPException
+from sqlmodel import Session, select, desc, func, or_
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 
@@ -17,6 +17,7 @@ from src.api.models.product_model.importHistoryModel import ProductImportHistory
 from src.api.models.category_model.categoryModel import Category
 from src.api.models.manufacturer_model.manufacturerModel import Manufacturer
 from src.api.models.product_model.variationOptionModel import VariationOption
+from src.api.models.shop_model.shopsModel import Shop
 from src.api.core.utility import uniqueSlugify
 from src.api.core.sku_generator import generate_unique_sku
 
@@ -66,8 +67,31 @@ class ProductImportService:
         self.session.add(import_history)
         self.session.commit()
     
+    def validate_user_shop_access(self, user: dict, shop_identifier: str) -> int:
+        """Validate that user has access to the specified shop"""
+        if not shop_identifier:
+            raise ValueError("Shop identifier (id, name, or slug) is required")
+            
+        user_shops = user.get("shops", [])
+        if not user_shops:
+            raise ValueError("User is not associated with any shop")
+        
+        # Try to find shop by ID, name, or slug
+        shop = None
+        for user_shop in user_shops:
+            if (str(user_shop.get("id")) == str(shop_identifier) or 
+                user_shop.get("name", "").lower() == shop_identifier.lower() or
+                user_shop.get("slug", "").lower() == shop_identifier.lower()):
+                shop = user_shop
+                break
+        
+        if not shop:
+            raise ValueError(f"User doesn't have access to shop: {shop_identifier}")
+            
+        return shop.get("id")
+    
     def get_category_id(self, category_name: str) -> int:
-        """Get category ID by name, create if not exists"""
+        """Get category ID by name - only use existing categories"""
         if not category_name:
             raise ValueError("Category name is required")
             
@@ -75,27 +99,20 @@ class ProductImportService:
         
         if category_key in self.categories_map:
             return self.categories_map[category_key]
-            
-        # Create new category
-        new_category = Category(
-            name=category_name.strip(),
-            slug=uniqueSlugify(self.session, Category, category_name.strip()),
-            is_active=True
-        )
-        self.session.add(new_category)
-        self.session.commit()
-        self.session.refresh(new_category)
-        
-        self.categories_map[category_key] = new_category.id
-        return new_category.id
+        else:
+            raise ValueError(f"Category '{category_name}' not found in database. Please create category first.")
     
-    def get_manufacturer_id(self, manufacturer_name: str) -> int:
-        """Get manufacturer ID by name"""
+    def get_manufacturer_id(self, manufacturer_name: str) -> Optional[int]:
+        """Get manufacturer ID by name - only use existing manufacturers"""
         if not manufacturer_name:
             return None
             
         manufacturer_key = manufacturer_name.strip().lower()
-        return self.manufacturers_map.get(manufacturer_key)
+        
+        if manufacturer_key in self.manufacturers_map:
+            return self.manufacturers_map[manufacturer_key]
+        else:
+            raise ValueError(f"Manufacturer '{manufacturer_name}' not found in database. Please create manufacturer first.")
 
     def parse_simple_product(self, row: pd.Series, shop_id: int) -> Dict[str, Any]:
         """Parse simple product data from Excel row"""
@@ -108,8 +125,13 @@ class ProductImportService:
             price = float(row['price']) if pd.notna(row['price']) else 0
             category_name = str(row['category']).strip()
             
+            # Validate category exists
             category_id = self.get_category_id(category_name)
-            manufacturer_id = self.get_manufacturer_id(str(row.get('manufacturer', '')).strip())
+            
+            # Validate manufacturer exists if provided
+            manufacturer_id = None
+            if pd.notna(row.get('manufacturer')):
+                manufacturer_id = self.get_manufacturer_id(str(row.get('manufacturer', '')).strip())
             
             # Optional fields with defaults
             description = str(row.get('description', '')).strip()
@@ -157,7 +179,10 @@ class ProductImportService:
                 
             category_name = str(main_row['category']).strip()
             category_id = self.get_category_id(category_name)
-            manufacturer_id = self.get_manufacturer_id(str(main_row.get('manufacturer', '')).strip())
+            
+            manufacturer_id = None
+            if pd.notna(main_row.get('manufacturer')):
+                manufacturer_id = self.get_manufacturer_id(str(main_row.get('manufacturer', '')).strip())
             
             # Parse attributes
             attributes = self.parse_attributes(df)
@@ -275,7 +300,10 @@ class ProductImportService:
                 
             category_name = str(main_row['category']).strip()
             category_id = self.get_category_id(category_name)
-            manufacturer_id = self.get_manufacturer_id(str(main_row.get('manufacturer', '')).strip())
+            
+            manufacturer_id = None
+            if pd.notna(main_row.get('manufacturer')):
+                manufacturer_id = self.get_manufacturer_id(str(main_row.get('manufacturer', '')).strip())
             
             # Parse grouped products
             grouped_products = self.parse_grouped_products(df)
@@ -408,19 +436,14 @@ class ProductImportService:
         
         self.session.commit()
 
-def get_user_shop_id(user: dict) -> int:
-    """Safely get shop ID from user data"""
-    shops = user.get("shops", [])
-    print('user',user);
-    print('shops',shops);
-    if not shops:
-        raise ValueError("User is not associated with any shop")
-    
-    shop_id = shops[0].get("id") if shops else None
-    if not shop_id:
-        raise ValueError("Shop ID not found in user data")
-    
-    return shop_id
+def get_user_shops(user: dict) -> List[Dict]:
+    """Get user's shops"""
+    return user.get("shops", [])
+
+def get_user_shop_ids(user: dict) -> List[int]:
+    """Get user's shop IDs"""
+    shops = get_user_shops(user)
+    return [shop.get("id") for shop in shops if shop.get("id")]
 
 @router.post("/import-excel")
 def import_products_from_excel(
@@ -429,7 +452,8 @@ def import_products_from_excel(
     user=requirePermission("product_create", "shop_admin"),
 ):
     """
-    Import products from Excel file with history tracking
+    Import products from Excel file with shop validation
+    Only imports products if category and manufacturer exist in database
     """
     import_history = None
     try:
@@ -437,9 +461,39 @@ def import_products_from_excel(
         if not file.filename.endswith(('.xlsx', '.xls')):
             return api_response(400, "Only Excel files (.xlsx, .xls) are supported")
         
-        # Get shop ID from user - with safe handling
+        # Read Excel file first to get shop information
+        contents = file.file.read()
+        excel_file = io.BytesIO(contents)
+        
+        # Initialize import service
+        import_service = ProductImportService(session)
+        import_service.load_reference_data()
+        
+        # Read first sheet to get shop info
+        xl = pd.ExcelFile(excel_file)
+        first_sheet_name = xl.sheet_names[0]
+        df = pd.read_excel(excel_file, sheet_name=first_sheet_name)
+        
+        # Check if shop column exists
+        if 'shop_id' not in df.columns and 'shop_name' not in df.columns and 'shop_slug' not in df.columns:
+            return api_response(400, "Excel file must contain 'shop_id', 'shop_name', or 'shop_slug' column")
+        
+        # Get shop identifier from first row
+        first_row = df.iloc[0]
+        shop_identifier = None
+        if 'shop_id' in df.columns and pd.notna(first_row.get('shop_id')):
+            shop_identifier = str(first_row['shop_id']).strip()
+        elif 'shop_name' in df.columns and pd.notna(first_row.get('shop_name')):
+            shop_identifier = str(first_row['shop_name']).strip()
+        elif 'shop_slug' in df.columns and pd.notna(first_row.get('shop_slug')):
+            shop_identifier = str(first_row['shop_slug']).strip()
+        
+        if not shop_identifier:
+            return api_response(400, "Shop identifier not found in Excel file")
+        
+        # Validate user has access to this shop
         try:
-            shop_id = get_user_shop_id(user)
+            shop_id = import_service.validate_user_shop_access(user, shop_identifier)
         except ValueError as e:
             return api_response(400, str(e))
         
@@ -447,7 +501,7 @@ def import_products_from_excel(
         import_history = ProductImportHistory(
             filename=f"import_{uuid.uuid4().hex[:8]}.xlsx",
             original_filename=file.filename,
-            file_size=0,  # Will be updated after reading file
+            file_size=len(contents),
             shop_id=shop_id,
             imported_by=user.get("id"),
             status="processing"
@@ -456,21 +510,10 @@ def import_products_from_excel(
         session.commit()
         session.refresh(import_history)
         
-        # Read Excel file
-        contents = file.file.read()
-        excel_file = io.BytesIO(contents)
+        # Update service with history ID
+        import_service.import_history_id = import_history.id
         
-        # Update file size
-        import_history.file_size = len(contents)
-        session.add(import_history)
-        session.commit()
-        
-        # Initialize import service with history tracking
-        import_service = ProductImportService(session, import_history.id)
-        import_service.load_reference_data()
-        
-        # Read all sheets
-        xl = pd.ExcelFile(excel_file)
+        # Process each sheet
         results = {
             'successful': 0,
             'failed': 0,
@@ -478,7 +521,6 @@ def import_products_from_excel(
             'imported_products': []
         }
         
-        # Process each sheet
         for sheet_name in xl.sheet_names:
             try:
                 df = pd.read_excel(excel_file, sheet_name=sheet_name)
@@ -503,10 +545,23 @@ def import_products_from_excel(
                 
                 # Process based on product type
                 if product_type == ProductType.SIMPLE:
-                    # Process each row as separate simple product
                     for idx, row in df.iterrows():
                         try:
-                            product_data = import_service.parse_simple_product(row, shop_id)
+                            # Validate shop access for each row if shop info is provided
+                            row_shop_identifier = None
+                            if 'shop_id' in df.columns and pd.notna(row.get('shop_id')):
+                                row_shop_identifier = str(row['shop_id']).strip()
+                            elif 'shop_name' in df.columns and pd.notna(row.get('shop_name')):
+                                row_shop_identifier = str(row['shop_name']).strip()
+                            elif 'shop_slug' in df.columns and pd.notna(row.get('shop_slug')):
+                                row_shop_identifier = str(row['shop_slug']).strip()
+                            
+                            if row_shop_identifier:
+                                row_shop_id = import_service.validate_user_shop_access(user, row_shop_identifier)
+                            else:
+                                row_shop_id = shop_id
+                            
+                            product_data = import_service.parse_simple_product(row, row_shop_id)
                             product = import_service.create_product(product_data)
                             results['successful'] += 1
                             results['imported_products'].append({
@@ -523,7 +578,6 @@ def import_products_from_excel(
                             results['errors'].append(error_msg)
                 
                 elif product_type == ProductType.VARIABLE:
-                    # Process entire sheet as one variable product
                     try:
                         product_data = import_service.parse_variable_product(df, shop_id)
                         product = import_service.create_product(product_data)
@@ -542,7 +596,6 @@ def import_products_from_excel(
                         results['errors'].append(error_msg)
                 
                 elif product_type == ProductType.GROUPED:
-                    # Process entire sheet as one grouped product
                     try:
                         product_data = import_service.parse_grouped_product(df, shop_id)
                         product = import_service.create_product(product_data)
@@ -603,25 +656,24 @@ def get_import_history(
     Get product import history with pagination
     """
     try:
-        # Get shop ID from user - with safe handling
-        try:
-            shop_id = get_user_shop_id(user)
-        except ValueError as e:
-            return api_response(400, str(e))
+        # Get user's shop IDs
+        user_shop_ids = get_user_shop_ids(user)
+        if not user_shop_ids:
+            return api_response(400, "User is not associated with any shop")
         
         # Calculate offset
         offset = (page - 1) * limit
         
         # Get total count
         total_count_query = select(func.count(ProductImportHistory.id)).where(
-            ProductImportHistory.shop_id == shop_id
+            ProductImportHistory.shop_id.in_(user_shop_ids)
         )
         total_count = session.exec(total_count_query).first()
         
         # Get paginated results
         import_history = session.exec(
             select(ProductImportHistory)
-            .where(ProductImportHistory.shop_id == shop_id)
+            .where(ProductImportHistory.shop_id.in_(user_shop_ids))
             .order_by(desc(ProductImportHistory.created_at))
             .offset(offset)
             .limit(limit)
@@ -645,7 +697,15 @@ def get_import_history(
                 'errors_count': len(record.import_errors or [])
             })
         
-        return api_response(200, "Import history retrieved", history_data)
+        return api_response(200, "Import history retrieved", {
+            'data': history_data,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total': total_count,
+                'pages': (total_count + limit - 1) // limit
+            }
+        })
         
     except Exception as e:
         return api_response(500, f"Failed to retrieve import history: {str(e)}")
@@ -660,18 +720,18 @@ def get_import_history_detail(
     Get detailed information about a specific import
     """
     try:
-        # Get shop ID from user - with safe handling
-        try:
-            shop_id = get_user_shop_id(user)
-        except ValueError as e:
-            return api_response(400, str(e))
+        # Get user's shop IDs
+        user_shop_ids = get_user_shop_ids(user)
+        if not user_shop_ids:
+            return api_response(400, "User is not associated with any shop")
         
         # Get import history record
         import_history = session.get(ProductImportHistory, import_id)
-        raiseExceptions((import_history, 404, "Import record not found"))
+        if not import_history:
+            return api_response(404, "Import record not found")
         
         # Check if user has access to this import
-        if import_history.shop_id != shop_id:
+        if import_history.shop_id not in user_shop_ids:
             return api_response(403, "Access denied")
         
         # Get detailed product information
@@ -679,6 +739,16 @@ def get_import_history_detail(
         for product_info in (import_history.imported_products or []):
             product = session.get(Product, product_info.get('product_id'))
             if product:
+                # Get category name
+                category = session.get(Category, product.category_id)
+                category_name = category.name if category else "Unknown"
+                
+                # Get manufacturer name
+                manufacturer_name = "Unknown"
+                if product.manufacturer_id:
+                    manufacturer = session.get(Manufacturer, product.manufacturer_id)
+                    manufacturer_name = manufacturer.name if manufacturer else "Unknown"
+                
                 imported_products_details.append({
                     'id': product.id,
                     'name': product.name,
@@ -686,6 +756,8 @@ def get_import_history_detail(
                     'price': product.price,
                     'quantity': product.quantity,
                     'status': product.status,
+                    'category': category_name,
+                    'manufacturer': manufacturer_name,
                     'type': product_info.get('type'),
                     'sheet': product_info.get('sheet'),
                     'row': product_info.get('row')
@@ -721,18 +793,18 @@ def delete_import_history(
     Delete import history record
     """
     try:
-        # Get shop ID from user - with safe handling
-        try:
-            shop_id = get_user_shop_id(user)
-        except ValueError as e:
-            return api_response(400, str(e))
+        # Get user's shop IDs
+        user_shop_ids = get_user_shop_ids(user)
+        if not user_shop_ids:
+            return api_response(400, "User is not associated with any shop")
         
         # Get import history record
         import_history = session.get(ProductImportHistory, import_id)
-        raiseExceptions((import_history, 404, "Import record not found"))
+        if not import_history:
+            return api_response(404, "Import record not found")
         
         # Check if user has access to this import
-        if import_history.shop_id != shop_id:
+        if import_history.shop_id not in user_shop_ids:
             return api_response(403, "Access denied")
         
         # Delete record
@@ -742,7 +814,144 @@ def delete_import_history(
         return api_response(200, "Import history record deleted")
         
     except Exception as e:
+        session.rollback()
         return api_response(500, f"Failed to delete import history: {str(e)}")
+
+@router.get("/export-excel")
+def export_products_to_excel(
+    session: GetSession,
+    shop_id: Optional[int] = Query(None, description="Filter by shop ID"),
+    category_id: Optional[int] = Query(None, description="Filter by category ID"),
+    manufacturer_id: Optional[int] = Query(None, description="Filter by manufacturer ID"),
+    low_stock: Optional[bool] = Query(None, description="Filter low stock products"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    user=requirePermission("product_view", "shop_admin"),
+):
+    """
+    Export products to Excel with filters
+    """
+    try:
+        # Build query based on user's shops and filters
+        user_shop_ids = get_user_shop_ids(user)
+        
+        if not user_shop_ids:
+            return api_response(400, "User is not associated with any shop")
+        
+        query = select(Product).where(Product.shop_id.in_(user_shop_ids))
+        
+        # Apply filters
+        if shop_id:
+            if shop_id not in user_shop_ids:
+                return api_response(403, "Access denied to specified shop")
+            query = query.where(Product.shop_id == shop_id)
+        
+        if category_id:
+            query = query.where(Product.category_id == category_id)
+            
+        if manufacturer_id:
+            query = query.where(Product.manufacturer_id == manufacturer_id)
+            
+        if low_stock:
+            query = query.where(Product.quantity <= 10)  # Define low stock threshold
+            
+        if start_date:
+            start_datetime = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            query = query.where(Product.created_at >= start_datetime)
+            
+        if end_date:
+            end_datetime = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+            query = query.where(Product.created_at <= end_datetime)
+        
+        # Execute query
+        products = session.exec(query).all()
+        
+        if not products:
+            return api_response(404, "No products found matching the criteria")
+        
+        # Prepare data for Excel
+        product_data = []
+        for product in products:
+            # Get shop name
+            shop = session.get(Shop, product.shop_id)
+            shop_name = shop.name if shop else "Unknown"
+            
+            # Get category name
+            category = session.get(Category, product.category_id)
+            category_name = category.name if category else "Unknown"
+            
+            # Get manufacturer name
+            manufacturer_name = "Unknown"
+            if product.manufacturer_id:
+                manufacturer = session.get(Manufacturer, product.manufacturer_id)
+                manufacturer_name = manufacturer.name if manufacturer else "Unknown"
+            
+            product_data.append({
+                'ID': product.id,
+                'Name': product.name,
+                'Description': product.description or '',
+                'SKU': product.sku,
+                'Barcode': product.bar_code or '',
+                'Price': product.price,
+                'Sale Price': product.sale_price or '',
+                'Purchase Price': product.purchase_price or '',
+                'Quantity': product.quantity,
+                'Weight': product.weight or '',
+                'Category': category_name,
+                'Manufacturer': manufacturer_name,
+                'Shop': shop_name,
+                'Type': product.product_type.value,
+                'Status': product.status.value,
+                'Unit': product.unit,
+                'Tags': ', '.join(product.tags) if product.tags else '',
+                'Created At': product.created_at.strftime("%Y-%m-%d %H:%M:%S") if product.created_at else '',
+                'Min Price': product.min_price,
+                'Max Price': product.max_price
+            })
+        
+        # Create Excel file
+        df = pd.DataFrame(product_data)
+        output = io.BytesIO()
+        
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Products', index=False)
+            
+            # Auto-adjust column widths
+            worksheet = writer.sheets['Products']
+            for idx, col in enumerate(df.columns):
+                max_len = max(df[col].astype(str).str.len().max(), len(col)) + 2
+                worksheet.column_dimensions[chr(65 + idx)].width = min(max_len, 50)
+        
+        output.seek(0)
+        
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"products_export_{timestamp}.xlsx"
+        
+        # Return file response
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        return api_response(500, f"Failed to export products: {str(e)}")
+
+@router.get("/user-shops")
+def get_user_shops_list(
+    session: GetSession,
+    user=requirePermission("product_view", "shop_admin"),
+):
+    """
+    Get list of shops associated with the user
+    """
+    try:
+        user_shops = get_user_shops(user)
+        return api_response(200, "User shops retrieved", user_shops, len(user_shops))
+    except Exception as e:
+        return api_response(500, f"Failed to retrieve user shops: {str(e)}")
 
 @router.get("/import-template")
 def download_import_template(
@@ -750,13 +959,22 @@ def download_import_template(
     user=requirePermission("product_create", "shop_admin"),
 ):
     """
-    Download Excel template for product import
+    Download Excel template for product import with shop selection
     """
     try:
+        # Get user's shops for the template
+        user_shops = get_user_shops(user)
+        
+        if not user_shops:
+            return api_response(400, "User is not associated with any shop")
+        
         # Create sample data for template
         sample_data = {
             'Simple_Products': [
                 {
+                    'shop_id': user_shops[0].get("id"),
+                    'shop_name': user_shops[0].get("name"),
+                    'shop_slug': user_shops[0].get("slug"),
                     'name': 'Sample Simple Product 1',
                     'description': 'This is a sample simple product',
                     'price': 29.99,
@@ -764,8 +982,8 @@ def download_import_template(
                     'purchase_price': 15.00,
                     'quantity': 100,
                     'weight': 0.5,
-                    'category': 'Electronics',
-                    'manufacturer': 'TechCorp',
+                    'category': 'Electronics',  # Must exist in database
+                    'manufacturer': 'TechCorp',  # Must exist in database
                     'sku': 'SK-SIMPLE-001',
                     'bar_code': '1234567890123',
                     'unit': 'pcs',
@@ -774,10 +992,11 @@ def download_import_template(
             ],
             'Variable_Products': [
                 {
+                    'shop_id': user_shops[0].get("id"),
                     'name': 'Sample T-Shirt',
                     'description': 'A sample variable product with size and color options',
-                    'category': 'Clothing',
-                    'manufacturer': 'FashionCo',
+                    'category': 'Clothing',  # Must exist in database
+                    'manufacturer': 'FashionCo',  # Must exist in database
                     'attribute_size': 'Small',
                     'attribute_color': 'Red',
                     'price': 19.99,
@@ -790,11 +1009,12 @@ def download_import_template(
             ],
             'Grouped_Products': [
                 {
+                    'shop_id': user_shops[0].get("id"),
                     'name': 'Sample Computer Bundle',
                     'description': 'A complete computer setup bundle',
-                    'category': 'Electronics',
-                    'manufacturer': 'TechBundle',
-                    'grouped_product_id': 'SK-SIMPLE-001',
+                    'category': 'Electronics',  # Must exist in database
+                    'manufacturer': 'TechBundle',  # Must exist in database
+                    'grouped_product_id': 'SK-SIMPLE-001',  # Must exist in database
                     'quantity': 1
                 }
             ]
@@ -806,6 +1026,12 @@ def download_import_template(
             for sheet_name, data in sample_data.items():
                 df = pd.DataFrame(data)
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
+                
+                # Auto-adjust column widths
+                worksheet = writer.sheets[sheet_name]
+                for idx, col in enumerate(df.columns):
+                    max_len = max(df[col].astype(str).str.len().max(), len(col)) + 2
+                    worksheet.column_dimensions[chr(65 + idx)].width = min(max_len, 30)
         
         output.seek(0)
         

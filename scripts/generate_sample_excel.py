@@ -8,6 +8,7 @@ def generate_sample_excel():
     sample_data = {
         'Simple_Products': [
             {
+                'shop_id': 'Main Electronics Store',
                 'name': 'Wireless Bluetooth Headphones',
                 'description': 'High-quality wireless headphones with noise cancellation',
                 'price': 79.99,
@@ -27,6 +28,7 @@ def generate_sample_excel():
                 'meta_description': 'Premium wireless headphones with noise cancellation technology'
             },
             {
+                'shop_id': 'Main Electronics Store',
                 'name': 'Stainless Steel Water Bottle',
                 'description': 'Eco-friendly stainless steel water bottle, keeps drinks cold for 24 hours',
                 'price': 24.99,
@@ -48,6 +50,7 @@ def generate_sample_excel():
         ],
         'Variable_Products': [
             {
+                'shop_id': 'Main Electronics Store',
                 'name': 'Premium Running Shoes',
                 'description': 'High-performance running shoes for all terrains',
                 'category': 'Sports & Outdoors',
@@ -62,6 +65,7 @@ def generate_sample_excel():
                 'bar_code': '1234567890130'
             },
             {
+                'shop_id': 'Main Electronics Store',
                 'name': 'Premium Running Shoes',
                 'description': 'High-performance running shoes for all terrains',
                 'category': 'Sports & Outdoors',
@@ -76,6 +80,7 @@ def generate_sample_excel():
                 'bar_code': '1234567890131'
             },
             {
+                'shop_id': 'Main Electronics Store',
                 'name': 'Premium Running Shoes',
                 'description': 'High-performance running shoes for all terrains',
                 'category': 'Sports & Outdoors',
@@ -90,6 +95,7 @@ def generate_sample_excel():
                 'bar_code': '1234567890132'
             },
             {
+                'shop_id': 'Main Electronics Store',
                 'name': 'Premium Running Shoes',
                 'description': 'High-performance running shoes for all terrains',
                 'category': 'Sports & Outdoors',
@@ -106,6 +112,7 @@ def generate_sample_excel():
         ],
         'Grouped_Products': [
             {
+                'shop_id': 'Main Electronics Store',
                 'name': 'Office Desk Setup Bundle',
                 'description': 'Complete office desk setup including monitor, keyboard, and mouse',
                 'category': 'Electronics',
@@ -114,6 +121,7 @@ def generate_sample_excel():
                 'quantity': 1
             },
             {
+                'shop_id': 'Main Electronics Store',
                 'name': 'Office Desk Setup Bundle',
                 'description': 'Complete office desk setup including monitor, keyboard, and mouse',
                 'category': 'Electronics',
