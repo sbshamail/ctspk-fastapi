@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from typing import List
+from fastapi import APIRouter, Body
 from sqlalchemy import select
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.response import api_response, raiseExceptions
@@ -80,6 +81,55 @@ def delete_role(
     session.delete(cart)
     session.commit()
     return api_response(404, f"Cart {cart.id} deleted")
+
+
+@router.delete("/delete-many", response_model=dict)
+def delete_many_cart_items(
+    product_ids: List[int] = Body(
+        ..., embed=True, description="List of product IDs to delete"
+    ),
+    session: GetSession = None,
+    user: dict = requireSignin,
+):
+    """
+    Delete multiple cart items by product IDs for the logged-in user
+    Example request body:
+    {
+        "product_ids": [1, 2, 3]
+    }
+    """
+    carts = session.exec(
+        select(Cart)
+        .where(Cart.user_id == user["id"])
+        .where(Cart.product_id.in_(product_ids))
+    ).all()
+
+    raiseExceptions((carts, 404, "No matching cart items found"))
+
+    for c in carts:
+        session.delete(c)
+    session.commit()
+
+    return api_response(200, f"{len(carts)} cart items deleted successfully")
+
+
+@router.delete("/delete-all", response_model=dict)
+def delete_all_cart_items(
+    session: GetSession,
+    user: dict = requireSignin,
+):
+    """
+    Delete all cart items for the logged-in user
+    """
+    carts = session.exec(select(Cart).where(Cart.user_id == user["id"])).all()
+
+    raiseExceptions((carts, 404, "No cart items found"))
+
+    for c in carts:
+        session.delete(c)
+    session.commit()
+
+    return api_response(200, "All cart items deleted successfully")
 
 
 # ✅ LIST
