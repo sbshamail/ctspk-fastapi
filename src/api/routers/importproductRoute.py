@@ -847,16 +847,16 @@ def get_import_history(
                 'errors_count': len(record.import_errors or [])
             })
         
-        return api_response(200, "Import history retrieved", {
-            'data': history_data,
-            'pagination': {
-                'page': page,
-                'limit': limit,
-                'total': total_count,
-                'pages': (total_count + limit - 1) // limit
-            }
-        })
-        
+        return api_response(200, "Import history retrieved", history_data,total_count)
+        #  {
+        #     'data': history_data,
+        #     'pagination': {
+        #         'page': page,
+        #         'limit': limit,
+        #         'total': total_count,
+        #         'pages': (total_count + limit - 1) // limit
+        #     }
+        # } 
     except Exception as e:
         return api_response(500, f"Failed to retrieve import history: {str(e)}")
 

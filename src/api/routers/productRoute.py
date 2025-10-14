@@ -489,28 +489,40 @@ def delete(
     return api_response(200, f"Product {product.name} deleted")
 
 
-@router.get("/list")
+@router.get("/list", response_model=list[ProductRead])
 def list(query_params: ListQueryParams, session: GetSession):
-    try:
-        statement = select(Product)
-        products = session.exec(statement).all()
-        
-        # Enhance each product data
-        enhanced_products = []
-        for product in products:
-            enhanced_product = get_product_with_enhanced_data(session, product.id)
+    query_params = vars(query_params)
+    searchFields = ["name", "description", "category.name"]
+
+    result = listRecords(
+        query_params=query_params,
+        searchFields=searchFields,
+        Model=Product,
+        Schema=ProductRead,
+    )
+    # Enhance each product data
+    if hasattr(result, 'body'):
+            import json
+            result_data = json.loads(result.body.decode())
+            print(f"Result data: {result_data}")
+            products_data = result_data.get("data", [])
+            total_count = result_data.get("total", 0)
+    else:
+            # If it returns a dict directly
+            products_data = result.get("data", [])
+            total_count = result.get("total", 0)
+    # Enhance each product data
+    enhanced_products = []
+    for product_data in products_data:
+            enhanced_product = get_product_with_enhanced_data(session, product_data["id"])
             enhanced_products.append(enhanced_product)
         
-        return api_response(
+    return api_response(
             200,
             "Products found",
             enhanced_products,
-            len(enhanced_products)
+            total_count
         )
-    except Exception as e:
-        return api_response(500, f"Error fetching products: {str(e)}")
-
-
 # ✅ PATCH Product status
 @router.patch("/{id}/status")
 def patch_product_status(
