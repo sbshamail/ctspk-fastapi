@@ -13,16 +13,17 @@ from src.api.core.security import hash_password
 from src.api.core import updateOp, requireSignin
 from src.api.core.dependencies import GetSession, requirePermission, requireAdmin
 from src.api.core.response import api_response, raiseExceptions
-from src.api.models.usersModel import UpdateUserByAdmin, User, UserRead, UserUpdate
-
+from src.api.models.usersModel import RegisterUser, UpdateUserByAdmin, User, UserRead, UserUpdate
+from src.api.models.role_model.roleModel import Role
+from src.api.models.role_model.userRoleModel import UserRole
 
 router = APIRouter(prefix="/user", tags=["user"])
 
 @router.post("/create")
 def create_user(
-    request: UserUpdate,  # Or create a proper UserCreate schema
+    request: RegisterUser,
     session: GetSession,
-    user=requirePermission("user-create"),
+    user=requirePermission("system:*"),
 ):
     # Check if user already exists
     existing_user = session.exec(
@@ -34,17 +35,40 @@ def create_user(
     # Hash password
     hashed_password = hash_password(request.password)
     
-    # Create user
-    user_data = request.model_dump(exclude={'password'})
+    # Create user data (exclude role_ids and confirm_password)
+    user_data = request.model_dump(exclude={'password', 'confirm_password', 'role_ids'})
     user_data['password'] = hashed_password
     
+    # Create user
     new_user = User(**user_data)
     session.add(new_user)
+    session.flush()  # Flush to get the new user ID without committing
+
+    # Assign roles if role_ids are provided
+    if request.role_ids:
+        for role_id in request.role_ids:
+            # Check if role exists
+            role = session.get(Role, role_id)
+            if not role:
+                session.rollback()
+                return api_response(404, f"Role with ID {role_id} not found")
+            
+            # Check if user-role relationship already exists
+            existing_user_role = session.exec(
+                select(UserRole).where(
+                    UserRole.user_id == new_user.id,
+                    UserRole.role_id == role_id
+                )
+            ).first()
+            
+            if not existing_user_role:
+                user_role = UserRole(user_id=new_user.id, role_id=role_id)
+                session.add(user_role)
+
     session.commit()
     session.refresh(new_user)
 
     return api_response(201, "User created successfully", UserRead.model_validate(new_user))
-
 @router.put("/update", response_model=UserRead)
 def update_user(
     user: requireSignin,
@@ -64,22 +88,47 @@ def update_user(
 
 
 @router.put("/updatebyadmin/{user_id}", response_model=UserRead)
-def update_user(
+def update_user_by_admin(
     user_id: int,
-    request: UpdateUserByAdmin,
+    request: UpdateUserByAdmin,  # You might want to create a UserUpdateWithRoles schema
     session: GetSession,
     user=requirePermission("all"),
 ):
-    db_user = session.get(User, user_id)  # Like findById
+    db_user = session.get(User, user_id)
     raiseExceptions((db_user, 404, "User not found"))
-    update_user = updateOp(db_user, request, session)
+    
+    update_data = request.model_dump(exclude_unset=True, exclude={'role_ids'})
+    
+    # Update basic fields
+    for field, value in update_data.items():
+        if value is not None and field != 'password':
+            setattr(db_user, field, value)
+    
+    # Handle password update
     if request.password:
         hashed_password = hash_password(request.password)
-        update_user.password = hashed_password
+        db_user.password = hashed_password
+    
+    # Handle role assignments if role_ids are provided
+    if hasattr(request, 'role_ids') and request.role_ids is not None:
+        # Remove existing user roles
+        existing_user_roles = session.exec(
+            select(UserRole).where(UserRole.user_id == user_id)
+        ).all()
+        for user_role in existing_user_roles:
+            session.delete(user_role)
+        
+        # Add new user roles
+        for role_id in request.role_ids:
+            role = session.get(Role, role_id)
+            if role:
+                user_role = UserRole(user_id=user_id, role_id=role_id)
+                session.add(user_role)
+    
+    session.add(db_user)
     session.commit()
-    session.refresh(update_user)
-    return api_response(200, "User Found", UserRead.model_validate(update_user))
-
+    session.refresh(db_user)
+    return api_response(200, "User updated successfully", UserRead.model_validate(db_user))
 
 @router.get("/read", response_model=UserRead)
 def get_user(

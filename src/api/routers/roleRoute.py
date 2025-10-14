@@ -30,7 +30,7 @@ def create_role(
         return api_response(403, "You cannot assign root-level permissions")
 
     # Generate slug
-    slug = uniqueSlugify(request.name)
+    slug = uniqueSlugify(session, Role,request.name)
     
     # Check if slug already exists
     existing_slug = session.exec(
@@ -41,7 +41,8 @@ def create_role(
 
     role_data = request.model_dump()
     role_data["slug"] = slug
-    role_data["user_id"] = user.id  # Current user creating the role
+    print(f"role_data: {user}")
+    role_data["user_id"] = user["id"]  # Current user creating the role
 
     role = Role(**role_data)
     session.add(role)
