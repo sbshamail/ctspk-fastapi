@@ -36,6 +36,8 @@ class RoleReadBase(TimeStampReadModel):
     slug: str
     permissions: list[str]
     user_id: int
+    is_active: bool
+    description: Optional[str]
 
 
 class RoleRead(RoleReadBase):
@@ -48,7 +50,7 @@ class RoleCreate(SQLModel):
     name: str
     description: Optional[str] = None
     permissions: list[str] = []
-
+    is_active: Optional[bool] = None
     #def generate_slug(self):
      #   """Generate slug from name"""
       #  return uniqueSlugify(self.name)
