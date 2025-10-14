@@ -5,7 +5,7 @@ from src.api.core.operation import listRecords, updateOp
 from src.api.core.response import api_response, raiseExceptions
 from src.api.models.cart_model import Cart, CartCreate, CartRead, CartUpdate
 from src.api.core.dependencies import GetSession, ListQueryParams, requireSignin
-
+from sqlalchemy.orm import selectinload
 
 router = APIRouter(prefix="/cart", tags=["Cart"])
 

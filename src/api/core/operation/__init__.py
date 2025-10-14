@@ -103,6 +103,7 @@ def listop(
     paginated_stmt = statement.offset(skip).limit(limit)
     results = _exec(session, paginated_stmt, Model)
 
+    print(results)
     return {"data": results, "total": total_count}
 
 
@@ -155,6 +156,7 @@ def listRecords(
         # Convert each SQLModel Model instance into a ModelRead Pydantic model
         if not Schema:
             return result
+
         list_data = [Schema.model_validate(prod) for prod in result["data"]]
         return api_response(
             200,
