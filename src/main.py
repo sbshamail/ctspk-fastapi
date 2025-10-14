@@ -52,6 +52,8 @@ from src.api.routers import (
     returnRoute,
     # wallet
     walletRoute,
+    # Import Product
+    importproductRoute
 )
 
 
@@ -108,6 +110,8 @@ app.include_router(productRoute.router)
 app.include_router(attributeRoute.router)
 app.include_router(attributeValueRoute.router)
 app.include_router(attributeProductRoute.router)
+# Import Product
+app.include_router(importproductRoute.router)
 # Cart
 app.include_router(cartRoute.router)
 # wishlist

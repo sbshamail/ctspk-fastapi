@@ -14,12 +14,12 @@ if TYPE_CHECKING:
         Category,
         Cart,
         Manufacturer,
+        AttributeProduct,
         VariationOption,
         Wishlist,
         OrderProduct,
         Review,
-        ReturnItem,
-        ProductPurchase
+        ReturnItem
     )
 
 
@@ -31,14 +31,6 @@ class ProductStatus(str, Enum):
 class ProductType(str, Enum):
     SIMPLE = "simple"
     VARIABLE = "variable"
-    GROUPED = "grouped"
-
-
-class GroupedProductPricingType(str, Enum):
-    FIXED_DISCOUNT = "fixed_discount"
-    PERCENTAGE_DISCOUNT = "percentage_discount"
-    FREE_ITEM = "free_item"
-    FIXED_PRICE = "fixed_price"
 
 
 class Product(TimeStampedModel, table=True):
@@ -50,7 +42,7 @@ class Product(TimeStampedModel, table=True):
     description: Optional[str] = None
     price: Optional[float] = None
     is_active: bool = Field(default=True)
-    weight: Optional[float] = Field(default=None, max_length=191)
+    weight: Optional[float] = Field(default=None, max_length=191)  # in kg
     sale_price: Optional[float] = None
     purchase_price: Optional[float] = None
     language: str = Field(default="en", max_length=191)
@@ -71,12 +63,13 @@ class Product(TimeStampedModel, table=True):
     return_policy: Optional[str]
     shipping_info: Optional[str]
 
+    # CHANGED: From Dict to List
     tags: Optional[List[str]] = Field(
         default=None,
         sa_column=Column(JSON),
     )
 
-    height: Optional[float] = Field(default=None, max_length=191)
+    height: Optional[float] = Field(default=None, max_length=191)  # in cm
     width: Optional[float] = Field(default=None, max_length=191)
     length: Optional[float] = Field(default=None, max_length=191)
     dimension_unit: Optional[str] = Field(default=None, max_length=30, nullable=True)
@@ -97,33 +90,10 @@ class Product(TimeStampedModel, table=True):
     is_external: bool = Field(default=False)
     external_product_url: Optional[str] = Field(max_length=191)
     external_product_button_text: Optional[str] = Field(max_length=191)
-    
-    # For variable products - store attributes as JSON
-    attributes: Optional[List[Dict[str, Any]]] = Field(
-        default=None,
-        sa_column=Column(JSON),
-    )
-    
-    # For grouped products - store grouped product IDs as JSON
-    grouped_products: Optional[List[Dict[str, Any]]] = Field(
-        default=None,
-        sa_column=Column(JSON),
-    )
-    
-    # ADDED: Grouped product configuration
-    grouped_products_config: Optional[Dict[str, Any]] = Field(
-        default=None,
-        sa_column=Column(JSON),
-    )
-    
-    # ADDED: Track total purchased quantity
-    total_purchased_quantity: int = Field(default=0)
-    # ADDED: Track total sold quantity
-    total_sold_quantity: int = Field(default=0)
-    
-    # foreign key
+    # foriegn key
     category_id: int = Field(foreign_key="categories.id", index=True)
     shop_id: Optional[int] = Field(foreign_key="shops.id", index=True)
+    # author_id: Optional[int] = Field(foreign_key="authors.id")
     manufacturer_id: Optional[int] = Field(
         foreign_key="manufacturers.id", index=True, default=None
     )
@@ -133,56 +103,15 @@ class Product(TimeStampedModel, table=True):
     category: Optional["Category"] = Relationship(back_populates="products")
     carts: Optional[list["Cart"]] = Relationship(back_populates="product")
     manufacturer: Optional["Manufacturer"] = Relationship(back_populates="products")
+
+    attributes: Optional[List["AttributeProduct"]] = Relationship(
+        back_populates="product"
+    )
     variation_options: List["VariationOption"] = Relationship(back_populates="product")
     order_products: List["OrderProduct"] = Relationship(back_populates="product")
     wishlists: Optional["Wishlist"] = Relationship(back_populates="product")
     reviews: Optional["Review"] = Relationship(back_populates="product")
-    product_purchases: List["ProductPurchase"] = Relationship(back_populates="product")
-
-
-class ProductAttributeValue(SQLModel):
-    id: int
-    value: str
-    meta: Optional[str] = None
-
-
-class ProductAttribute(SQLModel):
-    id: int
-    name: str
-    values: List[ProductAttributeValue]
-    selected_values: Optional[List[int]] = None
-    is_visible: bool = True
-    is_variation: bool = True
-
-
-class VariationData(SQLModel):
-    id: Optional[str] = None
-    attributes: List[Dict[str, Any]]
-    price: float
-    sale_price: Optional[float] = None
-    purchase_price: Optional[float] = None
-    quantity: int
-    sku: str
-    bar_code: Optional[str] = None
-    image: Optional[Dict[str, Any]] = None
-    is_active: bool = True
-
-
-class GroupedProductItem(SQLModel):
-    id: Optional[int] = None
-    product_id: int
-    product_name: Optional[str] = None
-    product_sku: Optional[str] = None
-    product_price: Optional[float] = None
-    quantity: int = 1
-    is_free: bool = False
-
-
-class GroupedProductConfig(SQLModel):
-    pricing_type: GroupedProductPricingType
-    discount_value: Optional[float] = None
-    fixed_price: Optional[float] = None
-
+    #return_items: Optional["ReturnItem"] = Relationship(back_populates="product")
 
 class ProductCreate(SQLModel):
     name: str
@@ -195,6 +124,7 @@ class ProductCreate(SQLModel):
     manufacturer_id: Optional[int] = None
     price: float
     sale_price: Optional[float] = None
+    purchase_price: Optional[float] = None
     unit: str
     max_price: float
     min_price: float
@@ -213,20 +143,17 @@ class ProductCreate(SQLModel):
     meta_description: Optional[str] = None
     return_policy: Optional[str] = None
     shipping_info: Optional[str] = None
+
+    # CHANGED: From Dict to List
     tags: Optional[List[str]] = None
+
     bar_code: Optional[str] = None
-    product_type: ProductType = Field(default=ProductType.SIMPLE)
-    status: ProductStatus = Field(default=ProductStatus.PUBLISH)
-    attributes: Optional[List[ProductAttribute]] = None
-    variations: Optional[List[VariationData]] = None
-    grouped_products: Optional[List[GroupedProductItem]] = None
-    grouped_products_config: Optional[GroupedProductConfig] = None
 
 
 class ProductUpdate(SQLModel):
     name: Optional[str] = None
     is_active: Optional[bool] = True
-    category_id: Optional[int] = None
+    category_id: int = None
     manufacturer_id: Optional[int] = None
     image: Optional[Dict[str, Any]] = None
     gallery: Optional[List[Dict[str, Any]]] = None
@@ -253,14 +180,11 @@ class ProductUpdate(SQLModel):
     meta_description: Optional[str] = None
     return_policy: Optional[str] = None
     shipping_info: Optional[str] = None
+
+    # CHANGED: From Dict to List
     tags: Optional[List[str]] = None
+
     bar_code: Optional[str] = None
-    product_type: Optional[ProductType] = None
-    status: Optional[ProductStatus] = None
-    attributes: Optional[List[ProductAttribute]] = None
-    variations: Optional[List[VariationData]] = None
-    grouped_products: Optional[List[GroupedProductItem]] = None
-    grouped_products_config: Optional[GroupedProductConfig] = None
 
 
 class ProductActivate(SQLModel):
@@ -282,21 +206,8 @@ class CategoryReadProduct(SQLModel):
     name: str
     slug: str
     root_id: int
+    # image: Dict[str, Any] | None = None
     parent_id: Optional[int] = None
-
-
-class VariationOptionReadForProduct(SQLModel):
-    id: int
-    title: str
-    price: str
-    sale_price: Optional[str] = None
-    purchase_price: Optional[float] = None
-    quantity: int
-    options: Dict[str, Any]
-    image: Optional[Dict[str, Any]] = None
-    sku: Optional[str] = None
-    bar_code: Optional[str] = None
-    is_active: bool
 
 
 class ProductRead(TimeStampReadModel):
@@ -331,15 +242,8 @@ class ProductRead(TimeStampReadModel):
     meta_description: Optional[str] = None
     return_policy: Optional[str] = None
     shipping_info: Optional[str] = None
+
+    # CHANGED: From Dict to List
     tags: Optional[List[str]] = None
+
     bar_code: Optional[str] = None
-    attributes: Optional[List[ProductAttribute]] = None
-    variations: Optional[List[VariationOptionReadForProduct]] = None
-    variations_count: Optional[int] = 0
-    grouped_products: Optional[List[Dict[str, Any]]] = None
-    grouped_products_config: Optional[GroupedProductConfig] = None
-    total_quantity: Optional[int] = 0
-    # ADDED: Purchase and sales tracking
-    total_purchased_quantity: int = 0
-    total_sold_quantity: int = 0
-    current_stock_value: Optional[float] = None

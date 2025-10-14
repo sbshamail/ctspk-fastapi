@@ -8,7 +8,7 @@ from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 from enum import Enum as PyEnum
 
 if TYPE_CHECKING:
-    from src.api.models import User, Shop, Product, VariationOption, Category,Review,ReturnItem,ReturnRequest
+    from src.api.models import User, Shop, Product, VariationOption, Category, Review, ReturnItem, ReturnRequest
 
 
 class OrderStatusEnum(str, PyEnum):
@@ -34,6 +34,12 @@ class PaymentStatusEnum(str, PyEnum):
     CASH = "payment-cash"
     WALLET = "payment-wallet"
     AWAITING_APPROVAL = "payment-awaiting-for-approval"
+
+
+class OrderItemType(str, PyEnum):
+    SIMPLE = "simple"
+    VARIABLE = "variable"
+    GROUPED = "grouped"
 
 
 class Order(TimeStampedModel, table=True):
@@ -69,7 +75,7 @@ class Order(TimeStampedModel, table=True):
 
     fullfillment_id: Optional[int] = Field(
         default=None, foreign_key="users.id"
-    )  # Foreign key to users
+    )
     assign_date: Optional[datetime] = Field(default=None)
 
     # relationships
@@ -91,16 +97,17 @@ class Order(TimeStampedModel, table=True):
     order_products: Optional[List["OrderProduct"]] = Relationship(
         back_populates="orders"
     )
-    # order_status_history: Optional["OrderStatus"] = Relationship(back_populates="order")
+    
     order_status_history: Optional["OrderStatus"] = Relationship(
         back_populates="orders",
         sa_relationship_kwargs={
             "foreign_keys": "[OrderStatus.order_id]",
-            "uselist": False,  # One-to-one relationship
+            "uselist": False,
         },
     )
     reviews: Optional["Review"] = Relationship(back_populates="order")
-    #return_requests: Optional["ReturnRequest"] = Relationship(back_populates="order")
+
+
 class OrderProduct(TimeStampedModel, table=True):
     __tablename__: Literal["order_product"] = "order_product"
 
@@ -116,20 +123,29 @@ class OrderProduct(TimeStampedModel, table=True):
     admin_commission: Decimal = Field(
         default=Decimal("0.00"), max_digits=10, decimal_places=2
     )
+    
+    # ADDED: Fields for product type handling
+    item_type: OrderItemType = Field(default=OrderItemType.SIMPLE)
+    variation_data: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))  # Store variation attributes
+    grouped_items: Optional[List[Dict[str, Any]]] = Field(sa_column=Column(JSON))  # Store grouped product items
+    
+    # ADDED: Product snapshot at time of order
+    product_snapshot: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
+    variation_snapshot: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
+    
     deleted_at: Optional[datetime] = None
 
     # relationships
     orders: "Order" = Relationship(back_populates="order_products")
     product: "Product" = Relationship(back_populates="order_products")
-    #return_items: Optional["ReturnItem"] = Relationship(back_populates="order_item")
-    # variation_option: Optional["VariationOption"] = Relationship()
+    variation_option: Optional["VariationOption"] = Relationship()
 
 
 class OrderStatus(TimeStampedModel, table=True):
     __tablename__ = "orders_status"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    order_id: int = Field(foreign_key="orders.id", unique=True)  # Add foreign key here
+    order_id: int = Field(foreign_key="orders.id", unique=True)
     language: str = Field(default="en", max_length=191)
     order_pending_date: Optional[datetime] = Field(default=None)
     order_processing_date: Optional[datetime] = Field(default=None)
@@ -142,25 +158,30 @@ class OrderStatus(TimeStampedModel, table=True):
     order_packed_date: Optional[datetime] = Field(default=None)
     order_at_distribution_center_date: Optional[datetime] = Field(default=None)
 
-    # relationships - specify the foreign key explicitly
     orders: Optional["Order"] = Relationship(
         back_populates="order_status_history",
         sa_relationship_kwargs={"foreign_keys": "[OrderStatus.order_id]"},
     )
-    # relationships
 
 
-# order: "Order" = Relationship(back_populates="order_status_history")
+# Create Schemas - UPDATED
+class OrderGroupedItem(SQLModel):
+    product_id: int
+    product_name: str
+    quantity: int
+    unit_price: float
+    subtotal: float
 
 
-# Create Schemas
 class OrderProductCreate(SQLModel):
     product_id: int
     variation_option_id: Optional[int] = None
     order_quantity: str
     unit_price: float
     subtotal: float
-    # admin_commission will be calculated automatically
+    item_type: OrderItemType = Field(default=OrderItemType.SIMPLE)
+    variation_data: Optional[Dict[str, Any]] = None
+    grouped_items: Optional[List[OrderGroupedItem]] = None
 
 
 class OrderCreate(SQLModel):
@@ -179,7 +200,7 @@ class OrderCreate(SQLModel):
     logistics_provider: Optional[int] = None
     delivery_fee: Optional[float] = None
     delivery_time: Optional[str] = None
-    order_products: Optional[List[OrderProductCreate]] = None
+    order_products: List[OrderProductCreate]
 
 
 class OrderUpdate(SQLModel):
@@ -209,6 +230,23 @@ class OrderStatusUpdate(SQLModel):
     payment_status: Optional[PaymentStatusEnum] = None
 
 
+# Read Schemas - UPDATED
+class OrderProductRead(TimeStampReadModel):
+    id: int
+    order_id: int
+    product_id: int
+    variation_option_id: Optional[int] = None
+    order_quantity: str
+    unit_price: float
+    subtotal: float
+    admin_commission: Decimal
+    item_type: OrderItemType
+    variation_data: Optional[Dict[str, Any]] = None
+    grouped_items: Optional[List[Dict[str, Any]]] = None
+    product_snapshot: Optional[Dict[str, Any]] = None
+    variation_snapshot: Optional[Dict[str, Any]] = None
+
+
 class OrderRead(TimeStampReadModel):
     id: int
     tracking_number: str
@@ -235,17 +273,6 @@ class OrderRead(TimeStampReadModel):
     payment_status: PaymentStatusEnum
     fullfillment_id: Optional[int] = None
     assign_date: Optional[datetime] = None
-
-
-class OrderProductRead(TimeStampReadModel):
-    id: int
-    order_id: int
-    product_id: int
-    variation_option_id: Optional[int] = None
-    order_quantity: str
-    unit_price: float
-    subtotal: float
-    admin_commission: Decimal
 
 
 class OrderReadNested(OrderRead):

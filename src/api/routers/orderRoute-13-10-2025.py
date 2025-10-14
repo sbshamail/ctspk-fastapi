@@ -12,7 +12,7 @@ from src.api.models.order_model.orderModel import (
     OrderStatusUpdate, OrderProduct, OrderStatus, OrderStatusEnum, 
     PaymentStatusEnum, OrderItemType, OrderGroupedItem,OrderProductCreate
 )
-from src.api.models.product_model.productsModel import Product, ProductType, GroupedProductPricingType
+from src.api.models.product_model.productsModel import Product, ProductType
 from src.api.models.product_model.variationOptionModel import VariationOption
 from src.api.models.category_model import Category
 from src.api.core.dependencies import GetSession, requirePermission
@@ -43,7 +43,6 @@ def get_product_snapshot(session, product_id: int) -> Dict[str, Any]:
         "sale_price": product.sale_price,
         "image": product.image,
         "product_type": product.product_type,
-        "purchase_price": product.purchase_price,
     }
 
 
@@ -61,91 +60,53 @@ def get_variation_snapshot(session, variation_option_id: int) -> Dict[str, Any]:
         "sku": variation.sku,
         "options": variation.options,
         "image": variation.image,
-        "purchase_price": variation.purchase_price,
     }
 
 
-def validate_product_availability(session, product_data: OrderProductCreate) -> tuple[bool, str]:
+def validate_product_availability(session, product_data: OrderProductCreate) -> bool:
     """Validate product availability based on type"""
     product = session.get(Product, product_data.product_id)
     if not product or not product.is_active:
-        return False, "Product not found or inactive"
+        return False
     
     if product_data.item_type == OrderItemType.SIMPLE:
-        if product.quantity >= float(product_data.order_quantity) and product.in_stock:
-            return True, "Available"
-        else:
-            return False, f"Insufficient stock. Available: {product.quantity}, Requested: {product_data.order_quantity}"
+        return product.quantity >= float(product_data.order_quantity) and product.in_stock
     
     elif product_data.item_type == OrderItemType.VARIABLE:
         if not product_data.variation_option_id:
-            return False, "Variation option ID required for variable product"
+            return False
         variation = session.get(VariationOption, product_data.variation_option_id)
-        if variation and variation.quantity >= float(product_data.order_quantity) and variation.is_active:
-            return True, "Available"
-        else:
-            available_qty = variation.quantity if variation else 0
-            return False, f"Insufficient variation stock. Available: {available_qty}, Requested: {product_data.order_quantity}"
+        return variation and variation.quantity >= float(product_data.order_quantity) and variation.is_active
     
     elif product_data.item_type == OrderItemType.GROUPED:
         if not product_data.grouped_items:
-            return False, "Grouped items required for grouped product"
-        
+            return False
         # Check availability for all grouped items
         for grouped_item in product_data.grouped_items:
             grouped_product = session.get(Product, grouped_item.product_id)
-            if not grouped_product:
-                return False, f"Grouped product {grouped_item.product_id} not found"
-            if grouped_product.quantity < grouped_item.quantity:
-                return False, f"Insufficient stock for {grouped_product.name}. Available: {grouped_product.quantity}, Required: {grouped_item.quantity}"
-        return True, "All grouped items available"
+            if not grouped_product or grouped_product.quantity < grouped_item.quantity:
+                return False
+        return True
     
-    return False, "Unknown product type"
+    return False
 
 
 def update_product_inventory(session, product_data: OrderProductCreate, operation: str = "deduct"):
-    """Update product inventory based on product type and track sales"""
+    """Update product inventory based on product type"""
     multiplier = -1 if operation == "deduct" else 1
     
     if product_data.item_type == OrderItemType.SIMPLE:
         product = session.get(Product, product_data.product_id)
         if product:
-            quantity_change = multiplier * float(product_data.order_quantity)
-            product.quantity += quantity_change
-            
-            # Update sales tracking
-            if operation == "deduct":
-                product.total_sold_quantity += float(product_data.order_quantity)
-            else:  # restore/refund
-                product.total_sold_quantity -= float(product_data.order_quantity)
-                
+            product.quantity += multiplier * float(product_data.order_quantity)
             if product.quantity <= 0:
                 product.in_stock = False
-            else:
-                product.in_stock = True
             session.add(product)
     
     elif product_data.item_type == OrderItemType.VARIABLE and product_data.variation_option_id:
         variation = session.get(VariationOption, product_data.variation_option_id)
         if variation:
-            quantity_change = multiplier * float(product_data.order_quantity)
-            variation.quantity += quantity_change
-            
-            # Update parent product quantity and sales tracking
-            product = session.get(Product, product_data.product_id)
-            if product:
-                if operation == "deduct":
-                    product.total_sold_quantity += float(product_data.order_quantity)
-                else:
-                    product.total_sold_quantity -= float(product_data.order_quantity)
-                
-                # Recalculate total quantity from variations
-                variations = session.exec(
-                    select(VariationOption).where(VariationOption.product_id == product_data.product_id)
-                ).all()
-                product.quantity = sum(var.quantity for var in variations)
-                session.add(product)
-            
+            variation.quantity += multiplier * float(product_data.order_quantity)
             if variation.quantity <= 0:
                 variation.is_active = False
             session.add(variation)
@@ -154,19 +115,9 @@ def update_product_inventory(session, product_data: OrderProductCreate, operatio
         for grouped_item in product_data.grouped_items:
             grouped_product = session.get(Product, grouped_item.product_id)
             if grouped_product:
-                quantity_change = multiplier * grouped_item.quantity
-                grouped_product.quantity += quantity_change
-                
-                # Update sales tracking for constituent products
-                if operation == "deduct":
-                    grouped_product.total_sold_quantity += grouped_item.quantity
-                else:
-                    grouped_product.total_sold_quantity -= grouped_item.quantity
-                    
+                grouped_product.quantity += multiplier * grouped_item.quantity
                 if grouped_product.quantity <= 0:
                     grouped_product.in_stock = False
-                else:
-                    grouped_product.in_stock = True
                 session.add(grouped_product)
 
 
@@ -213,14 +164,9 @@ def update_order_status_history(session, order_id: int, status_field: str):
 @router.post("/create")
 def create(request: OrderCreate, session: GetSession, user=requirePermission("order")):
     # Validate all products before creating order
-    validation_errors = []
     for product_data in request.order_products:
-        is_available, message = validate_product_availability(session, product_data)
-        if not is_available:
-            validation_errors.append(f"Product {product_data.product_id}: {message}")
-    
-    if validation_errors:
-        return api_response(400, "Product availability issues", {"errors": validation_errors})
+        if not validate_product_availability(session, product_data):
+            return api_response(400, f"Product {product_data.product_id} is not available in requested quantity")
 
     # Generate tracking number
     tracking_number = generate_tracking_number()
@@ -262,7 +208,7 @@ def create(request: OrderCreate, session: GetSession, user=requirePermission("or
         )
         session.add(order_product)
 
-        # Update inventory (deduct quantities)
+        # Update inventory
         update_product_inventory(session, product_data, "deduct")
 
     # Update order with total admin commission
@@ -332,10 +278,8 @@ def update_status(
     order = session.get(Order, id)
     raiseExceptions((order, 404, "Order not found"))
 
-    # Handle inventory restoration for cancelled/refunded orders
-    if (request.order_status in [OrderStatusEnum.CANCELLED, OrderStatusEnum.REFUNDED] and 
-        order.order_status not in [OrderStatusEnum.CANCELLED, OrderStatusEnum.REFUNDED]):
-        
+    # Handle inventory restoration for cancelled orders
+    if request.order_status == OrderStatusEnum.CANCELLED and order.order_status != OrderStatusEnum.CANCELLED:
         # Restore inventory for all order products
         order_products = session.exec(
             select(OrderProduct).where(OrderProduct.order_id == id)
@@ -527,82 +471,3 @@ def get_customer_orders(
 
     orders = result["data"]
     return api_response(200, "Customer orders found", orders, result["total"])
-
-
-# Product Sales Report
-@router.get("/sales-report")
-def get_sales_report(
-    session: GetSession,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    shop_id: Optional[int] = None,
-    product_id: Optional[int] = None,
-    user=requirePermission("order"),
-):
-    """Get sales report with product-wise sales data"""
-    try:
-        # Build base query for completed orders
-        query = select(Order).where(Order.order_status == OrderStatusEnum.COMPLETED)
-        
-        # Apply date filters
-        if start_date:
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-            query = query.where(Order.created_at >= start_dt)
-        
-        if end_date:
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-            query = query.where(Order.created_at <= end_dt)
-        
-        if shop_id:
-            query = query.where(Order.shop_id == shop_id)
-        
-        orders = session.exec(query).all()
-        
-        sales_data = {}
-        total_revenue = 0
-        total_products_sold = 0
-        
-        for order in orders:
-            for order_product in order.order_products:
-                product_id = order_product.product_id
-                quantity = float(order_product.order_quantity)
-                revenue = order_product.subtotal
-                
-                if product_id not in sales_data:
-                    product = session.get(Product, product_id)
-                    sales_data[product_id] = {
-                        'product_id': product_id,
-                        'product_name': product.name if product else 'Unknown',
-                        'product_sku': product.sku if product else 'Unknown',
-                        'total_quantity_sold': 0,
-                        'total_revenue': 0,
-                        'average_price': 0
-                    }
-                
-                sales_data[product_id]['total_quantity_sold'] += quantity
-                sales_data[product_id]['total_revenue'] += revenue
-                total_products_sold += quantity
-                total_revenue += revenue
-        
-        # Calculate average prices
-        for product_data in sales_data.values():
-            if product_data['total_quantity_sold'] > 0:
-                product_data['average_price'] = product_data['total_revenue'] / product_data['total_quantity_sold']
-        
-        report = {
-            'period': {
-                'start_date': start_date,
-                'end_date': end_date
-            },
-            'summary': {
-                'total_orders': len(orders),
-                'total_products_sold': total_products_sold,
-                'total_revenue': total_revenue
-            },
-            'product_sales': list(sales_data.values())
-        }
-        
-        return api_response(200, "Sales report generated", report)
-        
-    except Exception as e:
-        return api_response(500, f"Error generating sales report: {str(e)}")

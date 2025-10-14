@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from sqlalchemy import select, func
-from typing import List,Dict,Optional
+from typing import List,Dict
 from sqlmodel import select
 from src.api.models.category_model.categoryModel import Category
 from src.api.models.product_model.variationOptionModel import VariationOption, VariationOptionCreate, VariationOptionUpdate
@@ -220,11 +220,6 @@ def get_product_with_enhanced_data(session, product_id: int):
         original_group_price = original_price
         available_quantity = calculated_quantity
     
-    # Calculate current stock value
-    current_stock_value = None
-    if product.purchase_price and product.quantity:
-        current_stock_value = product.purchase_price * product.quantity
-    
     # Convert to ProductRead with enhanced data
     product_data = ProductRead.model_validate(product)
     
@@ -248,9 +243,6 @@ def get_product_with_enhanced_data(session, product_id: int):
         product_data.grouped_products_config = GroupedProductConfig(
             **product.grouped_products_config
         ) if product.grouped_products_config else None
-    
-    # Add stock value
-    product_data.current_stock_value = current_stock_value
     
     return product_data
 
@@ -634,62 +626,3 @@ def sync_variable_product_quantity(id: int, session: GetSession):
         "new_quantity": total_quantity,
         "variations_count": len(variations)
     })
-
-
-# Product Stock Report
-@router.get("/stock-report")
-def get_stock_report(
-    session: GetSession,
-    shop_id: Optional[int] = None,
-    low_stock_threshold: int = 10,
-    user=requirePermission("product_view", "shop_admin"),
-):
-    """Get product stock report with purchase and sales data"""
-    try:
-        # Build base query
-        query = select(Product)
-        
-        # Filter by user's shops
-        shop_ids = [s["id"] for s in user.get("shops", [])]
-        if shop_ids:
-            query = query.where(Product.shop_id.in_(shop_ids))
-        
-        if shop_id:
-            if shop_id not in shop_ids:
-                return api_response(403, "Access denied to specified shop")
-            query = query.where(Product.shop_id == shop_id)
-        
-        products = session.exec(query).all()
-        
-        stock_report = []
-        for product in products:
-            # Calculate stock status
-            stock_status = "IN_STOCK"
-            if product.quantity <= 0:
-                stock_status = "OUT_OF_STOCK"
-            elif product.quantity <= low_stock_threshold:
-                stock_status = "LOW_STOCK"
-            
-            # Calculate current stock value
-            current_stock_value = product.purchase_price * product.quantity if product.purchase_price else 0
-            
-            stock_report.append({
-                'id': product.id,
-                'name': product.name,
-                'sku': product.sku,
-                'product_type': product.product_type,
-                'current_quantity': product.quantity,
-                'total_purchased': product.total_purchased_quantity,
-                'total_sold': product.total_sold_quantity,
-                'purchase_price': product.purchase_price,
-                'sale_price': product.sale_price or product.price,
-                'current_stock_value': current_stock_value,
-                'stock_status': stock_status,
-                'in_stock': product.in_stock,
-                'last_updated': product.updated_at.isoformat() if product.updated_at else None
-            })
-        
-        return api_response(200, "Stock report generated", stock_report, len(stock_report))
-        
-    except Exception as e:
-        return api_response(500, f"Error generating stock report: {str(e)}")

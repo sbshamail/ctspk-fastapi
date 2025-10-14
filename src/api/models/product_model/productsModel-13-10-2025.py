@@ -18,8 +18,7 @@ if TYPE_CHECKING:
         Wishlist,
         OrderProduct,
         Review,
-        ReturnItem,
-        ProductPurchase
+        ReturnItem
     )
 
 
@@ -33,13 +32,25 @@ class ProductType(str, Enum):
     VARIABLE = "variable"
     GROUPED = "grouped"
 
-
 class GroupedProductPricingType(str, Enum):
     FIXED_DISCOUNT = "fixed_discount"
     PERCENTAGE_DISCOUNT = "percentage_discount"
     FREE_ITEM = "free_item"
     FIXED_PRICE = "fixed_price"
 
+class GroupedProductItem(SQLModel):
+    id: Optional[int] = None
+    product_id: int
+    product_name: Optional[str] = None
+    product_sku: Optional[str] = None
+    product_price: Optional[float] = None  # ADDED: Current price of the product
+    quantity: int = 1
+    is_free: bool = False  # ADDED: Mark if this item is free in the group
+
+class GroupedProductConfig(SQLModel):
+    pricing_type: GroupedProductPricingType
+    discount_value: Optional[float] = None  # Fixed amount or percentage
+    fixed_price: Optional[float] = None  # Fixed price for the entire group
 
 class Product(TimeStampedModel, table=True):
     __tablename__: Literal["products"] = "products"
@@ -110,24 +121,16 @@ class Product(TimeStampedModel, table=True):
         sa_column=Column(JSON),
     )
     
-    # ADDED: Grouped product configuration
-    grouped_products_config: Optional[Dict[str, Any]] = Field(
-        default=None,
-        sa_column=Column(JSON),
-    )
-    
-    # ADDED: Track total purchased quantity
-    total_purchased_quantity: int = Field(default=0)
-    # ADDED: Track total sold quantity
-    total_sold_quantity: int = Field(default=0)
-    
     # foreign key
     category_id: int = Field(foreign_key="categories.id", index=True)
     shop_id: Optional[int] = Field(foreign_key="shops.id", index=True)
     manufacturer_id: Optional[int] = Field(
         foreign_key="manufacturers.id", index=True, default=None
     )
-
+    grouped_products_config: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSON),
+    )
     # relationships
     shop: Optional["Shop"] = Relationship(back_populates="products")
     category: Optional["Category"] = Relationship(back_populates="products")
@@ -137,7 +140,6 @@ class Product(TimeStampedModel, table=True):
     order_products: List["OrderProduct"] = Relationship(back_populates="product")
     wishlists: Optional["Wishlist"] = Relationship(back_populates="product")
     reviews: Optional["Review"] = Relationship(back_populates="product")
-    product_purchases: List["ProductPurchase"] = Relationship(back_populates="product")
 
 
 class ProductAttributeValue(SQLModel):
@@ -150,7 +152,7 @@ class ProductAttribute(SQLModel):
     id: int
     name: str
     values: List[ProductAttributeValue]
-    selected_values: Optional[List[int]] = None
+    selected_values: Optional[List[int]] = None  # ADDED: Track selected values
     is_visible: bool = True
     is_variation: bool = True
 
@@ -169,19 +171,11 @@ class VariationData(SQLModel):
 
 
 class GroupedProductItem(SQLModel):
-    id: Optional[int] = None
+    id: Optional[int] = None  # ADDED: For tracking in frontend
     product_id: int
-    product_name: Optional[str] = None
-    product_sku: Optional[str] = None
-    product_price: Optional[float] = None
+    product_name: Optional[str] = None  # ADDED: For display
+    product_sku: Optional[str] = None  # ADDED: For display
     quantity: int = 1
-    is_free: bool = False
-
-
-class GroupedProductConfig(SQLModel):
-    pricing_type: GroupedProductPricingType
-    discount_value: Optional[float] = None
-    fixed_price: Optional[float] = None
 
 
 class ProductCreate(SQLModel):
@@ -222,7 +216,6 @@ class ProductCreate(SQLModel):
     grouped_products: Optional[List[GroupedProductItem]] = None
     grouped_products_config: Optional[GroupedProductConfig] = None
 
-
 class ProductUpdate(SQLModel):
     name: Optional[str] = None
     is_active: Optional[bool] = True
@@ -261,7 +254,6 @@ class ProductUpdate(SQLModel):
     variations: Optional[List[VariationData]] = None
     grouped_products: Optional[List[GroupedProductItem]] = None
     grouped_products_config: Optional[GroupedProductConfig] = None
-
 
 class ProductActivate(SQLModel):
     is_active: bool
@@ -338,8 +330,4 @@ class ProductRead(TimeStampReadModel):
     variations_count: Optional[int] = 0
     grouped_products: Optional[List[Dict[str, Any]]] = None
     grouped_products_config: Optional[GroupedProductConfig] = None
-    total_quantity: Optional[int] = 0
-    # ADDED: Purchase and sales tracking
-    total_purchased_quantity: int = 0
-    total_sold_quantity: int = 0
-    current_stock_value: Optional[float] = None
+    total_quantity: Optional[int] = 0  # ADDED: For variable products

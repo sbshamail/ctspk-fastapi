@@ -151,7 +151,7 @@ def listRecords(
         )
 
         if not result["data"]:
-            return api_response(404, "No Result found")
+            return api_response(400, "No Result found")
         # Convert each SQLModel Model instance into a ModelRead Pydantic model
         if not Schema:
             return result
