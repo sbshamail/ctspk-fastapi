@@ -18,32 +18,6 @@ from src.api.models.usersModel import UpdateUserByAdmin, User, UserRead, UserUpd
 
 router = APIRouter(prefix="/user", tags=["user"])
 
-@router.post("/create")
-def create_user(
-    request: UserUpdate,  # Or create a proper UserCreate schema
-    session: GetSession,
-    user=requirePermission("user-create"),
-):
-    # Check if user already exists
-    existing_user = session.exec(
-        select(User).where(User.email == request.email)
-    ).first()
-    if existing_user:
-        return api_response(400, "User with this email already exists")
-
-    # Hash password
-    hashed_password = hash_password(request.password)
-    
-    # Create user
-    user_data = request.model_dump(exclude={'password'})
-    user_data['password'] = hashed_password
-    
-    new_user = User(**user_data)
-    session.add(new_user)
-    session.commit()
-    session.refresh(new_user)
-
-    return api_response(201, "User created successfully", UserRead.model_validate(new_user))
 
 @router.put("/update", response_model=UserRead)
 def update_user(
@@ -123,7 +97,7 @@ def list_users(
     ),  # e.g. '[["name","car"],["description","product"]]'
     page: int = None,
     skip: int = 0,
-    limit: int = Query(10, ge=1, le=200),
+    limit: int = Query(10, ge=1, le=100),
 ):
 
     filters = {
@@ -137,7 +111,7 @@ def list_users(
     searchFields = [
         "name",
         "email",
-        "role.title",
+        "role.name",
     ]
     result = listop(
         session=session,

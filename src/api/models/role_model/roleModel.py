@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, Optional
 from sqlalchemy import JSON
 from sqlmodel import Field, Relationship, SQLModel
-
+#from src.api.core.utility import uniqueSlugify
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 
@@ -13,6 +13,7 @@ class Role(TimeStampedModel, table=True):
     __tablename__ = "roles"
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=50, unique=True)
+    slug: str = Field(max_length=60, unique=True, index=True)
     description: Optional[str] = None
     permissions: list[str] = Field(
         default_factory=list,
@@ -32,6 +33,7 @@ class Role(TimeStampedModel, table=True):
 class RoleReadBase(TimeStampReadModel):
     id: int
     name: str
+    slug: str
     permissions: list[str]
     user_id: int
 
@@ -44,9 +46,16 @@ class RoleRead(RoleReadBase):
 
 class RoleCreate(SQLModel):
     name: str
-    permissions: list[str]
+    description: Optional[str] = None
+    permissions: list[str] = []
 
+    #def generate_slug(self):
+     #   """Generate slug from name"""
+      #  return uniqueSlugify(self.name)
 
 class RoleUpdate(SQLModel):
-    title: Optional[str]
-    permissions: Optional[list[str]]
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    description: Optional[str] = None
+    permissions: Optional[list[str]] = None
+    is_active: Optional[bool] = None
