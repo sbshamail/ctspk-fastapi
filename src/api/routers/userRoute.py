@@ -186,7 +186,7 @@ def list_users(
     searchFields = [
         "name",
         "email",
-        "role.title",
+        "roles.name",
     ]
     result = listop(
         session=session,
