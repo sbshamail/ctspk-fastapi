@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from sqlalchemy import select
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.response import api_response, raiseExceptions
 from src.api.models.cart_model import Cart, CartCreate, CartRead, CartUpdate
@@ -23,15 +24,22 @@ def create_role(
     return api_response(200, "Cart Created Successfully", cart)
 
 
-@router.put("/update/{id}", response_model=CartRead)
+@router.put("/update/{product_id}", response_model=CartRead)
 def update_role(
-    id: int,
+    product_id: int,
     request: CartUpdate,
     session: GetSession,
     user: requireSignin,
 ):
-    cart = session.get(Cart, id)  # Like findById
+    # ✅ Find cart using product_id + user_id
+    cart = session.exec(
+        select(Cart)
+        .where(Cart.product_id == product_id)
+        .where(Cart.user_id == user["id"])
+    ).first()
+
     raiseExceptions((cart, 404, "Cart not found"))
+
     updateOp(cart, request, session)
 
     # Ensure min quantity = 1
@@ -42,23 +50,31 @@ def update_role(
     return api_response(200, "Cart Update Successfully", cart)
 
 
-@router.get("/read/{id}")
-def get_role(id: int, session: GetSession, user: requireSignin):
+@router.get("/read/{product_id}")
+def get_role(product_id: int, session: GetSession, user: requireSignin):
 
-    cart = session.get(Cart, id)  # Like findById
+    cart = session.exec(
+        select(Cart)
+        .where(Cart.product_id == product_id)
+        .where(Cart.user_id == user["id"])
+    ).first()
     raiseExceptions((cart, 404, "Cart not found"))
 
     return api_response(200, "Cart Found", cart)
 
 
 # ❗ DELETE
-@router.delete("/delete/{id}", response_model=dict)
+@router.delete("/delete/{product_id}", response_model=dict)
 def delete_role(
-    id: int,
+    product_id: int,
     session: GetSession,
     user: requireSignin,
 ):
-    cart = session.get(Cart, id)
+    cart = session.exec(
+        select(Cart)
+        .where(Cart.product_id == product_id)
+        .where(Cart.user_id == user["id"])
+    ).first()
     raiseExceptions((cart, 404, "Cart not found"))
 
     session.delete(cart)
