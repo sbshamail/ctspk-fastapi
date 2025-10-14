@@ -100,7 +100,21 @@ class RegisterUser(SQLModel):
             raise ValueError("Passwords do not match")
         return values
 
+class UserCreate(SQLModel):
+    name: str
+    email: EmailStr
+    phone_no: str
+    password: str
+    confirm_password: str
+    role_ids: Optional[List[int]] = None  # Add role_ids for role assignment
+    is_active: bool = True
 
+    @model_validator(mode="before")
+    def check_password_match(cls, values):
+        if values.get("password") != values.get("confirm_password"):
+            raise ValueError("Passwords do not match")
+        return values
+    
 class ShopReadForUser(BaseModel):
     id: int
     name: str
@@ -139,4 +153,5 @@ class UserUpdate(SQLModel):
 
 class UpdateUserByAdmin(UserUpdate):
     # role_id: Optional[List] = None
+    #role_ids: Optional[List[int]] = None
     is_active: Optional[bool] = None

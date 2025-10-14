@@ -13,7 +13,7 @@ from src.api.core.security import hash_password
 from src.api.core import updateOp, requireSignin
 from src.api.core.dependencies import GetSession, requirePermission, requireAdmin
 from src.api.core.response import api_response, raiseExceptions
-from src.api.models.usersModel import RegisterUser, UpdateUserByAdmin, User, UserRead, UserUpdate
+from src.api.models.usersModel import UserCreate,RegisterUser, UpdateUserByAdmin, User, UserRead, UserUpdate
 from src.api.models.role_model.roleModel import Role
 from src.api.models.role_model.userRoleModel import UserRole
 
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/user", tags=["user"])
 
 @router.post("/create")
 def create_user(
-    request: RegisterUser,
+    request: UserCreate,
     session: GetSession,
     user=requirePermission("system:*"),
 ):
