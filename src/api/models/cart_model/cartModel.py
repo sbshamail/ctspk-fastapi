@@ -40,16 +40,6 @@ class CartUpdate(BaseModel):
     quantity: Optional[int] = Field(default=1, ge=1)
 
 
-class ProductReadWithCart(ProductRead):
-    name: Optional[str] = None
-    price: Optional[float] = None
-    salePrice: Optional[float] = None
-    image: Optional[str] = None
-    maxPrice: Optional[float] = None
-    minPrice: Optional[float] = None
-    shop: Optional[str] = None
-
-
 class CartRead(CartBase, TimeStampReadModel):
     id: int
-    product: Optional[ProductReadWithCart] = None
+    product: ProductRead

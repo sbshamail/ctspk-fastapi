@@ -5,7 +5,7 @@ from src.api.core.operation import listRecords, updateOp
 from src.api.core.response import api_response, raiseExceptions
 from src.api.models.cart_model import Cart, CartCreate, CartRead, CartUpdate
 from src.api.core.dependencies import GetSession, ListQueryParams, requireSignin
-from sqlalchemy.orm import selectinload
+
 
 router = APIRouter(prefix="/cart", tags=["Cart"])
 
@@ -22,7 +22,7 @@ def create_role(
     session.add(cart)
     session.commit()
     session.refresh(cart)
-    return api_response(200, "Cart Created Successfully", cart)
+    return api_response(200, "Cart Created Successfully", CartRead.model_validate(cart))
 
 
 @router.put("/update/{product_id}", response_model=CartRead)
@@ -33,11 +33,15 @@ def update_role(
     user: requireSignin,
 ):
     # ✅ Find cart using product_id + user_id
-    cart = session.exec(
-        select(Cart)
-        .where(Cart.product_id == product_id)
-        .where(Cart.user_id == user["id"])
-    ).first()
+    cart = (
+        session.exec(
+            select(Cart)
+            .where(Cart.product_id == product_id)
+            .where(Cart.user_id == user["id"])
+        )
+        .scalars()
+        .first()
+    )
 
     raiseExceptions((cart, 404, "Cart not found"))
 
@@ -48,20 +52,24 @@ def update_role(
         request.quantity = 1
     session.commit()
     session.refresh(cart)
-    return api_response(200, "Cart Update Successfully", cart)
+    return api_response(200, "Cart Update Successfully", CartRead.model_validate(cart))
 
 
 @router.get("/read/{product_id}")
 def get_role(product_id: int, session: GetSession, user: requireSignin):
 
-    cart = session.exec(
-        select(Cart)
-        .where(Cart.product_id == product_id)
-        .where(Cart.user_id == user["id"])
-    ).first()
+    cart = (
+        session.exec(
+            select(Cart)
+            .where(Cart.product_id == product_id)
+            .where(Cart.user_id == user["id"])
+        )
+        .scalars()
+        .first()
+    )
     raiseExceptions((cart, 404, "Cart not found"))
 
-    return api_response(200, "Cart Found", cart)
+    return api_response(200, "Cart Found", CartRead.model_validate(cart))
 
 
 # ❗ DELETE
@@ -71,11 +79,15 @@ def delete_role(
     session: GetSession,
     user: requireSignin,
 ):
-    cart = session.exec(
-        select(Cart)
-        .where(Cart.product_id == product_id)
-        .where(Cart.user_id == user["id"])
-    ).first()
+    cart = (
+        session.exec(
+            select(Cart)
+            .where(Cart.product_id == product_id)
+            .where(Cart.user_id == user["id"])
+        )
+        .scalars()
+        .first()
+    )
     raiseExceptions((cart, 404, "Cart not found"))
 
     session.delete(cart)
@@ -85,11 +97,11 @@ def delete_role(
 
 @router.delete("/delete-many", response_model=dict)
 def delete_many_cart_items(
+    user: requireSignin,
     product_ids: List[int] = Body(
         ..., embed=True, description="List of product IDs to delete"
     ),
     session: GetSession = None,
-    user: dict = requireSignin,
 ):
     """
     Delete multiple cart items by product IDs for the logged-in user
@@ -98,11 +110,15 @@ def delete_many_cart_items(
         "product_ids": [1, 2, 3]
     }
     """
-    carts = session.exec(
-        select(Cart)
-        .where(Cart.user_id == user["id"])
-        .where(Cart.product_id.in_(product_ids))
-    ).all()
+    carts = (
+        session.exec(
+            select(Cart)
+            .where(Cart.user_id == user["id"])
+            .where(Cart.product_id.in_(product_ids))
+        )
+        .scalars()
+        .all()
+    )
 
     raiseExceptions((carts, 404, "No matching cart items found"))
 
@@ -115,13 +131,13 @@ def delete_many_cart_items(
 
 @router.delete("/delete-all", response_model=dict)
 def delete_all_cart_items(
+    user: requireSignin,
     session: GetSession,
-    user: dict = requireSignin,
 ):
     """
     Delete all cart items for the logged-in user
     """
-    carts = session.exec(select(Cart).where(Cart.user_id == user["id"])).all()
+    carts = session.exec(select(Cart).where(Cart.user_id == user["id"])).scalars().all()
 
     raiseExceptions((carts, 404, "No cart items found"))
 
