@@ -63,6 +63,7 @@ from .returnModel import ReturnItem,ReturnRequest,WalletTransaction,UserWallet
 # # attribute
 from .product_model.importHistoryModel import ProductImportHistory
 from .product_model.productPurchaseModel import ProductPurchase
+#from .withdrawModel import *
 # from .attributes_model import Attribute, AttributeValue, AttributeProduct
 
 # # tag

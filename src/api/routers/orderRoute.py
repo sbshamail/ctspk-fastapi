@@ -15,6 +15,7 @@ from src.api.models.order_model.orderModel import (
 from src.api.models.product_model.productsModel import Product, ProductType, GroupedProductPricingType
 from src.api.models.product_model.variationOptionModel import VariationOption
 from src.api.models.category_model import Category
+#from src.api.models.withdrawModel import ShopEarning
 from src.api.core.dependencies import GetSession, requirePermission
 from datetime import datetime
 import uuid
@@ -313,10 +314,10 @@ def update(
         status_field = status_field_map.get(request.order_status)
         if status_field:
             update_order_status_history(session, order.id, status_field)
-
+            
     session.commit()
     session.refresh(order)
-
+    #create_shop_earning(session, order)
     return api_response(
         200, "Order Updated Successfully", OrderReadNested.model_validate(order)
     )
@@ -383,7 +384,7 @@ def update_status(
     session.add(order)
     session.commit()
     session.refresh(order)
-
+    #create_shop_earning(session, order)
     return api_response(
         200, "Order Status Updated Successfully", OrderRead.model_validate(order)
     )
@@ -606,3 +607,21 @@ def get_sales_report(
         
     except Exception as e:
         return api_response(500, f"Error generating sales report: {str(e)}")
+    
+# def create_shop_earning(session, order: Order):
+#     """Create shop earning record when order is completed"""
+#     if order.order_status != OrderStatusEnum.COMPLETED or not order.shop_id:
+#         return
+    
+#     # Calculate shop earning (order total - admin commission - delivery fee)
+#     shop_earning = order.total - order.admin_commission_amount - (order.delivery_fee or 0)
+    
+#     earning = ShopEarning(
+#         shop_id=order.shop_id,
+#         order_id=order.id,
+#         order_amount=order.total,
+#         admin_commission=order.admin_commission_amount,
+#         shop_earning=shop_earning
+#     )
+    
+#     session.add(earning)

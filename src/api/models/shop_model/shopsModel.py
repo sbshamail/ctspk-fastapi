@@ -9,6 +9,7 @@ from src.api.models.baseModel import TimeStampReadModel, TimeStampedModel
 if TYPE_CHECKING:
     from src.api.models import User, UserShop, Product,Order,Review
 
+#,ShopWithdrawRequest,ShopEarning
 
 class Shop(TimeStampedModel, table=True):
     __tablename__: Literal["shops"] = "shops"
@@ -32,6 +33,8 @@ class Shop(TimeStampedModel, table=True):
     user_shops: list["UserShop"] = Relationship(back_populates="shop")
 
     products: List["Product"] = Relationship(back_populates="shop")
+    #withdraw_requests: Optional["ShopWithdrawRequest"] = Relationship(back_populates="shop")
+    #earnings: Optional["ShopEarning"] = Relationship(back_populates="shop")
     # balances: List["Balance"] = Relationship(back_populates="shop")
    # orders: List["Order"] = Relationship(back_populates="shop")
     orders: List["Order"] = Relationship(
