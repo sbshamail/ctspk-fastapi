@@ -19,7 +19,7 @@ if TYPE_CHECKING:
         OrderProduct,
         Review,
         ReturnItem,
-        ProductPurchase
+        ProductPurchase,
     )
 
 
@@ -97,30 +97,30 @@ class Product(TimeStampedModel, table=True):
     is_external: bool = Field(default=False)
     external_product_url: Optional[str] = Field(max_length=191)
     external_product_button_text: Optional[str] = Field(max_length=191)
-    
+
     # For variable products - store attributes as JSON
     attributes: Optional[List[Dict[str, Any]]] = Field(
         default=None,
         sa_column=Column(JSON),
     )
-    
+
     # For grouped products - store grouped product IDs as JSON
     grouped_products: Optional[List[Dict[str, Any]]] = Field(
         default=None,
         sa_column=Column(JSON),
     )
-    
+
     # ADDED: Grouped product configuration
     grouped_products_config: Optional[Dict[str, Any]] = Field(
         default=None,
         sa_column=Column(JSON),
     )
-    
+
     # ADDED: Track total purchased quantity
     total_purchased_quantity: int = Field(default=0)
     # ADDED: Track total sold quantity
     total_sold_quantity: int = Field(default=0)
-    
+
     # foreign key
     category_id: int = Field(foreign_key="categories.id", index=True)
     shop_id: Optional[int] = Field(foreign_key="shops.id", index=True)
@@ -343,3 +343,25 @@ class ProductRead(TimeStampReadModel):
     total_purchased_quantity: int = 0
     total_sold_quantity: int = 0
     current_stock_value: Optional[float] = None
+
+
+class ProductListRead(TimeStampReadModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    slug: str
+    price: float
+    sale_price: Optional[float] = None
+    max_price: Optional[float] = None
+    min_price: Optional[float] = None
+    purchase_price: Optional[float] = None
+    weight: Optional[float] = None
+    image: Optional[Dict[str, Any]] = None
+    is_active: bool
+    is_feature: Optional[bool] = None
+    quantity: int
+    category: CategoryReadProduct
+    shop: ShopReadForProduct
+    manufacturer_id: Optional[int] = None
+    warranty: Optional[str] = None
+    shipping_info: Optional[str] = None
