@@ -62,7 +62,6 @@ class Order(TimeStampedModel, table=True):
     )
     language: str = Field(default="en", max_length=191)
     coupon_id: Optional[int] = Field(default=None, foreign_key="coupons.id")
-    shop_id: Optional[int] = Field(default=None, foreign_key="shops.id")
     discount: Optional[float] = Field(default=None)
     payment_gateway: Optional[str] = Field(default=None, max_length=191)
     shipping_address: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
@@ -89,11 +88,6 @@ class Order(TimeStampedModel, table=True):
         sa_relationship_kwargs={"foreign_keys": "[Order.fullfillment_id]"},
     )
 
-    shop: Optional["Shop"] = Relationship(
-        back_populates="orders",
-        sa_relationship_kwargs={"foreign_keys": "[Order.shop_id]"},
-    )
-
     order_products: Optional[List["OrderProduct"]] = Relationship(
         back_populates="orders"
     )
@@ -117,6 +111,7 @@ class OrderProduct(TimeStampedModel, table=True):
     variation_option_id: Optional[int] = Field(
         default=None, foreign_key="variation_options.id"
     )
+    shop_id: Optional[int] = Field(default=None, foreign_key="shops.id")
     order_quantity: str = Field(max_length=191)
     unit_price: float = Field()
     subtotal: float = Field()
@@ -138,7 +133,7 @@ class OrderProduct(TimeStampedModel, table=True):
     orders: "Order" = Relationship(back_populates="order_products")
     product: "Product" = Relationship(back_populates="order_products")
     variation_option: Optional["VariationOption"] = Relationship()
-
+    shop: Optional["Shop"] = Relationship()
 
 class OrderStatus(TimeStampedModel, table=True):
     __tablename__ = "orders_status"
@@ -174,7 +169,7 @@ class OrderProductCreate(SQLModel):
     subtotal: float
     item_type: OrderItemType = Field(default=OrderItemType.SIMPLE)
     variation_data: Optional[Dict[str, Any]] = None
-
+    shop_id: Optional[int] = None
 
 
 class OrderCreate(SQLModel):
@@ -185,7 +180,6 @@ class OrderCreate(SQLModel):
     sales_tax: Optional[float] = None
     paid_total: Optional[float] = None
     total: Optional[float] = None
-    shop_id: Optional[int] = None
     discount: Optional[float] = None
     payment_gateway: Optional[str] = None
     shipping_address: Optional[Dict[str, Any]] = None
@@ -204,7 +198,6 @@ class OrderUpdate(SQLModel):
     sales_tax: Optional[float] = None
     paid_total: Optional[float] = None
     total: Optional[float] = None
-    shop_id: Optional[int] = None
     discount: Optional[float] = None
     payment_gateway: Optional[str] = None
     shipping_address: Optional[Dict[str, Any]] = None
@@ -237,6 +230,9 @@ class OrderProductRead(TimeStampReadModel):
     variation_data: Optional[Dict[str, Any]] = None
     product_snapshot: Optional[Dict[str, Any]] = None
     variation_snapshot: Optional[Dict[str, Any]] = None
+    shop_id: Optional[int] = None
+    shop_name: Optional[str] = None
+    shop_slug: Optional[str] = None
 
 
 class OrderRead(TimeStampReadModel):
@@ -253,7 +249,6 @@ class OrderRead(TimeStampReadModel):
     admin_commission_amount: Decimal
     language: str
     coupon_id: Optional[int] = None
-    shop_id: Optional[int] = None
     discount: Optional[float] = None
     payment_gateway: Optional[str] = None
     shipping_address: Optional[Dict[str, Any]] = None
@@ -265,7 +260,8 @@ class OrderRead(TimeStampReadModel):
     payment_status: PaymentStatusEnum
     fullfillment_id: Optional[int] = None
     assign_date: Optional[datetime] = None
-
+    shops: Optional[List[Dict[str, Any]]] = None
+    shop_count: Optional[int] = None
 
 class OrderReadNested(OrderRead):
     order_products: List[OrderProductRead] = []

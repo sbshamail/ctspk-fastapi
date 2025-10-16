@@ -37,12 +37,12 @@ class Shop(TimeStampedModel, table=True):
     #earnings: Optional["ShopEarning"] = Relationship(back_populates="shop")
     # balances: List["Balance"] = Relationship(back_populates="shop")
    # orders: List["Order"] = Relationship(back_populates="shop")
-    orders: List["Order"] = Relationship(
-        back_populates="shop",
-        sa_relationship_kwargs={
-            "foreign_keys": "[Order.shop_id]"
-        }
-    )
+    # orders: List["Order"] = Relationship(
+    #     back_populates="shop",
+    #     sa_relationship_kwargs={
+    #         "foreign_keys": "[Order.shop_id]"
+    #     }
+    # )
     reviews: Optional["Review"] = Relationship(back_populates="shop")
 
 class ShopCreate(SQLModel):

@@ -35,6 +35,15 @@ def get_product_snapshot(session, product_id: int) -> Dict[str, Any]:
     if not product:
         return {}
     
+    # Get shop information for the product
+    shop_name = None
+    shop_slug = None
+    if product.shop_id:
+        shop = session.get(Shop, product.shop_id)
+        if shop:
+            shop_name = shop.name
+            shop_slug = shop.slug
+    
     return {
         "id": product.id,
         "name": product.name,
@@ -45,8 +54,10 @@ def get_product_snapshot(session, product_id: int) -> Dict[str, Any]:
         "image": product.image,
         "product_type": product.product_type,
         "purchase_price": product.purchase_price,
+        "shop_id": product.shop_id,
+        "shop_name": shop_name,
+        "shop_slug": shop_slug,
     }
-
 
 def get_variation_snapshot(session, variation_option_id: int) -> Dict[str, Any]:
     """Get variation snapshot for order record"""
@@ -71,6 +82,14 @@ def validate_product_availability(session, product_data: OrderProductCreate) -> 
     product = session.get(Product, product_data.product_id)
     if not product or not product.is_active:
         return False, "Product not found or inactive"
+    
+    # Validate that product belongs to the specified shop
+    if product_data.shop_id and product.shop_id != product_data.shop_id:
+        return False, f"Product does not belong to specified shop"
+    
+    # Set shop_id from product if not provided
+    if not product_data.shop_id and product.shop_id:
+        product_data.shop_id = product.shop_id
     
     if product_data.item_type == OrderItemType.SIMPLE:
         if product.quantity >= float(product_data.order_quantity) and product.in_stock:
@@ -184,10 +203,16 @@ def update_order_status_history(session, order_id: int, status_field: str):
 def create(request: OrderCreate, session: GetSession, user=requirePermission("order")):
     # Validate all products before creating order
     validation_errors = []
+    shops_in_order = set()  # Track unique shops in this order
+    
     for product_data in request.order_products:
         is_available, message = validate_product_availability(session, product_data)
         if not is_available:
             validation_errors.append(f"Product {product_data.product_id}: {message}")
+        else:
+            # Add shop to unique shops set
+            if product_data.shop_id:
+                shops_in_order.add(product_data.shop_id)
     
     if validation_errors:
         return api_response(400, "Product availability issues", {"errors": validation_errors})
@@ -221,9 +246,9 @@ def create(request: OrderCreate, session: GetSession, user=requirePermission("or
         if product_data.variation_option_id:
             variation_snapshot = get_variation_snapshot(session, product_data.variation_option_id)
 
-        # Create order product
+        # Create order product with shop_id
         order_product = OrderProduct(
-            **product_data.model_dump(exclude={"grouped_items"}),
+            **product_data.model_dump(),
             order_id=order.id,
             admin_commission=admin_commission,
             product_snapshot=product_snapshot,
@@ -247,7 +272,6 @@ def create(request: OrderCreate, session: GetSession, user=requirePermission("or
     return api_response(
         201, "Order Created Successfully", OrderReadNested.model_validate(order)
     )
-
 
 @router.put("/update/{id}")
 def update(
@@ -362,8 +386,30 @@ def get(id: int, session: GetSession, user=requirePermission("order")):
     order = session.get(Order, id)
     raiseExceptions((order, 404, "Order not found"))
 
-    return api_response(200, "Order Found", OrderReadNested.model_validate(order))
+    # Enhance order data with shops information
+    order_data = OrderReadNested.model_validate(order)
+    
+    # Get unique shops from order products
+    shops = set()
+    for order_product in order.order_products:
+        if order_product.shop_id:
+            shops.add(order_product.shop_id)
+    
+    # Get shop details
+    shop_details = []
+    for shop_id in shops:
+        shop = session.get(Shop, shop_id)
+        if shop:
+            shop_details.append({
+                "id": shop.id,
+                "name": shop.name,
+                "slug": shop.slug
+            })
+    
+    order_data.shops = shop_details
+    order_data.shop_count = len(shop_details)
 
+    return api_response(200, "Order Found", order_data)
 
 @router.get("/tracking/{tracking_number}", response_model=OrderReadNested)
 def get_by_tracking(tracking_number: str, session: GetSession):
@@ -372,7 +418,30 @@ def get_by_tracking(tracking_number: str, session: GetSession):
     ).first()
     raiseExceptions((order, 404, "Order not found"))
 
-    return api_response(200, "Order Found", OrderReadNested.model_validate(order))
+    # Enhance order data with shops information
+    order_data = OrderReadNested.model_validate(order)
+    
+    # Get unique shops from order products
+    shops = set()
+    for order_product in order.order_products:
+        if order_product.shop_id:
+            shops.add(order_product.shop_id)
+    
+    # Get shop details
+    shop_details = []
+    for shop_id in shops:
+        shop = session.get(Shop, shop_id)
+        if shop:
+            shop_details.append({
+                "id": shop.id,
+                "name": shop.name,
+                "slug": shop.slug
+            })
+    
+    order_data.shops = shop_details
+    order_data.shop_count = len(shop_details)
+
+    return api_response(200, "Order Found", order_data)
 
 
 @router.delete("/delete/{id}")
@@ -427,6 +496,7 @@ def list_orders(
     columnFilters: Optional[str] = Query(None),
     order_status: Optional[OrderStatusEnum] = None,
     payment_status: Optional[PaymentStatusEnum] = None,
+    shop_id: Optional[int] = None,  # ADDED: Filter by shop_id (from order products)
     page: int = None,
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
@@ -451,6 +521,20 @@ def list_orders(
             filters["columnFilters"] = []
         filters["columnFilters"].append(["payment_status", payment_status.value])
 
+    # Handle shop filtering - we need to filter orders that have products from this shop
+    if shop_id:
+        # First get order IDs that have products from this shop
+        order_ids_with_shop = session.exec(
+            select(OrderProduct.order_id).where(OrderProduct.shop_id == shop_id).distinct()
+        ).all()
+        
+        if not order_ids_with_shop:
+            return api_response(404, "No orders found for this shop")
+            
+        if "columnFilters" not in filters or not filters["columnFilters"]:
+            filters["columnFilters"] = []
+        filters["columnFilters"].append(["id", [str(oid) for oid in order_ids_with_shop]])
+
     result = listop(
         session=session,
         Model=Order,
@@ -464,8 +548,33 @@ def list_orders(
     if not result["data"]:
         return api_response(404, "No orders found")
 
-    list_data = [OrderReadNested.model_validate(prod) for prod in result["data"]]
-    return api_response(200, "Orders found", list_data, result["total"])
+    # Enhance each order with shop information
+    enhanced_orders = []
+    for order in result["data"]:
+        order_data = OrderReadNested.model_validate(order)
+        
+        # Get unique shops from order products
+        shops = set()
+        for order_product in order.order_products:
+            if order_product.shop_id:
+                shops.add(order_product.shop_id)
+        
+        # Get shop details
+        shop_details = []
+        for shop_id in shops:
+            shop = session.get(Shop, shop_id)
+            if shop:
+                shop_details.append({
+                    "id": shop.id,
+                    "name": shop.name,
+                    "slug": shop.slug
+                })
+        
+        order_data.shops = shop_details
+        order_data.shop_count = len(shop_details)
+        enhanced_orders.append(order_data)
+
+    return api_response(200, "Orders found", enhanced_orders, result["total"])
 
 
 @router.get("/customer/{customer_id}", response_model=list[OrderReadNested])
@@ -502,7 +611,7 @@ def get_sales_report(
     session: GetSession,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    shop_id: Optional[int] = None,
+    shop_id: Optional[int] = None,  # Now filters by shop in order products
     product_id: Optional[int] = None,
     user=requirePermission("order"),
 ):
@@ -520,9 +629,6 @@ def get_sales_report(
             end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
             query = query.where(Order.created_at <= end_dt)
         
-        if shop_id:
-            query = query.where(Order.shop_id == shop_id)
-        
         orders = session.exec(query).all()
         
         sales_data = {}
@@ -531,23 +637,34 @@ def get_sales_report(
         
         for order in orders:
             for order_product in order.order_products:
-                product_id = order_product.product_id
+                # Apply shop filter if provided
+                if shop_id and order_product.shop_id != shop_id:
+                    continue
+                
+                # Apply product filter if provided
+                if product_id and order_product.product_id != product_id:
+                    continue
+                
+                product_id_val = order_product.product_id
                 quantity = float(order_product.order_quantity)
                 revenue = order_product.subtotal
                 
-                if product_id not in sales_data:
-                    product = session.get(Product, product_id)
-                    sales_data[product_id] = {
-                        'product_id': product_id,
+                if product_id_val not in sales_data:
+                    product = session.get(Product, product_id_val)
+                    shop = session.get(Shop, order_product.shop_id) if order_product.shop_id else None
+                    sales_data[product_id_val] = {
+                        'product_id': product_id_val,
                         'product_name': product.name if product else 'Unknown',
                         'product_sku': product.sku if product else 'Unknown',
+                        'shop_id': order_product.shop_id,
+                        'shop_name': shop.name if shop else 'Unknown',
                         'total_quantity_sold': 0,
                         'total_revenue': 0,
                         'average_price': 0
                     }
                 
-                sales_data[product_id]['total_quantity_sold'] += quantity
-                sales_data[product_id]['total_revenue'] += revenue
+                sales_data[product_id_val]['total_quantity_sold'] += quantity
+                sales_data[product_id_val]['total_revenue'] += revenue
                 total_products_sold += quantity
                 total_revenue += revenue
         
@@ -572,8 +689,7 @@ def get_sales_report(
         return api_response(200, "Sales report generated", report)
         
     except Exception as e:
-        return api_response(500, f"Error generating sales report: {str(e)}")
-    
+        return api_response(500, f"Error generating sales report: {str(e)}")    
 # def create_shop_earning(session, order: Order):
 #     """Create shop earning record when order is completed"""
 #     if order.order_status != OrderStatusEnum.COMPLETED or not order.shop_id:

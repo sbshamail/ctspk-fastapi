@@ -351,6 +351,32 @@ def list(query_params: ListQueryParams, session: GetSession):
         Schema=ProductRead,
     )
 
+@router.get("/products/related/{category_id}")
+def get_products_by_category(category_id: int, session: GetSession):
+    try:
+        # Get all descendant category IDs (recursively)
+        def get_descendants(cat_id: int):
+            q = session.exec(select(Category).where(Category.parent_id == cat_id)).all()
+            ids = [cat.id for cat in q]
+            for c in q:
+                ids.extend(get_descendants(c.id))
+            return ids
+
+        # include self
+        category_ids = [category_id] + get_descendants(category_id)
+
+        # Fetch products belonging to any of those categories
+        stmt = select(Product).where(Product.category_id.in_(category_ids))
+        products = session.exec(stmt).all()
+        # return {"products": [ProductRead.model_validate(p) for p in products]}
+        return api_response(
+            200,
+            "found product",
+            [ProductRead.model_validate(p) for p in products],
+            len(products),
+        )
+    finally:
+        session.close()
 
 # ✅ PATCH Product status
 @router.patch("/{id}/status")
