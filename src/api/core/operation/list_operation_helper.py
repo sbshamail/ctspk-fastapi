@@ -133,106 +133,43 @@ def applyFilters(
             search_filters.append(attr.ilike(f"%{searchTerm}%"))
         statement = statement.where(or_(*search_filters))
 
-    # # Column-specific search
-    # if columnFilters:
-    #     try:
-    #         parsed_terms = ast.literal_eval(columnFilters)
-    #         columnFilters = [tuple(sublist) for sublist in parsed_terms]
-
-    #         # Group filters by column name
-    #         grouped = {}
-    #         for col, value in columnFilters:
-    #             grouped.setdefault(col, []).append(value)
-
-    #         filters = []
-    #         for col, values in grouped.items():
-    #             attr, statement = resolve_column(Model, col, statement)
-    #             col_type = _get_column_type(attr)
-
-    #             coerced_values = [
-    #                 _coerce_value_for_column(col_type, v, col) for v in values
-    #             ]
-
-    #             # If multiple values → OR
-    #             ors = []
-    #             for v in coerced_values:
-    #                 if isinstance(v, str):
-    #                     ors.append(attr.ilike(f"%{v}%"))
-    #                 else:
-    #                     ors.append(attr == v)
-    #             filters.append(or_(*ors))
-
-    #         statement = statement.where(and_(*filters))
-    #         return statement
-
-    #     except Exception as e:
-    #         return api_response(
-    #             400,
-    #             f" {e}",
-    #         )
-    # inside your existing applyFilters() definition
-
+    # Column-specific search
     if columnFilters:
         try:
-            filters = []
             parsed_terms = ast.literal_eval(columnFilters)
             columnFilters = [tuple(sublist) for sublist in parsed_terms]
 
+            # Group filters by column name
+            grouped = {}
             for col, value in columnFilters:
+                grouped.setdefault(col, []).append(value)
+
+            filters = []
+            for col, values in grouped.items():
                 attr, statement = resolve_column(Model, col, statement)
                 col_type = _get_column_type(attr)
 
-                # ✅ Handle JSON array or object column types
-                if isinstance(col_type, SATypes.JSON):
-                    # If value itself is list → array/object-based filtering
-                    if isinstance(value, list):
-                        # --- CASE 1: simple array filter ---
-                        # e.g. ["tags", "tag1", "tag2"]
-                        if all(isinstance(v, str) for v in value):
-                            ors = [attr.contains(v) for v in value]
-                            filters.append(or_(*ors))
+                coerced_values = [
+                    _coerce_value_for_column(col_type, v, col) for v in values
+                ]
 
-                        # --- CASE 2: object of array filter ---
-                        # e.g. ["attributes", ["name", "color"], ["values", ["value", "Red"]]]
-                        else:
-                            json_conditions = []
-                            for cond in value:
-                                # Each sub-cond could be ["name", "color"] or ["values", ["value","Red"]]
-                                if isinstance(cond, list):
-                                    if len(cond) == 2 and isinstance(
-                                        cond[1], (str, int, float)
-                                    ):
-                                        key, val = cond
-                                        json_conditions.append(
-                                            attr.cast(SATypes.JSON).contains(
-                                                [{key: val}]
-                                            )
-                                        )
-                                    elif len(cond) == 2 and isinstance(cond[1], list):
-                                        # nested example: ["values", ["value","Red"]]
-                                        sub_key, sub_val = cond
-                                        json_conditions.append(
-                                            attr.cast(SATypes.JSON).contains(
-                                                [{sub_key: [{sub_val[0]: sub_val[1]}]}]
-                                            )
-                                        )
-                            filters.append(and_(*json_conditions))
+                # If multiple values → OR
+                ors = []
+                for v in coerced_values:
+                    if isinstance(v, str):
+                        ors.append(attr.ilike(f"%{v}%"))
                     else:
-                        # Fallback: single JSON contains
-                        filters.append(attr.contains(value))
-                else:
-                    # Normal column type
-                    coerced_value = _coerce_value_for_column(col_type, value, col)
-                    if isinstance(coerced_value, str):
-                        filters.append(attr.ilike(f"%{coerced_value}%"))
-                    else:
-                        filters.append(attr == coerced_value)
+                        ors.append(attr == v)
+                filters.append(or_(*ors))
 
             statement = statement.where(and_(*filters))
             return statement
 
         except Exception as e:
-            return api_response(400, f"JSON Filter Error: {e}")
+            return api_response(
+                400,
+                f" {e}",
+            )
 
     if customFilters:
         filters = []
