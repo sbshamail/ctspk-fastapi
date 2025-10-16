@@ -15,6 +15,13 @@ class list_query_params:
         columnFilters: Optional[str] = Query(
             None, description="Example : '[['name','car'],['description','product']]"
         ),
+        stringArrayFilters: Optional[str] = Query(
+            None, description='Example: [[ "tags", ["tag1","tag2"] ]]'
+        ),
+        objectArrayFilters: Optional[str] = Query(
+            None,
+            description='Example: [[ "attributes", ["name","color"], ["values", ["value","Red"]]]]',
+        ),
         page: int = Query(1, description="Page number"),
         skip: int = Query(0, description="Number of items to skip"),
         limit: int = Query(10, description="Number of items to return"),
@@ -27,6 +34,8 @@ class list_query_params:
         self.limit = limit
         self.searchTerm = searchTerm
         self.columnFilters = columnFilters
+        self.stringArrayFilters = stringArrayFilters
+        self.objectArrayFilters = objectArrayFilters
         self.page = page
         self.numberRange = numberRange
         self.sort = sort

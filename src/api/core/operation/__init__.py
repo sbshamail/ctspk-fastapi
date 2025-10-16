@@ -81,6 +81,9 @@ def listop(
     dateRange = filters.get("dateRange")
     numberRange = filters.get("numberRange")
     customFilters = filters.get("customFilters")
+    stringArrayFilters = filters.get("stringArrayFilters")
+    objectArrayFilters = filters.get("objectArrayFilters")
+
     # Apply Filters
     statement = applyFilters(
         statement,
@@ -93,6 +96,8 @@ def listop(
         customFilters=customFilters,
         otherFilters=otherFilters,
         sort=sort,
+        stringArrayFilters=stringArrayFilters,
+        objectArrayFilters=objectArrayFilters,
     )
 
     # Total count (before pagination)
@@ -124,6 +129,8 @@ def listRecords(
         numberRange = query_params.get("numberRange")
         searchTerm = query_params.get("searchTerm")
         columnFilters = query_params.get("columnFilters")
+        stringArrayFilters = query_params.get("stringArrayFilters")
+        objectArrayFilters = query_params.get("objectArrayFilters")
         page = int(query_params.get("page", 1))
         skip = int(query_params.get("skip", 0))
         limit = int(query_params.get("limit", 10))
@@ -135,6 +142,8 @@ def listRecords(
             "dateRange": dateRange,
             "numberRange": numberRange,
             "customFilters": customFilters,
+            "stringArrayFilters": stringArrayFilters,
+            "objectArrayFilters": objectArrayFilters,
         }
 
         result = listop(
