@@ -16,7 +16,7 @@ class list_query_params:
             None, description="Example : '[['name','car'],['description','product']]"
         ),
         stringArrayFilters: Optional[str] = Query(
-            None, description='Example: [[ "tags", ["tag1","tag2"] ]]'
+            None, description="Example: [['tags',['tag1','tag2']]]"
         ),
         objectArrayFilters: Optional[str] = Query(
             None,
