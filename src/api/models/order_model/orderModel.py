@@ -39,7 +39,7 @@ class PaymentStatusEnum(str, PyEnum):
 class OrderItemType(str, PyEnum):
     SIMPLE = "simple"
     VARIABLE = "variable"
-    GROUPED = "grouped"
+
 
 
 class Order(TimeStampedModel, table=True):
@@ -127,10 +127,9 @@ class OrderProduct(TimeStampedModel, table=True):
     # ADDED: Fields for product type handling
     item_type: OrderItemType = Field(default=OrderItemType.SIMPLE)
     variation_data: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))  # Store variation attributes
-    grouped_items: Optional[List[Dict[str, Any]]] = Field(sa_column=Column(JSON))  # Store grouped product items
+   
     
     # ADDED: Product snapshot at time of order
-    product_snapshot: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
     variation_snapshot: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
     
     deleted_at: Optional[datetime] = None
@@ -164,13 +163,7 @@ class OrderStatus(TimeStampedModel, table=True):
     )
 
 
-# Create Schemas - UPDATED
-class OrderGroupedItem(SQLModel):
-    product_id: int
-    product_name: str
-    quantity: int
-    unit_price: float
-    subtotal: float
+
 
 
 class OrderProductCreate(SQLModel):
@@ -181,7 +174,7 @@ class OrderProductCreate(SQLModel):
     subtotal: float
     item_type: OrderItemType = Field(default=OrderItemType.SIMPLE)
     variation_data: Optional[Dict[str, Any]] = None
-    grouped_items: Optional[List[OrderGroupedItem]] = None
+
 
 
 class OrderCreate(SQLModel):
@@ -242,7 +235,6 @@ class OrderProductRead(TimeStampReadModel):
     admin_commission: Decimal
     item_type: OrderItemType
     variation_data: Optional[Dict[str, Any]] = None
-    grouped_items: Optional[List[Dict[str, Any]]] = None
     product_snapshot: Optional[Dict[str, Any]] = None
     variation_snapshot: Optional[Dict[str, Any]] = None
 

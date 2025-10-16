@@ -10,9 +10,9 @@ from sqlalchemy.orm import selectinload, joinedload
 from src.api.models.order_model.orderModel import (
     Order, OrderCreate, OrderUpdate, OrderRead, OrderReadNested, 
     OrderStatusUpdate, OrderProduct, OrderStatus, OrderStatusEnum, 
-    PaymentStatusEnum, OrderItemType, OrderGroupedItem,OrderProductCreate
+    PaymentStatusEnum, OrderItemType, OrderProductCreate
 )
-from src.api.models.product_model.productsModel import Product, ProductType, GroupedProductPricingType
+from src.api.models.product_model.productsModel import Product, ProductType
 from src.api.models.product_model.variationOptionModel import VariationOption
 from src.api.models.category_model import Category
 #from src.api.models.withdrawModel import ShopEarning
@@ -88,19 +88,6 @@ def validate_product_availability(session, product_data: OrderProductCreate) -> 
             available_qty = variation.quantity if variation else 0
             return False, f"Insufficient variation stock. Available: {available_qty}, Requested: {product_data.order_quantity}"
     
-    elif product_data.item_type == OrderItemType.GROUPED:
-        if not product_data.grouped_items:
-            return False, "Grouped items required for grouped product"
-        
-        # Check availability for all grouped items
-        for grouped_item in product_data.grouped_items:
-            grouped_product = session.get(Product, grouped_item.product_id)
-            if not grouped_product:
-                return False, f"Grouped product {grouped_item.product_id} not found"
-            if grouped_product.quantity < grouped_item.quantity:
-                return False, f"Insufficient stock for {grouped_product.name}. Available: {grouped_product.quantity}, Required: {grouped_item.quantity}"
-        return True, "All grouped items available"
-    
     return False, "Unknown product type"
 
 
@@ -151,24 +138,6 @@ def update_product_inventory(session, product_data: OrderProductCreate, operatio
                 variation.is_active = False
             session.add(variation)
     
-    elif product_data.item_type == OrderItemType.GROUPED and product_data.grouped_items:
-        for grouped_item in product_data.grouped_items:
-            grouped_product = session.get(Product, grouped_item.product_id)
-            if grouped_product:
-                quantity_change = multiplier * grouped_item.quantity
-                grouped_product.quantity += quantity_change
-                
-                # Update sales tracking for constituent products
-                if operation == "deduct":
-                    grouped_product.total_sold_quantity += grouped_item.quantity
-                else:
-                    grouped_product.total_sold_quantity -= grouped_item.quantity
-                    
-                if grouped_product.quantity <= 0:
-                    grouped_product.in_stock = False
-                else:
-                    grouped_product.in_stock = True
-                session.add(grouped_product)
 
 
 def calculate_admin_commission(
@@ -259,7 +228,6 @@ def create(request: OrderCreate, session: GetSession, user=requirePermission("or
             admin_commission=admin_commission,
             product_snapshot=product_snapshot,
             variation_snapshot=variation_snapshot,
-            grouped_items=product_data.grouped_items if product_data.grouped_items else None,
         )
         session.add(order_product)
 
@@ -349,8 +317,7 @@ def update_status(
                 order_quantity=order_product.order_quantity,
                 unit_price=order_product.unit_price,
                 subtotal=order_product.subtotal,
-                item_type=order_product.item_type,
-                grouped_items=order_product.grouped_items,
+                item_type=order_product.item_type
             )
             update_product_inventory(session, product_data, "restore")
 
@@ -429,8 +396,7 @@ def delete(
             order_quantity=order_product.order_quantity,
             unit_price=order_product.unit_price,
             subtotal=order_product.subtotal,
-            item_type=order_product.item_type,
-            grouped_items=order_product.grouped_items,
+            item_type=order_product.item_type
         )
         update_product_inventory(session, product_data, "restore")
 

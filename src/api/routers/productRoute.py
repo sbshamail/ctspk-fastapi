@@ -21,10 +21,7 @@ from src.api.models.product_model.productsModel import (
     ProductActivate,
     ProductType,
     ProductStatus,
-    VariationData,
-    GroupedProductItem,
-    GroupedProductPricingType,
-    GroupedProductConfig,
+    VariationData
 )
 from src.api.core.dependencies import (
     GetSession,
@@ -100,100 +97,8 @@ def update_variations_for_product(
     return create_variations_for_product(session, product_id, variations_data, base_sku)
 
 
-def calculate_grouped_product_price(
-    grouped_products: List[GroupedProductItem], config: GroupedProductConfig, session
-) -> tuple[float, float, int]:
-    """
-    Calculate grouped product price, original price, and available quantity
-    """
-    total_original_price = 0.0
-    available_quantity = float("inf")  # Start with infinity, find minimum
-
-    # Calculate original price and find available quantity
-    for item in grouped_products:
-        product = session.get(Product, item.product_id)
-        if product:
-            # Get current product price
-            current_price = product.sale_price or product.price
-            if current_price:
-                total_original_price += current_price * item.quantity
-
-            # Determine available quantity based on constituent products
-            if not item.is_free:  # Free items don't affect available quantity
-                item_available = (
-                    product.quantity // item.quantity if item.quantity > 0 else 0
-                )
-                available_quantity = min(available_quantity, item_available)
-
-    # Calculate final price based on pricing type
-    if config.pricing_type == GroupedProductPricingType.FIXED_PRICE:
-        final_price = config.fixed_price or total_original_price
-    elif config.pricing_type == GroupedProductPricingType.FIXED_DISCOUNT:
-        final_price = total_original_price - (config.discount_value or 0)
-    elif config.pricing_type == GroupedProductPricingType.PERCENTAGE_DISCOUNT:
-        discount = (config.discount_value or 0) / 100
-        final_price = total_original_price * (1 - discount)
-    elif config.pricing_type == GroupedProductPricingType.FREE_ITEM:
-        # For free item, price is sum of paid items only
-        paid_items_price = sum(
-            (item.product_price or 0) * item.quantity
-            for item in grouped_products
-            if not item.is_free
-        )
-        final_price = paid_items_price
-    else:
-        final_price = total_original_price
-
-    # Ensure final price is not negative
-    final_price = max(0, final_price)
-
-    # If no available quantity found (all items are free or no items), set to 0
-    if available_quantity == float("inf"):
-        available_quantity = 0
-
-    return final_price, total_original_price, int(available_quantity)
-
-
-def enhance_grouped_products_data(
-    session, grouped_products: List[Dict], config: Dict
-) -> tuple[List[Dict], float, float, int]:
-    """
-    Enhance grouped products with current data and calculate pricing
-    """
-    if not grouped_products:
-        return [], 0, 0, 0
-
-    enhanced_items = []
-    for item in grouped_products:
-        product = session.get(Product, item.get("product_id"))
-        if product:
-            enhanced_item = {
-                "id": item.get("id"),
-                "product_id": item.get("product_id"),
-                "product_name": product.name,
-                "product_sku": product.sku,
-                "product_price": product.sale_price or product.price,
-                "quantity": item.get("quantity", 1),
-                "is_free": item.get("is_free", False),
-            }
-            enhanced_items.append(enhanced_item)
-
-    # Calculate prices and available quantity
-    config_obj = (
-        GroupedProductConfig(**config)
-        if config
-        else GroupedProductConfig(pricing_type=GroupedProductPricingType.FIXED_PRICE)
-    )
-
-    final_price, original_price, available_quantity = calculate_grouped_product_price(
-        [GroupedProductItem(**item) for item in enhanced_items], config_obj, session
-    )
-
-    return enhanced_items, final_price, original_price, available_quantity
-
-
 def get_product_with_enhanced_data(session, product_id: int):
-    """Get product with enhanced data for variable and grouped products"""
+    """Get product with enhanced data for variable products"""
     product = session.get(Product, product_id)
     if not product:
         return None
@@ -216,24 +121,6 @@ def get_product_with_enhanced_data(session, product_id: int):
         # Update total quantity
         total_quantity = variation_total_quantity
 
-    # Enhanced grouped products with pricing calculation
-    enhanced_grouped_products = []
-    final_group_price = product.price
-    original_group_price = product.price
-    available_quantity = product.quantity
-
-    if product.product_type == ProductType.GROUPED and product.grouped_products:
-        enhanced_items, calculated_price, original_price, calculated_quantity = (
-            enhance_grouped_products_data(
-                session, product.grouped_products, product.grouped_products_config
-            )
-        )
-
-        enhanced_grouped_products = enhanced_items
-        final_group_price = calculated_price
-        original_group_price = original_price
-        available_quantity = calculated_quantity
-
     # Calculate current stock value
     current_stock_value = None
     if product.purchase_price and product.quantity:
@@ -246,26 +133,10 @@ def get_product_with_enhanced_data(session, product_id: int):
     if hasattr(product_data, "variations"):
         product_data.variations = variations_data
 
-    if hasattr(product_data, "grouped_products"):
-        product_data.grouped_products = enhanced_grouped_products
-
-    # Update quantities and prices based on product type
+    # Update quantities based on product type
     if product.product_type == ProductType.VARIABLE:
         product_data.total_quantity = total_quantity
-        product_data.quantity = (
-            total_quantity  # Update main quantity with sum of variations
-        )
-
-    elif product.product_type == ProductType.GROUPED:
-        product_data.price = final_group_price
-        product_data.min_price = final_group_price
-        product_data.max_price = final_group_price
-        product_data.quantity = available_quantity
-        product_data.grouped_products_config = (
-            GroupedProductConfig(**product.grouped_products_config)
-            if product.grouped_products_config
-            else None
-        )
+        product_data.quantity = total_quantity
 
     # Add stock value
     product_data.current_stock_value = current_stock_value
@@ -284,10 +155,6 @@ def create(
     # Generate SKU if not provided
     if not request.sku:
         request.sku = generate_unique_sku(session)
-
-    # Validate SKU format if provided
-    if request.sku and not request.sku.startswith("SK-"):
-        return api_response(400, "SKU must start with 'SK-' prefix")
 
     # Check if SKU already exists
     if request.sku:
@@ -313,53 +180,16 @@ def create(
         max_price = max(prices)
         total_quantity = sum(var.quantity for var in request.variations)
 
-    elif request.product_type == ProductType.GROUPED and request.grouped_products:
-        # Calculate grouped product pricing and availability
-        enhanced_items, final_price, original_price, available_quantity = (
-            enhance_grouped_products_data(
-                session,
-                [item.model_dump() for item in request.grouped_products],
-                (
-                    request.grouped_products_config.model_dump()
-                    if request.grouped_products_config
-                    else None
-                ),
-            )
-        )
-
-        min_price = final_price
-        max_price = final_price
-        total_quantity = available_quantity
-
-        # Store enhanced grouped products data
-        grouped_products_data = enhanced_items
-        grouped_config_data = (
-            request.grouped_products_config.model_dump()
-            if request.grouped_products_config
-            else None
-        )
     else:
         min_price = request.min_price or request.price
         max_price = request.max_price or request.price
         total_quantity = request.quantity or 0
-        grouped_products_data = (
-            [item.model_dump() for item in request.grouped_products]
-            if request.grouped_products
-            else None
-        )
-        grouped_config_data = (
-            request.grouped_products_config.model_dump()
-            if request.grouped_products_config
-            else None
-        )
 
     # Prepare product data
     product_data = request.model_dump(
         exclude={
             "attributes",
-            "variations",
-            "grouped_products",
-            "grouped_products_config",
+            "variations"
         }
     )
     product_data.update(
@@ -372,8 +202,7 @@ def create(
                 if request.attributes
                 else None
             ),
-            "grouped_products": grouped_products_data,
-            "grouped_products_config": grouped_config_data,
+            
         }
     )
 
@@ -407,10 +236,6 @@ def update(
     if updateData.shop_id not in shop_ids:
         return api_response(403, "You are not the user of this Product")
 
-    # Validate SKU if provided
-    if request.sku and not request.sku.startswith("SK-"):
-        return api_response(400, "SKU must start with 'SK-' prefix")
-
     # Check if SKU already exists
     if request.sku and request.sku != updateData.sku:
         existing_product = session.exec(
@@ -425,30 +250,6 @@ def update(
     if request.product_type == ProductType.VARIABLE and request.variations:
         total_quantity = sum(var.quantity for var in request.variations)
 
-    elif request.product_type == ProductType.GROUPED and request.grouped_products:
-        # Calculate grouped product pricing and availability
-        enhanced_items, final_price, original_price, calculated_quantity = (
-            enhance_grouped_products_data(
-                session,
-                [item.model_dump() for item in request.grouped_products],
-                (
-                    request.grouped_products_config.model_dump()
-                    if request.grouped_products_config
-                    else None
-                ),
-            )
-        )
-
-        total_quantity = calculated_quantity
-
-        # Update prices for grouped product
-        if "min_price" not in request.model_dump(exclude_none=True):
-            request.min_price = final_price
-        if "max_price" not in request.model_dump(exclude_none=True):
-            request.max_price = final_price
-        if "price" not in request.model_dump(exclude_none=True):
-            request.price = final_price
-
     elif request.quantity is not None:
         total_quantity = request.quantity
 
@@ -457,9 +258,7 @@ def update(
         exclude_none=True,
         exclude={
             "attributes",
-            "variations",
-            "grouped_products",
-            "grouped_products_config",
+            "variations"
         },
     )
 
@@ -468,29 +267,6 @@ def update(
 
     if request.attributes is not None:
         update_data["attributes"] = [attr.model_dump() for attr in request.attributes]
-
-    if request.grouped_products is not None:
-        # Use enhanced data for grouped products
-        if request.product_type == ProductType.GROUPED:
-            enhanced_items, _, _, _ = enhance_grouped_products_data(
-                session,
-                [item.model_dump() for item in request.grouped_products],
-                (
-                    request.grouped_products_config.model_dump()
-                    if request.grouped_products_config
-                    else None
-                ),
-            )
-            update_data["grouped_products"] = enhanced_items
-        else:
-            update_data["grouped_products"] = [
-                item.model_dump() for item in request.grouped_products
-            ]
-
-    if request.grouped_products_config is not None:
-        update_data["grouped_products_config"] = (
-            request.grouped_products_config.model_dump()
-        )
 
     data = updateOp(updateData, ProductUpdate(**update_data), session)
 
@@ -595,72 +371,6 @@ def patch_product_status(
     # Return enhanced product data
     enhanced_product = get_product_with_enhanced_data(session, id)
     return api_response(200, "Product status updated successfully", enhanced_product)
-
-
-# Group Product Availability Check
-@router.get("/{id}/group-availability")
-def get_group_availability(id: int, session: GetSession):
-    """Get real-time availability of grouped product"""
-    product = session.get(Product, id)
-    raiseExceptions((product, 404, "Product not found"))
-
-    if product.product_type != ProductType.GROUPED:
-        return api_response(400, "Product is not a grouped product")
-
-    if not product.grouped_products:
-        return api_response(
-            200,
-            "Group availability",
-            {
-                "available": False,
-                "message": "No products in group",
-                "constituent_products": [],
-            },
-        )
-
-    constituent_status = []
-    can_sell = True
-    limiting_products = []
-
-    for item in product.grouped_products:
-        constituent = session.get(Product, item.get("product_id"))
-        if constituent:
-            required_qty = item.get("quantity", 1)
-            available_qty = constituent.quantity
-            is_available = available_qty >= required_qty
-            is_free = item.get("is_free", False)
-
-            constituent_status.append(
-                {
-                    "product_id": constituent.id,
-                    "product_name": constituent.name,
-                    "required_quantity": required_qty,
-                    "available_quantity": available_qty,
-                    "is_available": is_available,
-                    "is_free": is_free,
-                }
-            )
-
-            if not is_available and not is_free:
-                can_sell = False
-                limiting_products.append(constituent.name)
-
-    message = (
-        "Available for purchase"
-        if can_sell
-        else f"Insufficient stock for: {', '.join(limiting_products)}"
-    )
-
-    return api_response(
-        200,
-        "Group availability",
-        {
-            "available": can_sell,
-            "message": message,
-            "constituent_products": constituent_status,
-            "total_available_quantity": product.quantity,
-        },
-    )
 
 
 @router.post("/process-video-url")

@@ -11,8 +11,7 @@ from src.api.core.dependencies import GetSession, requirePermission
 from src.api.core.response import api_response, raiseExceptions
 from src.api.models.product_model.productsModel import (
     Product, ProductType, ProductStatus,
-    ProductAttribute, VariationData, GroupedProductItem,
-    GroupedProductPricingType, GroupedProductConfig
+    ProductAttribute, VariationData
 )
 from src.api.models.product_model.importHistoryModel import ProductImportHistory
 from src.api.models.product_model.productPurchaseModel import (
@@ -365,113 +364,7 @@ class ProductImportService:
         
         return variations
     
-    def parse_grouped_product(self, df: pd.DataFrame, shop_id: int) -> Dict[str, Any]:
-        """Parse grouped product data from Excel"""
-        try:
-            # Get main product data from first row
-            main_row = df.iloc[0]
-            
-            name = str(main_row['name']).strip()
-            if not name:
-                raise ValueError("Product name is required")
-                
-            category_name = str(main_row['category']).strip()
-            category_id = self.get_category_id(category_name)
-            
-            manufacturer_id = None
-            if pd.notna(main_row.get('manufacturer')):
-                manufacturer_id = self.get_manufacturer_id(str(main_row.get('manufacturer', '')).strip())
-            
-            # Parse grouped products
-            grouped_products = self.parse_grouped_products(df)
-            
-            # Parse grouped product configuration
-            grouped_config = self.parse_grouped_config(main_row)
-            
-            return {
-                'name': name,
-                'description': str(main_row.get('description', '')).strip(),
-                'category_id': category_id,
-                'manufacturer_id': manufacturer_id,
-                'product_type': ProductType.GROUPED,
-                'status': ProductStatus.PUBLISH,
-                'shop_id': shop_id,
-                'sku': generate_unique_sku(self.session),
-                'min_price': 0,  # Will be calculated
-                'max_price': 0,  # Will be calculated
-                'price': 0,      # Will be calculated
-                'quantity': 0,   # Will be calculated from constituent products
-                'purchase_price': 0,
-                'grouped_products': grouped_products,
-                'grouped_products_config': grouped_config
-            }
-        except Exception as e:
-            raise ValueError(f"Error parsing grouped product: {str(e)}")
-    
-    def parse_grouped_products(self, df: pd.DataFrame) -> List[GroupedProductItem]:
-        """Parse grouped products from Excel data"""
-        grouped_products = []
-        
-        for idx, row in df.iterrows():
-            try:
-                product_id_str = str(row.get('grouped_product_id', '')).strip()
-                if not product_id_str:
-                    continue
-                    
-                # Try to find product by ID or SKU
-                product = self.session.exec(
-                    select(Product).where(
-                        (Product.id == int(product_id_str)) | 
-                        (Product.sku == product_id_str)
-                    )
-                ).first()
-                
-                if not product:
-                    raise ValueError(f"Product not found: {product_id_str}")
-                
-                quantity = int(row.get('quantity', 1)) if pd.notna(row.get('quantity')) else 1
-                is_free = bool(row.get('is_free', False)) if pd.notna(row.get('is_free')) else False
-                
-                grouped_products.append(GroupedProductItem(
-                    product_id=product.id,
-                    quantity=quantity,
-                    is_free=is_free,
-                    product_name=product.name,
-                    product_sku=product.sku,
-                    product_price=product.sale_price or product.price
-                ))
-                
-            except Exception as e:
-                raise ValueError(f"Error parsing grouped product row {idx + 2}: {str(e)}")
-        
-        return grouped_products
-    
-    def parse_grouped_config(self, row: pd.Series) -> GroupedProductConfig:
-        """Parse grouped product configuration from Excel row"""
-        try:
-            pricing_type = str(row.get('pricing_type', 'fixed_price')).strip()
-            discount_value = float(row.get('discount_value', 0)) if pd.notna(row.get('discount_value')) else None
-            fixed_price = float(row.get('fixed_price', 0)) if pd.notna(row.get('fixed_price')) else None
-            
-            # Map string to enum
-            pricing_type_map = {
-                'fixed_discount': GroupedProductPricingType.FIXED_DISCOUNT,
-                'percentage_discount': GroupedProductPricingType.PERCENTAGE_DISCOUNT,
-                'free_item': GroupedProductPricingType.FREE_ITEM,
-                'fixed_price': GroupedProductPricingType.FIXED_PRICE
-            }
-            
-            return GroupedProductConfig(
-                pricing_type=pricing_type_map.get(pricing_type, GroupedProductPricingType.FIXED_PRICE),
-                discount_value=discount_value,
-                fixed_price=fixed_price
-            )
-        except Exception as e:
-            # Return default config if parsing fails
-            return GroupedProductConfig(
-                pricing_type=GroupedProductPricingType.FIXED_PRICE
-            )
-    
+     
     def create_product(self, product_data: Dict[str, Any], added_by: int) -> Product:
         """Create product in database with purchase tracking"""
         try:
@@ -685,8 +578,6 @@ def import_products_from_excel(
                 product_type = None
                 if 'variable' in sheet_name.lower():
                     product_type = ProductType.VARIABLE
-                elif 'grouped' in sheet_name.lower():
-                    product_type = ProductType.GROUPED
                 else:
                     product_type = ProductType.SIMPLE
                 
@@ -745,24 +636,6 @@ def import_products_from_excel(
                         error_msg = f"Sheet '{sheet_name}': {str(e)}"
                         results['errors'].append(error_msg)
                 
-                elif product_type == ProductType.GROUPED:
-                    try:
-                        product_data = import_service.parse_grouped_product(df, shop_id)
-                        product = import_service.create_product(product_data, user.get("id"))
-                        results['successful'] += 1
-                        results['imported_products'].append({
-                            'product_id': product.id,
-                            'name': product.name,
-                            'sku': product.sku,
-                            'type': 'grouped',
-                            'sheet': sheet_name,
-                            'grouped_items': len(product_data.get('grouped_products', []))
-                        })
-                    except Exception as e:
-                        results['failed'] += 1
-                        error_msg = f"Sheet '{sheet_name}': {str(e)}"
-                        results['errors'].append(error_msg)
-                        
             except Exception as e:
                 results['failed'] += 1
                 error_msg = f"Sheet '{sheet_name}': {str(e)}"
@@ -1185,20 +1058,6 @@ def download_import_template(
                     'quantity': 30,
                     'sku': 'SK-TSHIRT-M-BLUE',
                     'bar_code': '1234567890126'
-                }
-            ],
-            'Grouped_Products': [
-                {
-                    'shop_id': user_shops[0].get("id"),
-                    'name': 'Sample Computer Bundle',
-                    'description': 'A complete computer setup bundle',
-                    'category': 'Electronics',  # Must exist in database
-                    'manufacturer': 'TechBundle',  # Must exist in database
-                    'grouped_product_id': 'SK-SIMPLE-001',  # Must exist in database
-                    'quantity': 1,
-                    'is_free': False,
-                    'pricing_type': 'fixed_price',
-                    'fixed_price': 199.99
                 }
             ]
         }
