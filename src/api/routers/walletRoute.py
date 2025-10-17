@@ -24,11 +24,11 @@ def get_my_wallet(
     user=requireSignin
 ):
     user_wallet = session.exec(
-        select(UserWallet).where(UserWallet.user_id == user.id)
+        select(UserWallet).where(UserWallet.user_id == user)
     ).first()
     
     if not user_wallet:
-        user_wallet = UserWallet(user_id=user.id, balance=0.0)
+        user_wallet = UserWallet(user_id=user, balance=0.0)
         session.add(user_wallet)
         session.commit()
         session.refresh(user_wallet)

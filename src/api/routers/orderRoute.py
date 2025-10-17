@@ -15,7 +15,7 @@ from src.api.models.order_model.orderModel import (
 from src.api.models.product_model.productsModel import Product, ProductType
 from src.api.models.product_model.variationOptionModel import VariationOption
 from src.api.models.category_model import Category
-#from src.api.models.withdrawModel import ShopEarning
+from src.api.models.withdrawModel import ShopEarning
 from src.api.core.dependencies import GetSession, requirePermission
 from datetime import datetime
 import uuid
@@ -309,7 +309,7 @@ def update(
             
     session.commit()
     session.refresh(order)
-    #create_shop_earning(session, order)
+    create_shop_earning(session, order)
     return api_response(
         200, "Order Updated Successfully", OrderReadNested.model_validate(order)
     )
@@ -375,7 +375,7 @@ def update_status(
     session.add(order)
     session.commit()
     session.refresh(order)
-    #create_shop_earning(session, order)
+    create_shop_earning(session, order)
     return api_response(
         200, "Order Status Updated Successfully", OrderRead.model_validate(order)
     )
@@ -690,20 +690,41 @@ def get_sales_report(
         
     except Exception as e:
         return api_response(500, f"Error generating sales report: {str(e)}")    
-# def create_shop_earning(session, order: Order):
-#     """Create shop earning record when order is completed"""
-#     if order.order_status != OrderStatusEnum.COMPLETED or not order.shop_id:
-#         return
+def create_shop_earning(session, order: Order):
+    """Create shop earning records when order is completed - UPDATED for multi-shop orders"""
+    if order.order_status != OrderStatusEnum.COMPLETED:
+        return
     
-#     # Calculate shop earning (order total - admin commission - delivery fee)
-#     shop_earning = order.total - order.admin_commission_amount - (order.delivery_fee or 0)
+    # Get all order products for this order
+    order_products = session.exec(
+        select(OrderProduct).where(OrderProduct.order_id == order.id)
+    ).all()
     
-#     earning = ShopEarning(
-#         shop_id=order.shop_id,
-#         order_id=order.id,
-#         order_amount=order.total,
-#         admin_commission=order.admin_commission_amount,
-#         shop_earning=shop_earning
-#     )
-    
-#     session.add(earning)
+    for order_product in order_products:
+        if not order_product.shop_id:
+            continue
+            
+        # Calculate shop earning for this specific product
+        # (subtotal - admin_commission - proportional delivery fee)
+        delivery_fee_per_product = Decimal("0.00")
+        if order.delivery_fee and len(order_products) > 0:
+            # Distribute delivery fee proportionally based on subtotal
+            total_subtotal = sum(op.subtotal for op in order_products)
+            if total_subtotal > 0:
+                delivery_fee_per_product = Decimal(str(order.delivery_fee)) * (
+                    Decimal(str(order_product.subtotal)) / Decimal(str(total_subtotal))
+                )
+        
+        shop_earning = Decimal(str(order_product.subtotal)) - order_product.admin_commission - delivery_fee_per_product
+        
+        # Create shop earning record for this shop and product
+        earning = ShopEarning(
+            shop_id=order_product.shop_id,
+            order_id=order.id,
+            order_product_id=order_product.id,  # Link to specific order product
+            order_amount=Decimal(str(order_product.subtotal)),
+            admin_commission=order_product.admin_commission,
+            shop_earning=shop_earning
+        )
+        
+        session.add(earning)

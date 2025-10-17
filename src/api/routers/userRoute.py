@@ -187,6 +187,7 @@ def list_users(
         "name",
         "email",
         "roles.name",
+        "roles.slug"
     ]
     result = listop(
         session=session,

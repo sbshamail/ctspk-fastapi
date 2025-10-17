@@ -9,7 +9,6 @@ from src.api.routers.attribute import (
     attributeProductRoute,
 )
 from .lib.db_con import engine
-#from src.api.routers.withdrawRoute import router as withdraw_router
 from src.api.routers import (
     # user
     authRoute,
@@ -55,7 +54,7 @@ from src.api.routers import (
     # Import Product
     importproductRoute,
     # Withdraw
-    #withdrawRoute
+    withdrawRoute
 )
 
 
@@ -141,4 +140,4 @@ app.include_router(returnRoute.router)
 # Wallet
 app.include_router(walletRoute.router)
 # withdraw
-#app.include_router(withdrawRoute.router)
+app.include_router(withdrawRoute.router)

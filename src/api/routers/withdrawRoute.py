@@ -13,13 +13,20 @@ from src.api.models.withdrawModel import (
     ShopBalanceSummary, ShopEarningRead
 )
 from src.api.models.shop_model.shopsModel import Shop
-from src.api.models.order_model.orderModel import Order, OrderStatusEnum
+from src.api.models.order_model.orderModel import Order, OrderStatusEnum, OrderProduct
 
 router = APIRouter(prefix="/withdraw", tags=["Withdraw Requests"])
-
+def get_shop_id_from_result(shop_result):
+    """Extract shop ID from SQLAlchemy result"""
+    if hasattr(shop_result, '__getitem__') and len(shop_result) > 0:
+        return shop_result[0].id
+    elif hasattr(shop_result, 'id'):
+        return shop_result.id
+    else:
+        raise ValueError("Unable to extract shop ID from result")
 def calculate_shop_balance(session, shop_id: int) -> ShopBalanceSummary:
     """Calculate shop's current balance and earnings"""
-    # Get total earnings from completed orders
+    # Get total earnings from completed orders for this specific shop
     total_earnings_stmt = select(
         func.coalesce(func.sum(ShopEarning.shop_earning), 0),
         func.coalesce(func.sum(ShopEarning.admin_commission), 0)
@@ -55,17 +62,19 @@ def calculate_shop_balance(session, shop_id: int) -> ShopBalanceSummary:
 def create_withdraw_request(
     request: WithdrawRequestCreate,
     session: GetSession,
-    user=requireSignin
+    user:requireSignin
 ):
     """Shop owner creates a withdrawal request"""
     # Get shop owned by user
+    print(f"user: {user['id']}")
     shop = session.exec(
-        select(Shop).where(Shop.owner_id == user.id)
+        select(Shop).where(Shop.owner_id == user["id"])
     ).first()
+    print(f"shop: {shop}")
     raiseExceptions((shop, 404, "Shop not found"))
-    
-    # Calculate available balance
-    balance = calculate_shop_balance(session, shop.id)
+    shop_id = get_shop_id_from_result(shop)
+    # Calculate available balance - FIX: Access shop ID correctly
+    balance = calculate_shop_balance(session, shop_id)
     
     if request.amount > balance.available_balance:
         return api_response(400, "Insufficient balance for withdrawal")
@@ -79,7 +88,7 @@ def create_withdraw_request(
     
     # Create withdrawal request
     withdraw_request = ShopWithdrawRequest(
-        shop_id=shop.id,
+        shop_id=shop_id,
         amount=request.amount,
         admin_commission=admin_commission,
         net_amount=net_amount,
@@ -101,33 +110,37 @@ def create_withdraw_request(
 def get_shop_balance(session: GetSession, user=requireSignin):
     """Get shop balance summary for logged-in shop owner"""
     shop = session.exec(
-        select(Shop).where(Shop.owner_id == user.id)
+        select(Shop).where(Shop.owner_id == user)
     ).first()
     raiseExceptions((shop, 404, "Shop not found"))
-    
-    balance = calculate_shop_balance(session, shop.id)
+    shop_id = get_shop_id_from_result(shop)
+    # FIX: Access shop ID correctly
+    balance = calculate_shop_balance(session, shop_id)
     return api_response(200, "Balance retrieved successfully", balance)
 
 @router.get("/my-requests")
 def get_my_withdraw_requests(
     session: GetSession,
     skip: int = 0,
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=200),
     user=requireSignin
 ):
     """Get withdrawal requests for logged-in shop owner"""
+    print(f"user:{user}")
     shop = session.exec(
-        select(Shop).where(Shop.owner_id == user.id)
+        select(Shop).where(Shop.owner_id == user)
     ).first()
     raiseExceptions((shop, 404, "Shop not found"))
     
+    # FIX: Access shop ID correctly
+    shop_id = get_shop_id_from_result(shop)
     query = select(ShopWithdrawRequest).where(
-        ShopWithdrawRequest.shop_id == shop.id
+        ShopWithdrawRequest.shop_id == shop_id
     ).order_by(ShopWithdrawRequest.created_at.desc())
     
     requests = session.exec(query.offset(skip).limit(limit)).all()
     total = session.exec(select(func.count(ShopWithdrawRequest.id)).where(
-        ShopWithdrawRequest.shop_id == shop.id
+        ShopWithdrawRequest.shop_id == shop_id
     )).scalar()
     
     requests_data = [WithdrawRequestRead.model_validate(req) for req in requests]
@@ -228,12 +241,12 @@ def process_withdraw_request(
     if withdraw_request.status != WithdrawStatus.APPROVED:
         return api_response(400, "Request must be approved before processing")
     
-    # Mark associated earnings as settled
+    # Mark associated earnings as settled (only for this specific shop)
     earnings_to_settle = session.exec(
         select(ShopEarning).where(
             ShopEarning.shop_id == withdraw_request.shop_id,
             ShopEarning.is_settled == False
-        )
+        ).order_by(ShopEarning.created_at.asc())  # Settle oldest earnings first
     ).all()
     
     # Simple settlement: mark oldest earnings first until amount is covered
@@ -259,7 +272,6 @@ def get_shop_earnings(
     settled: Optional[bool] = None,
     skip: int = 0,
     limit: int = Query(50, ge=1, le=100)
-    
 ):
     """Get shop earnings history"""
     shop = session.exec(
@@ -267,7 +279,9 @@ def get_shop_earnings(
     ).first()
     raiseExceptions((shop, 404, "Shop not found"))
     
-    query = select(ShopEarning).where(ShopEarning.shop_id == shop.id)
+    # FIX: Access shop ID correctly
+    shop_id = get_shop_id_from_result(shop)
+    query = select(ShopEarning).where(ShopEarning.shop_id == shop_id)
     
     if settled is not None:
         query = query.where(ShopEarning.is_settled == settled)
@@ -276,7 +290,7 @@ def get_shop_earnings(
     
     earnings = session.exec(query.offset(skip).limit(limit)).all()
     total = session.exec(select(func.count(ShopEarning.id)).where(
-        ShopEarning.shop_id == shop.id
+        ShopEarning.shop_id == shop_id
     )).scalar()
     
     earnings_data = []

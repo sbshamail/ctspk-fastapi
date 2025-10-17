@@ -7,7 +7,7 @@ from sqlmodel import SQLModel, Field, Relationship
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 if TYPE_CHECKING:
-    from src.api.models import Shop, User
+    from src.api.models import Shop, User, OrderProduct,Order
 
 class WithdrawStatus(str, Enum):
     PENDING = "pending"
@@ -62,6 +62,7 @@ class ShopEarning(TimeStampedModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     shop_id: int = Field(foreign_key="shops.id", index=True)
     order_id: int = Field(foreign_key="orders.id", index=True)
+    order_product_id: int = Field(foreign_key="order_product.id", index=True)  # ADDED: Link to specific order product
     order_amount: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)
     admin_commission: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)
     shop_earning: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)
@@ -71,6 +72,7 @@ class ShopEarning(TimeStampedModel, table=True):
     # Relationships
     shop: Optional["Shop"] = Relationship(back_populates="earnings")
     order: Optional["Order"] = Relationship()
+    order_product: Optional["OrderProduct"] = Relationship()  # ADDED: Relationship to order product
 
 # CRUD Schemas
 class WithdrawRequestCreate(SQLModel):
@@ -111,6 +113,7 @@ class ShopEarningRead(TimeStampReadModel):
     id: int
     shop_id: int
     order_id: int
+    order_product_id: int  # ADDED
     order_amount: Decimal
     admin_commission: Decimal
     shop_earning: Decimal
