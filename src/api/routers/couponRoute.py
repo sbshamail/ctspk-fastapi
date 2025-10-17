@@ -1,6 +1,8 @@
 # src/api/routes/coupon.py
 from fastapi import APIRouter
 from sqlalchemy import select
+from datetime import datetime
+from sqlmodel import select
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.dependencies import (
@@ -57,7 +59,32 @@ def read_coupon(id: int, session: GetSession):
 
     return api_response(200, "Coupon found", CouponRead.model_validate(coupon))
 
-
+# ✅ READ BY Code
+@router.get("/redeem/{code}")
+def read_coupon(code: str, session: GetSession):
+    # Query by code field instead of primary key id
+    statement = select(Coupon).where(Coupon.code == code)
+    coupon = session.exec(statement).first()
+    
+    raiseExceptions((coupon, 404, "Coupon not found"))
+    
+    current_time = datetime.utcnow()
+    
+    # Check if coupon is currently active
+    if coupon.active_from > current_time:
+        return api_response(400, "Coupon is not active yet", {
+            "active_from": coupon.active_from,
+            "current_time": current_time
+        })
+    
+    if coupon.expire_at < current_time:
+        return api_response(400, "Coupon has expired", {
+            "expire_at": coupon.expire_at,
+            "current_time": current_time
+        })
+    
+    # If we reach here, coupon is valid
+    return api_response(200, "Coupon found and is valid", CouponRead.model_validate(coupon))
 # ✅ DELETE
 @router.delete("/delete/{id}")
 def delete_coupon(
