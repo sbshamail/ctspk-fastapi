@@ -1,6 +1,6 @@
 # src/api/routes/settings.py
 from fastapi import APIRouter
-from sqlalchemy import select
+from sqlmodel import select
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.dependencies import (
@@ -12,7 +12,7 @@ from src.api.core.dependencies import (
 from src.api.models.settingsModel import (
     Settings, SettingsCreate, SettingsUpdate, SettingsRead,
     GeneralSettingsUpdate, DeliverySettingsUpdate, ContactSettingsUpdate,
-    SeoSettingsUpdate, PaymentSettingsUpdate,DeliveryTimeSlot
+    SeoSettingsUpdate, PaymentSettingsUpdate, DeliveryTimeSlot
 )
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
@@ -25,15 +25,14 @@ def get_settings(
     language: str = "en"
 ):
     """Get settings for specific language, fallback to English if not found"""
-    settings = session.exec(
-        select(Settings).where(Settings.language == language)
-    ).first()
+    # Use SQLModel's select with session.exec properly
+    statement = select(Settings).where(Settings.language == language)
+    settings = session.exec(statement).first()
     
     # Fallback to English if language-specific settings not found
     if not settings and language != "en":
-        settings = session.exec(
-            select(Settings).where(Settings.language == "en")
-        ).first()
+        statement = select(Settings).where(Settings.language == "en")
+        settings = session.exec(statement).first()
     
     # Create default settings if none exist
     if not settings:
@@ -53,14 +52,29 @@ def get_settings(
                 },
                 "socials": []
             },
-            "paymentGateway": []
+            "paymentGateway": [],
+            "seo": {},
+            "freeShipping": False,
+            "freeShippingAmount": 0,
+            "minimumOrderAmount": 0,
+            "useCashOnDelivery": True,
+            "useEnableGateway": False
         }
         settings = Settings(options=default_settings, language=language)
         session.add(settings)
         session.commit()
         session.refresh(settings)
     
-    return api_response(200, "Settings retrieved successfully", SettingsRead.model_validate(settings))
+    # Convert to dictionary for response
+    settings_dict = {
+        "id": settings.id,
+        "options": settings.options,
+        "language": settings.language,
+        "created_at": settings.created_at,
+        "updated_at": settings.updated_at
+    }
+    
+    return api_response(200, "Settings retrieved successfully", settings_dict)
 
 
 # ✅ CREATE SETTINGS
@@ -71,9 +85,8 @@ def create_settings(
     user=requirePermission("settings:create")
 ):
     # Check if settings for this language already exist
-    existing_settings = session.exec(
-        select(Settings).where(Settings.language == request.language)
-    ).first()
+    statement = select(Settings).where(Settings.language == request.language)
+    existing_settings = session.exec(statement).first()
     
     if existing_settings:
         return api_response(400, f"Settings for language '{request.language}' already exist")
@@ -83,7 +96,15 @@ def create_settings(
     session.commit()
     session.refresh(settings)
 
-    return api_response(201, "Settings created successfully", SettingsRead.model_validate(settings))
+    settings_dict = {
+        "id": settings.id,
+        "options": settings.options,
+        "language": settings.language,
+        "created_at": settings.created_at,
+        "updated_at": settings.updated_at
+    }
+
+    return api_response(201, "Settings created successfully", settings_dict)
 
 
 # ✅ UPDATE FULL SETTINGS
@@ -97,11 +118,24 @@ def update_settings(
     settings = session.get(Settings, id)
     raiseExceptions((settings, 404, "Settings not found"))
 
-    updated = updateOp(settings, request, session)
-    session.commit()
-    session.refresh(updated)
+    # Manual update
+    update_data = request.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(settings, key, value)
 
-    return api_response(200, "Settings updated successfully", SettingsRead.model_validate(updated))
+    session.add(settings)
+    session.commit()
+    session.refresh(settings)
+
+    settings_dict = {
+        "id": settings.id,
+        "options": settings.options,
+        "language": settings.language,
+        "created_at": settings.created_at,
+        "updated_at": settings.updated_at
+    }
+
+    return api_response(200, "Settings updated successfully", settings_dict)
 
 
 # ✅ UPDATE GENERAL SETTINGS
@@ -120,10 +154,19 @@ def update_general_settings(
     for key, value in update_data.items():
         settings.options[key] = value
 
+    session.add(settings)
     session.commit()
     session.refresh(settings)
 
-    return api_response(200, "General settings updated successfully", SettingsRead.model_validate(settings))
+    settings_dict = {
+        "id": settings.id,
+        "options": settings.options,
+        "language": settings.language,
+        "created_at": settings.created_at,
+        "updated_at": settings.updated_at
+    }
+
+    return api_response(200, "General settings updated successfully", settings_dict)
 
 
 # ✅ UPDATE DELIVERY SETTINGS
@@ -141,10 +184,19 @@ def update_delivery_settings(
     if request.deliveryTime is not None:
         settings.options["deliveryTime"] = [slot.model_dump() for slot in request.deliveryTime]
 
+    session.add(settings)
     session.commit()
     session.refresh(settings)
 
-    return api_response(200, "Delivery settings updated successfully", SettingsRead.model_validate(settings))
+    settings_dict = {
+        "id": settings.id,
+        "options": settings.options,
+        "language": settings.language,
+        "created_at": settings.created_at,
+        "updated_at": settings.updated_at
+    }
+
+    return api_response(200, "Delivery settings updated successfully", settings_dict)
 
 
 # ✅ UPDATE CONTACT SETTINGS
@@ -167,10 +219,19 @@ def update_contact_settings(
     for key, value in update_data.items():
         settings.options["contactDetails"][key] = value
 
+    session.add(settings)
     session.commit()
     session.refresh(settings)
 
-    return api_response(200, "Contact settings updated successfully", SettingsRead.model_validate(settings))
+    settings_dict = {
+        "id": settings.id,
+        "options": settings.options,
+        "language": settings.language,
+        "created_at": settings.created_at,
+        "updated_at": settings.updated_at
+    }
+
+    return api_response(200, "Contact settings updated successfully", settings_dict)
 
 
 # ✅ UPDATE SEO SETTINGS
@@ -193,10 +254,19 @@ def update_seo_settings(
     for key, value in update_data.items():
         settings.options["seo"][key] = value
 
+    session.add(settings)
     session.commit()
     session.refresh(settings)
 
-    return api_response(200, "SEO settings updated successfully", SettingsRead.model_validate(settings))
+    settings_dict = {
+        "id": settings.id,
+        "options": settings.options,
+        "language": settings.language,
+        "created_at": settings.created_at,
+        "updated_at": settings.updated_at
+    }
+
+    return api_response(200, "SEO settings updated successfully", settings_dict)
 
 
 # ✅ UPDATE PAYMENT SETTINGS
@@ -218,10 +288,19 @@ def update_payment_settings(
         else:
             settings.options[key] = value
 
+    session.add(settings)
     session.commit()
     session.refresh(settings)
 
-    return api_response(200, "Payment settings updated successfully", SettingsRead.model_validate(settings))
+    settings_dict = {
+        "id": settings.id,
+        "options": settings.options,
+        "language": settings.language,
+        "created_at": settings.created_at,
+        "updated_at": settings.updated_at
+    }
+
+    return api_response(200, "Payment settings updated successfully", settings_dict)
 
 
 # ✅ DELETE SETTINGS
@@ -244,7 +323,7 @@ def delete_settings(
 
 
 # ✅ LIST ALL SETTINGS (Admin)
-@router.get("/list", response_model=list[SettingsRead])
+@router.get("/list")
 def list_settings(
     session: GetSession,
     query_params: ListQueryParams,
@@ -253,12 +332,14 @@ def list_settings(
     query_params = vars(query_params)
     searchFields = ["language"]
     
-    return listRecords(
+    result = listRecords(
         query_params=query_params,
         searchFields=searchFields,
         Model=Settings,
         Schema=SettingsRead,
     )
+    
+    return result
 
 
 # ✅ GET SETTING BY LANGUAGE
@@ -267,13 +348,20 @@ def get_settings_by_language(
     session: GetSession,
     language: str
 ):
-    settings = session.exec(
-        select(Settings).where(Settings.language == language)
-    ).first()
+    statement = select(Settings).where(Settings.language == language)
+    settings = session.exec(statement).first()
     
     raiseExceptions((settings, 404, f"Settings for language '{language}' not found"))
 
-    return api_response(200, "Settings retrieved successfully", SettingsRead.model_validate(settings))
+    settings_dict = {
+        "id": settings.id,
+        "options": settings.options,
+        "language": settings.language,
+        "created_at": settings.created_at,
+        "updated_at": settings.updated_at
+    }
+
+    return api_response(200, "Settings retrieved successfully", settings_dict)
 
 
 # ✅ ADD DELIVERY TIME SLOT
@@ -293,10 +381,19 @@ def add_delivery_time_slot(
 
     # Add new slot
     settings.options["deliveryTime"].append(slot.model_dump())
+    session.add(settings)
     session.commit()
     session.refresh(settings)
 
-    return api_response(200, "Delivery time slot added successfully", SettingsRead.model_validate(settings))
+    settings_dict = {
+        "id": settings.id,
+        "options": settings.options,
+        "language": settings.language,
+        "created_at": settings.created_at,
+        "updated_at": settings.updated_at
+    }
+
+    return api_response(200, "Delivery time slot added successfully", settings_dict)
 
 
 # ✅ REMOVE DELIVERY TIME SLOT
@@ -315,10 +412,19 @@ def remove_delivery_time_slot(
 
     # Remove the slot
     removed_slot = settings.options["deliveryTime"].pop(index)
+    session.add(settings)
     session.commit()
     session.refresh(settings)
 
-    return api_response(200, f"Delivery time slot '{removed_slot.get('title', '')}' removed successfully", SettingsRead.model_validate(settings))
+    settings_dict = {
+        "id": settings.id,
+        "options": settings.options,
+        "language": settings.language,
+        "created_at": settings.created_at,
+        "updated_at": settings.updated_at
+    }
+
+    return api_response(200, f"Delivery time slot '{removed_slot.get('title', '')}' removed successfully", settings_dict)
 
 
 # ✅ UPDATE DELIVERY TIME SLOT
@@ -338,10 +444,19 @@ def update_delivery_time_slot(
 
     # Update the slot
     settings.options["deliveryTime"][index] = slot.model_dump()
+    session.add(settings)
     session.commit()
     session.refresh(settings)
 
-    return api_response(200, "Delivery time slot updated successfully", SettingsRead.model_validate(settings))
+    settings_dict = {
+        "id": settings.id,
+        "options": settings.options,
+        "language": settings.language,
+        "created_at": settings.created_at,
+        "updated_at": settings.updated_at
+    }
+
+    return api_response(200, "Delivery time slot updated successfully", settings_dict)
 
 
 # ✅ GET SPECIFIC SETTING VALUE
@@ -351,9 +466,8 @@ def get_setting_value(
     key: str,
     language: str = "en"
 ):
-    settings = session.exec(
-        select(Settings).where(Settings.language == language)
-    ).first()
+    statement = select(Settings).where(Settings.language == language)
+    settings = session.exec(statement).first()
     
     if not settings:
         return api_response(404, f"Settings for language '{language}' not found")
@@ -363,3 +477,46 @@ def get_setting_value(
         return api_response(404, f"Setting '{key}' not found")
 
     return api_response(200, f"Setting '{key}' retrieved successfully", value)
+
+
+# ✅ BULK UPDATE SETTINGS (for React form)
+@router.put("/bulk-update")
+def bulk_update_settings(
+    session: GetSession,
+    request: dict,
+    user=requirePermission("settings:update")
+):
+    """Bulk update settings from React form data"""
+    try:
+        language = request.get("language", "en")
+        options = request.get("options", {})
+        
+        # Find settings by language
+        statement = select(Settings).where(Settings.language == language)
+        settings = session.exec(statement).first()
+        
+        if not settings:
+            # Create new settings if not found
+            settings = Settings(options=options, language=language)
+            session.add(settings)
+        else:
+            # Update existing settings
+            settings.options = {**settings.options, **options}
+            session.add(settings)
+        
+        session.commit()
+        session.refresh(settings)
+        
+        settings_dict = {
+            "id": settings.id,
+            "options": settings.options,
+            "language": settings.language,
+            "created_at": settings.created_at,
+            "updated_at": settings.updated_at
+        }
+        
+        return api_response(200, "Settings updated successfully", settings_dict)
+        
+    except Exception as e:
+        session.rollback()
+        return api_response(500, f"Error updating settings: {str(e)}")

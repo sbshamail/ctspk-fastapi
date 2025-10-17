@@ -1,6 +1,6 @@
 # src/api/models/settingsModel.py
 from typing import Optional, Dict, Any
-from sqlmodel import SQLModel, Field,JSON
+from sqlmodel import SQLModel, Field, JSON
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 
@@ -11,8 +11,8 @@ class Settings(TimeStampedModel, table=True):
     __tablename__ = "settings"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    options: Dict[str, Any] = Field(default={}, sa_type=JSON)  # JSON field for all settings
-    language: str = Field(default="en", index=True)  # Language code
+    options: Dict[str, Any] = Field(default={}, sa_type=JSON)  # Use JSON type
+    language: str = Field(default="en", index=True)
 
     class Config:
         arbitrary_types_allowed = True
