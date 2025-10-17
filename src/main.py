@@ -54,7 +54,9 @@ from src.api.routers import (
     # Import Product
     importproductRoute,
     # Withdraw
-    withdrawRoute
+    withdrawRoute,
+    # setting
+    settings
 )
 
 
@@ -141,3 +143,5 @@ app.include_router(returnRoute.router)
 app.include_router(walletRoute.router)
 # withdraw
 app.include_router(withdrawRoute.router)
+# setting
+app.include_router(settings.router)
