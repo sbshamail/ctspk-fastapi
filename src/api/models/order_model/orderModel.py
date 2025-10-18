@@ -8,7 +8,16 @@ from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 from enum import Enum as PyEnum
 
 if TYPE_CHECKING:
-    from src.api.models import User, Shop, Product, VariationOption, Category, Review, ReturnItem, ReturnRequest
+    from src.api.models import (
+        User,
+        Shop,
+        Product,
+        VariationOption,
+        Category,
+        Review,
+        ReturnItem,
+        ReturnRequest,
+    )
 
 
 class OrderStatusEnum(str, PyEnum):
@@ -41,7 +50,6 @@ class OrderItemType(str, PyEnum):
     VARIABLE = "variable"
 
 
-
 class Order(TimeStampedModel, table=True):
     __tablename__: Literal["orders"] = "orders"
 
@@ -72,9 +80,7 @@ class Order(TimeStampedModel, table=True):
     order_status: Optional[str] = Field(default="order-pending")
     payment_status: Optional[str] = Field(default="payment-pending")
 
-    fullfillment_id: Optional[int] = Field(
-        default=None, foreign_key="users.id"
-    )
+    fullfillment_id: Optional[int] = Field(default=None, foreign_key="users.id")
     assign_date: Optional[datetime] = Field(default=None)
 
     # relationships
@@ -91,7 +97,7 @@ class Order(TimeStampedModel, table=True):
     order_products: Optional[List["OrderProduct"]] = Relationship(
         back_populates="orders"
     )
-    
+
     order_status_history: Optional["OrderStatus"] = Relationship(
         back_populates="orders",
         sa_relationship_kwargs={
@@ -118,15 +124,16 @@ class OrderProduct(TimeStampedModel, table=True):
     admin_commission: Decimal = Field(
         default=Decimal("0.00"), max_digits=10, decimal_places=2
     )
-    
+
     # ADDED: Fields for product type handling
     item_type: OrderItemType = Field(default=OrderItemType.SIMPLE)
-    variation_data: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))  # Store variation attributes
-   
-    
+    variation_data: Optional[Dict[str, Any]] = Field(
+        sa_column=Column(JSON)
+    )  # Store variation attributes
+
     # ADDED: Product snapshot at time of order
     variation_snapshot: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
-    
+
     deleted_at: Optional[datetime] = None
 
     # relationships
@@ -134,6 +141,7 @@ class OrderProduct(TimeStampedModel, table=True):
     product: "Product" = Relationship(back_populates="order_products")
     variation_option: Optional["VariationOption"] = Relationship()
     shop: Optional["Shop"] = Relationship()
+
 
 class OrderStatus(TimeStampedModel, table=True):
     __tablename__ = "orders_status"
@@ -158,9 +166,6 @@ class OrderStatus(TimeStampedModel, table=True):
     )
 
 
-
-
-
 class OrderProductCreate(SQLModel):
     product_id: int
     variation_option_id: Optional[int] = None
@@ -172,22 +177,33 @@ class OrderProductCreate(SQLModel):
     shop_id: Optional[int] = None
 
 
+class CartItem(SQLModel):
+    id: int = None  # cart id
+    quantity: int
+    product_id: int
+
+
 class OrderCreate(SQLModel):
-    customer_id: Optional[int] = None
-    customer_contact: str
-    customer_name: Optional[str] = None
-    amount: float
-    sales_tax: Optional[float] = None
-    paid_total: Optional[float] = None
-    total: Optional[float] = None
-    discount: Optional[float] = None
-    payment_gateway: Optional[str] = None
-    shipping_address: Optional[Dict[str, Any]] = None
-    billing_address: Optional[Dict[str, Any]] = None
-    logistics_provider: Optional[int] = None
-    delivery_fee: Optional[float] = None
-    delivery_time: Optional[str] = None
-    order_products: List[OrderProductCreate]
+    cart: List[CartItem]
+    shipping_address: Optional[dict]
+
+
+# class OrderCreate(SQLModel):
+#     customer_id: Optional[int] = None
+#     customer_contact: str
+#     customer_name: Optional[str] = None
+#     amount: float
+#     sales_tax: Optional[float] = None
+#     paid_total: Optional[float] = None
+#     total: Optional[float] = None
+#     discount: Optional[float] = None
+#     payment_gateway: Optional[str] = None
+#     shipping_address: Optional[Dict[str, Any]] = None
+#     billing_address: Optional[Dict[str, Any]] = None
+#     logistics_provider: Optional[int] = None
+#     delivery_fee: Optional[float] = None
+#     delivery_time: Optional[str] = None
+#     order_products: List[OrderProductCreate]
 
 
 class OrderUpdate(SQLModel):
@@ -262,6 +278,7 @@ class OrderRead(TimeStampReadModel):
     assign_date: Optional[datetime] = None
     shops: Optional[List[Dict[str, Any]]] = None
     shop_count: Optional[int] = None
+
 
 class OrderReadNested(OrderRead):
     order_products: List[OrderProductRead] = []

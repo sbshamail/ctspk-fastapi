@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlmodel import Session
 from fastapi import (
     Depends,
+    Header,
     Security,
     status,
 )
@@ -89,6 +90,33 @@ def decode_token(
 
     except JWTError as e:
         print(f"Token decoding failed: {e}")
+        return None
+
+
+def is_authenticated(authorization: Optional[str] = Header(None)):
+    """
+    Extract user from Bearer token.
+    Return None if token is missing or invalid.
+    """
+    if not authorization:
+        return None  # No token means offline or guest user
+
+    # Expect format: "Bearer <token>"
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+
+    token = parts[1]
+    try:
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"verify_exp": True},  # verifies expiration
+        )
+        user = payload.get("user")
+        return user
+    except JWTError:
         return None
 
 

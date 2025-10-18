@@ -1,22 +1,32 @@
 # src/api/routes/orderRoute.py
 import ast
-from typing import Optional,Dict,Any
+from typing import Optional, Dict, Any
 from fastapi import APIRouter, Query
 from sqlalchemy import select
+from src.api.models.cart_model.cartModel import Cart
 from src.api.core.utility import Print, uniqueSlugify
 from src.api.core.operation import listop, updateOp
 from src.api.core.response import api_response, raiseExceptions
 from sqlalchemy.orm import selectinload, joinedload
 from src.api.models.order_model.orderModel import (
-    Order, OrderCreate, OrderUpdate, OrderRead, OrderReadNested, 
-    OrderStatusUpdate, OrderProduct, OrderStatus, OrderStatusEnum, 
-    PaymentStatusEnum, OrderItemType, OrderProductCreate
+    Order,
+    OrderCreate,
+    OrderUpdate,
+    OrderRead,
+    OrderReadNested,
+    OrderStatusUpdate,
+    OrderProduct,
+    OrderStatus,
+    OrderStatusEnum,
+    PaymentStatusEnum,
+    OrderItemType,
+    OrderProductCreate,
 )
-from src.api.models.product_model.productsModel import Product, ProductType
+from src.api.models.product_model.productsModel import Product, ProductRead, ProductType
 from src.api.models.product_model.variationOptionModel import VariationOption
 from src.api.models.category_model import Category
 from src.api.models.withdrawModel import ShopEarning
-from src.api.core.dependencies import GetSession, requirePermission
+from src.api.core.dependencies import GetSession, requirePermission, isAuthenticated
 from datetime import datetime
 import uuid
 from decimal import Decimal
@@ -34,7 +44,7 @@ def get_product_snapshot(session, product_id: int) -> Dict[str, Any]:
     product = session.get(Product, product_id)
     if not product:
         return {}
-    
+
     # Get shop information for the product
     shop_name = None
     shop_slug = None
@@ -43,7 +53,7 @@ def get_product_snapshot(session, product_id: int) -> Dict[str, Any]:
         if shop:
             shop_name = shop.name
             shop_slug = shop.slug
-    
+
     return {
         "id": product.id,
         "name": product.name,
@@ -59,12 +69,13 @@ def get_product_snapshot(session, product_id: int) -> Dict[str, Any]:
         "shop_slug": shop_slug,
     }
 
+
 def get_variation_snapshot(session, variation_option_id: int) -> Dict[str, Any]:
     """Get variation snapshot for order record"""
     variation = session.get(VariationOption, variation_option_id)
     if not variation:
         return {}
-    
+
     return {
         "id": variation.id,
         "title": variation.title,
@@ -77,67 +88,84 @@ def get_variation_snapshot(session, variation_option_id: int) -> Dict[str, Any]:
     }
 
 
-def validate_product_availability(session, product_data: OrderProductCreate) -> tuple[bool, str]:
+def validate_product_availability(
+    session, product_data: OrderProductCreate
+) -> tuple[bool, str]:
     """Validate product availability based on type"""
     product = session.get(Product, product_data.product_id)
     if not product or not product.is_active:
         return False, "Product not found or inactive"
-    
+
     # Validate that product belongs to the specified shop
     if product_data.shop_id and product.shop_id != product_data.shop_id:
         return False, f"Product does not belong to specified shop"
-    
+
     # Set shop_id from product if not provided
     if not product_data.shop_id and product.shop_id:
         product_data.shop_id = product.shop_id
-    
+
     if product_data.item_type == OrderItemType.SIMPLE:
         if product.quantity >= float(product_data.order_quantity) and product.in_stock:
             return True, "Available"
         else:
-            return False, f"Insufficient stock. Available: {product.quantity}, Requested: {product_data.order_quantity}"
-    
+            return (
+                False,
+                f"Insufficient stock. Available: {product.quantity}, Requested: {product_data.order_quantity}",
+            )
+
     elif product_data.item_type == OrderItemType.VARIABLE:
         if not product_data.variation_option_id:
             return False, "Variation option ID required for variable product"
         variation = session.get(VariationOption, product_data.variation_option_id)
-        if variation and variation.quantity >= float(product_data.order_quantity) and variation.is_active:
+        if (
+            variation
+            and variation.quantity >= float(product_data.order_quantity)
+            and variation.is_active
+        ):
             return True, "Available"
         else:
             available_qty = variation.quantity if variation else 0
-            return False, f"Insufficient variation stock. Available: {available_qty}, Requested: {product_data.order_quantity}"
-    
+            return (
+                False,
+                f"Insufficient variation stock. Available: {available_qty}, Requested: {product_data.order_quantity}",
+            )
+
     return False, "Unknown product type"
 
 
-def update_product_inventory(session, product_data: OrderProductCreate, operation: str = "deduct"):
+def update_product_inventory(
+    session, product_data: OrderProductCreate, operation: str = "deduct"
+):
     """Update product inventory based on product type and track sales"""
     multiplier = -1 if operation == "deduct" else 1
-    
+
     if product_data.item_type == OrderItemType.SIMPLE:
         product = session.get(Product, product_data.product_id)
         if product:
             quantity_change = multiplier * float(product_data.order_quantity)
             product.quantity += quantity_change
-            
+
             # Update sales tracking
             if operation == "deduct":
                 product.total_sold_quantity += float(product_data.order_quantity)
             else:  # restore/refund
                 product.total_sold_quantity -= float(product_data.order_quantity)
-                
+
             if product.quantity <= 0:
                 product.in_stock = False
             else:
                 product.in_stock = True
             session.add(product)
-    
-    elif product_data.item_type == OrderItemType.VARIABLE and product_data.variation_option_id:
+
+    elif (
+        product_data.item_type == OrderItemType.VARIABLE
+        and product_data.variation_option_id
+    ):
         variation = session.get(VariationOption, product_data.variation_option_id)
         if variation:
             quantity_change = multiplier * float(product_data.order_quantity)
             variation.quantity += quantity_change
-            
+
             # Update parent product quantity and sales tracking
             product = session.get(Product, product_data.product_id)
             if product:
@@ -145,18 +173,19 @@ def update_product_inventory(session, product_data: OrderProductCreate, operatio
                     product.total_sold_quantity += float(product_data.order_quantity)
                 else:
                     product.total_sold_quantity -= float(product_data.order_quantity)
-                
+
                 # Recalculate total quantity from variations
                 variations = session.exec(
-                    select(VariationOption).where(VariationOption.product_id == product_data.product_id)
+                    select(VariationOption).where(
+                        VariationOption.product_id == product_data.product_id
+                    )
                 ).all()
                 product.quantity = sum(var.quantity for var in variations)
                 session.add(product)
-            
+
             if variation.quantity <= 0:
                 variation.is_active = False
             session.add(variation)
-    
 
 
 def calculate_admin_commission(
@@ -176,7 +205,9 @@ def calculate_admin_commission(
             return Decimal("0.00")
 
         quantity = float(order_quantity)
-        commission_amount = (unit_price * quantity) * (category.admin_commission_rate / 100)
+        commission_amount = (unit_price * quantity) * (
+            category.admin_commission_rate / 100
+        )
 
         return Decimal(str(round(commission_amount, 2)))
 
@@ -200,78 +231,144 @@ def update_order_status_history(session, order_id: int, status_field: str):
 
 
 @router.post("/create")
-def create(request: OrderCreate, session: GetSession, user=requirePermission("order")):
-    # Validate all products before creating order
-    validation_errors = []
-    shops_in_order = set()  # Track unique shops in this order
-    
-    for product_data in request.order_products:
-        is_available, message = validate_product_availability(session, product_data)
-        if not is_available:
-            validation_errors.append(f"Product {product_data.product_id}: {message}")
-        else:
-            # Add shop to unique shops set
-            if product_data.shop_id:
-                shops_in_order.add(product_data.shop_id)
-    
-    if validation_errors:
-        return api_response(400, "Product availability issues", {"errors": validation_errors})
+def create(request: OrderCreate, session: GetSession, user: isAuthenticated = None):
+    cart_items = request.cart or []
+    shipping_address = request.shipping_address
+    # ✅ 1. Validate cart data
+    if not isinstance(cart_items, list) or not cart_items:
+        return api_response(400, "Cart cannot be empty")
 
-    # Generate tracking number
-    tracking_number = generate_tracking_number()
+    product_ids = [
+        item.product_id for item in cart_items if item.product_id and item.product_id
+    ]
+    cart_ids = [item.id for item in cart_items if item.id]
 
-    # Create order
-    order_data = request.model_dump(exclude={"order_products"})
-    order = Order(**order_data, tracking_number=tracking_number)
+    if not product_ids:
+        return api_response(400, "Each cart item must include a valid product ID")
 
-    session.add(order)
-    session.flush()
+    # ✅ 2. Validate products exist in db
+    products = (
+        session.exec(select(Product).where(Product.id.in_(product_ids))).scalars().all()
+    )
+    if len(products) != len(product_ids):
+        found = {p.id for p in products}
+        missing = [pid for pid in product_ids if pid not in found]
+        return api_response(404, f"Product(s) not found: {missing}")
 
-    total_admin_commission = Decimal("0.00")
-
-    # Create order products with proper type handling
-    for product_data in request.order_products:
-        # Calculate admin commission
-        admin_commission = calculate_admin_commission(
-            session,
-            product_data.product_id,
-            product_data.unit_price,
-            product_data.order_quantity,
+    # ✅ 3. Validate carts if user is authenticated
+    carts = []
+    if user:
+        carts = (
+            session.exec(
+                select(Cart)
+                .where(Cart.user_id == user["id"])
+                .where(Cart.product_id.in_(product_ids))
+            )
+            .scalars()
+            .all()
         )
-        total_admin_commission += admin_commission
+        if len(carts) != len(product_ids):
+            found_ids = {c.product_id for c in carts}
+            missing = [pid for pid in product_ids if pid not in found_ids]
+            return api_response(
+                404, f"Cart item(s) not found for product(s): {missing}"
+            )
 
-        # Create product snapshots
-        product_snapshot = get_product_snapshot(session, product_data.product_id)
-        variation_snapshot = None
-        if product_data.variation_option_id:
-            variation_snapshot = get_variation_snapshot(session, product_data.variation_option_id)
+    if user is None:
+        # handle offline order (no user)
+        order_type = "offline"
+    elif user:
+        # handle authenticated user order
+        order_type = "user"
 
-        # Create order product with shop_id
-        order_product = OrderProduct(
-            **product_data.model_dump(),
-            order_id=order.id,
-            admin_commission=admin_commission,
-            product_snapshot=product_snapshot,
-            variation_snapshot=variation_snapshot,
-        )
-        session.add(order_product)
-
-        # Update inventory (deduct quantities)
-        update_product_inventory(session, product_data, "deduct")
-
-    # Update order with total admin commission
-    order.admin_commission_amount = total_admin_commission
-
-    # Create initial order status history
-    order_status = OrderStatus(order_id=order.id, order_pending_date=datetime.now())
-    session.add(order_status)
-
-    session.commit()
-    session.refresh(order)
+        # ✅ 5. Prepare response data (for now, just validation)
+    products_data = [ProductRead.model_validate(p).model_dump() for p in products]
 
     return api_response(
-        201, "Order Created Successfully", OrderReadNested.model_validate(order)
+        200,
+        "Order Submit Successfully",
+        {
+            "cart_count": len(cart_items),
+            "product_count": len(products_data),
+            "products": products_data,
+        },
     )
+
+
+# @router.post("/create")
+# def create(request: OrderCreate, session: GetSession, user=requirePermission("order")):
+#     # Validate all products before creating order
+#     validation_errors = []
+#     shops_in_order = set()  # Track unique shops in this order
+
+#     for product_data in request.order_products:
+#         is_available, message = validate_product_availability(session, product_data)
+#         if not is_available:
+#             validation_errors.append(f"Product {product_data.product_id}: {message}")
+#         else:
+#             # Add shop to unique shops set
+#             if product_data.shop_id:
+#                 shops_in_order.add(product_data.shop_id)
+
+#     if validation_errors:
+#         return api_response(400, "Product availability issues", {"errors": validation_errors})
+
+#     # Generate tracking number
+#     tracking_number = generate_tracking_number()
+
+#     # Create order
+#     order_data = request.model_dump(exclude={"order_products"})
+#     order = Order(**order_data, tracking_number=tracking_number)
+
+#     session.add(order)
+#     session.flush()
+
+#     total_admin_commission = Decimal("0.00")
+
+#     # Create order products with proper type handling
+#     for product_data in request.order_products:
+#         # Calculate admin commission
+#         admin_commission = calculate_admin_commission(
+#             session,
+#             product_data.product_id,
+#             product_data.unit_price,
+#             product_data.order_quantity,
+#         )
+#         total_admin_commission += admin_commission
+
+#         # Create product snapshots
+#         product_snapshot = get_product_snapshot(session, product_data.product_id)
+#         variation_snapshot = None
+#         if product_data.variation_option_id:
+#             variation_snapshot = get_variation_snapshot(session, product_data.variation_option_id)
+
+#         # Create order product with shop_id
+#         order_product = OrderProduct(
+#             **product_data.model_dump(),
+#             order_id=order.id,
+#             admin_commission=admin_commission,
+#             product_snapshot=product_snapshot,
+#             variation_snapshot=variation_snapshot,
+#         )
+#         session.add(order_product)
+
+#         # Update inventory (deduct quantities)
+#         update_product_inventory(session, product_data, "deduct")
+
+#     # Update order with total admin commission
+#     order.admin_commission_amount = total_admin_commission
+
+#     # Create initial order status history
+#     order_status = OrderStatus(order_id=order.id, order_pending_date=datetime.now())
+#     session.add(order_status)
+
+#     session.commit()
+#     session.refresh(order)
+
+#     return api_response(
+#         201, "Order Created Successfully", OrderReadNested.model_validate(order)
+#     )
+
 
 @router.put("/update/{id}")
 def update(
@@ -306,7 +403,7 @@ def update(
         status_field = status_field_map.get(request.order_status)
         if status_field:
             update_order_status_history(session, order.id, status_field)
-            
+
     session.commit()
     session.refresh(order)
     create_shop_earning(session, order)
@@ -326,14 +423,19 @@ def update_status(
     raiseExceptions((order, 404, "Order not found"))
 
     # Handle inventory restoration for cancelled/refunded orders
-    if (request.order_status in [OrderStatusEnum.CANCELLED, OrderStatusEnum.REFUNDED] and 
-        order.order_status not in [OrderStatusEnum.CANCELLED, OrderStatusEnum.REFUNDED]):
-        
+    if request.order_status in [
+        OrderStatusEnum.CANCELLED,
+        OrderStatusEnum.REFUNDED,
+    ] and order.order_status not in [
+        OrderStatusEnum.CANCELLED,
+        OrderStatusEnum.REFUNDED,
+    ]:
+
         # Restore inventory for all order products
         order_products = session.exec(
             select(OrderProduct).where(OrderProduct.order_id == id)
         ).all()
-        
+
         for order_product in order_products:
             product_data = OrderProductCreate(
                 product_id=order_product.product_id,
@@ -341,7 +443,7 @@ def update_status(
                 order_quantity=order_product.order_quantity,
                 unit_price=order_product.unit_price,
                 subtotal=order_product.subtotal,
-                item_type=order_product.item_type
+                item_type=order_product.item_type,
             )
             update_product_inventory(session, product_data, "restore")
 
@@ -388,28 +490,25 @@ def get(id: int, session: GetSession, user=requirePermission("order")):
 
     # Enhance order data with shops information
     order_data = OrderReadNested.model_validate(order)
-    
+
     # Get unique shops from order products
     shops = set()
     for order_product in order.order_products:
         if order_product.shop_id:
             shops.add(order_product.shop_id)
-    
+
     # Get shop details
     shop_details = []
     for shop_id in shops:
         shop = session.get(Shop, shop_id)
         if shop:
-            shop_details.append({
-                "id": shop.id,
-                "name": shop.name,
-                "slug": shop.slug
-            })
-    
+            shop_details.append({"id": shop.id, "name": shop.name, "slug": shop.slug})
+
     order_data.shops = shop_details
     order_data.shop_count = len(shop_details)
 
     return api_response(200, "Order Found", order_data)
+
 
 @router.get("/tracking/{tracking_number}", response_model=OrderReadNested)
 def get_by_tracking(tracking_number: str, session: GetSession):
@@ -420,24 +519,20 @@ def get_by_tracking(tracking_number: str, session: GetSession):
 
     # Enhance order data with shops information
     order_data = OrderReadNested.model_validate(order)
-    
+
     # Get unique shops from order products
     shops = set()
     for order_product in order.order_products:
         if order_product.shop_id:
             shops.add(order_product.shop_id)
-    
+
     # Get shop details
     shop_details = []
     for shop_id in shops:
         shop = session.get(Shop, shop_id)
         if shop:
-            shop_details.append({
-                "id": shop.id,
-                "name": shop.name,
-                "slug": shop.slug
-            })
-    
+            shop_details.append({"id": shop.id, "name": shop.name, "slug": shop.slug})
+
     order_data.shops = shop_details
     order_data.shop_count = len(shop_details)
 
@@ -457,7 +552,7 @@ def delete(
     order_products = session.exec(
         select(OrderProduct).where(OrderProduct.order_id == id)
     ).all()
-    
+
     for order_product in order_products:
         product_data = OrderProductCreate(
             product_id=order_product.product_id,
@@ -465,7 +560,7 @@ def delete(
             order_quantity=order_product.order_quantity,
             unit_price=order_product.unit_price,
             subtotal=order_product.subtotal,
-            item_type=order_product.item_type
+            item_type=order_product.item_type,
         )
         update_product_inventory(session, product_data, "restore")
 
@@ -525,15 +620,19 @@ def list_orders(
     if shop_id:
         # First get order IDs that have products from this shop
         order_ids_with_shop = session.exec(
-            select(OrderProduct.order_id).where(OrderProduct.shop_id == shop_id).distinct()
+            select(OrderProduct.order_id)
+            .where(OrderProduct.shop_id == shop_id)
+            .distinct()
         ).all()
-        
+
         if not order_ids_with_shop:
             return api_response(404, "No orders found for this shop")
-            
+
         if "columnFilters" not in filters or not filters["columnFilters"]:
             filters["columnFilters"] = []
-        filters["columnFilters"].append(["id", [str(oid) for oid in order_ids_with_shop]])
+        filters["columnFilters"].append(
+            ["id", [str(oid) for oid in order_ids_with_shop]]
+        )
 
     result = listop(
         session=session,
@@ -552,24 +651,22 @@ def list_orders(
     enhanced_orders = []
     for order in result["data"]:
         order_data = OrderReadNested.model_validate(order)
-        
+
         # Get unique shops from order products
         shops = set()
         for order_product in order.order_products:
             if order_product.shop_id:
                 shops.add(order_product.shop_id)
-        
+
         # Get shop details
         shop_details = []
         for shop_id in shops:
             shop = session.get(Shop, shop_id)
             if shop:
-                shop_details.append({
-                    "id": shop.id,
-                    "name": shop.name,
-                    "slug": shop.slug
-                })
-        
+                shop_details.append(
+                    {"id": shop.id, "name": shop.name, "slug": shop.slug}
+                )
+
         order_data.shops = shop_details
         order_data.shop_count = len(shop_details)
         enhanced_orders.append(order_data)
@@ -619,91 +716,98 @@ def get_sales_report(
     try:
         # Build base query for completed orders
         query = select(Order).where(Order.order_status == OrderStatusEnum.COMPLETED)
-        
+
         # Apply date filters
         if start_date:
             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
             query = query.where(Order.created_at >= start_dt)
-        
+
         if end_date:
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
             query = query.where(Order.created_at <= end_dt)
-        
+
         orders = session.exec(query).all()
-        
+
         sales_data = {}
         total_revenue = 0
         total_products_sold = 0
-        
+
         for order in orders:
             for order_product in order.order_products:
                 # Apply shop filter if provided
                 if shop_id and order_product.shop_id != shop_id:
                     continue
-                
+
                 # Apply product filter if provided
                 if product_id and order_product.product_id != product_id:
                     continue
-                
+
                 product_id_val = order_product.product_id
                 quantity = float(order_product.order_quantity)
                 revenue = order_product.subtotal
-                
+
                 if product_id_val not in sales_data:
                     product = session.get(Product, product_id_val)
-                    shop = session.get(Shop, order_product.shop_id) if order_product.shop_id else None
+                    shop = (
+                        session.get(Shop, order_product.shop_id)
+                        if order_product.shop_id
+                        else None
+                    )
                     sales_data[product_id_val] = {
-                        'product_id': product_id_val,
-                        'product_name': product.name if product else 'Unknown',
-                        'product_sku': product.sku if product else 'Unknown',
-                        'shop_id': order_product.shop_id,
-                        'shop_name': shop.name if shop else 'Unknown',
-                        'total_quantity_sold': 0,
-                        'total_revenue': 0,
-                        'average_price': 0
+                        "product_id": product_id_val,
+                        "product_name": product.name if product else "Unknown",
+                        "product_sku": product.sku if product else "Unknown",
+                        "shop_id": order_product.shop_id,
+                        "shop_name": shop.name if shop else "Unknown",
+                        "total_quantity_sold": 0,
+                        "total_revenue": 0,
+                        "average_price": 0,
                     }
-                
-                sales_data[product_id_val]['total_quantity_sold'] += quantity
-                sales_data[product_id_val]['total_revenue'] += revenue
+
+                sales_data[product_id_val]["total_quantity_sold"] += quantity
+                sales_data[product_id_val]["total_revenue"] += revenue
                 total_products_sold += quantity
                 total_revenue += revenue
-        
+
         # Calculate average prices
         for product_data in sales_data.values():
-            if product_data['total_quantity_sold'] > 0:
-                product_data['average_price'] = product_data['total_revenue'] / product_data['total_quantity_sold']
-        
+            if product_data["total_quantity_sold"] > 0:
+                product_data["average_price"] = (
+                    product_data["total_revenue"] / product_data["total_quantity_sold"]
+                )
+
         report = {
-            'period': {
-                'start_date': start_date,
-                'end_date': end_date
+            "period": {"start_date": start_date, "end_date": end_date},
+            "summary": {
+                "total_orders": len(orders),
+                "total_products_sold": total_products_sold,
+                "total_revenue": total_revenue,
             },
-            'summary': {
-                'total_orders': len(orders),
-                'total_products_sold': total_products_sold,
-                'total_revenue': total_revenue
-            },
-            'product_sales': list(sales_data.values())
+            "product_sales": list(sales_data.values()),
         }
-        
+
         return api_response(200, "Sales report generated", report)
-        
+
     except Exception as e:
-        return api_response(500, f"Error generating sales report: {str(e)}")    
+        return api_response(500, f"Error generating sales report: {str(e)}")
+
+
 def create_shop_earning(session, order: Order):
     """Create shop earning records when order is completed - UPDATED for multi-shop orders"""
     if order.order_status != OrderStatusEnum.COMPLETED:
         return
-    
+
     # Get all order products for this order
     order_products = session.exec(
         select(OrderProduct).where(OrderProduct.order_id == order.id)
     ).all()
-    
+
     for order_product in order_products:
         if not order_product.shop_id:
             continue
-            
+
         # Calculate shop earning for this specific product
         # (subtotal - admin_commission - proportional delivery fee)
         delivery_fee_per_product = Decimal("0.00")
@@ -714,9 +818,13 @@ def create_shop_earning(session, order: Order):
                 delivery_fee_per_product = Decimal(str(order.delivery_fee)) * (
                     Decimal(str(order_product.subtotal)) / Decimal(str(total_subtotal))
                 )
-        
-        shop_earning = Decimal(str(order_product.subtotal)) - order_product.admin_commission - delivery_fee_per_product
-        
+
+        shop_earning = (
+            Decimal(str(order_product.subtotal))
+            - order_product.admin_commission
+            - delivery_fee_per_product
+        )
+
         # Create shop earning record for this shop and product
         earning = ShopEarning(
             shop_id=order_product.shop_id,
@@ -724,7 +832,7 @@ def create_shop_earning(session, order: Order):
             order_product_id=order_product.id,  # Link to specific order product
             order_amount=Decimal(str(order_product.subtotal)),
             admin_commission=order_product.admin_commission,
-            shop_earning=shop_earning
+            shop_earning=shop_earning,
         )
-        
+
         session.add(earning)
