@@ -25,6 +25,7 @@ from src.api.models.order_model.orderModel import (
 from src.api.models.product_model.productsModel import Product, ProductRead, ProductType
 from src.api.models.product_model.variationOptionModel import VariationOption
 from src.api.models.category_model import Category
+from src.api.models.shop_model.shopsModel import Shop
 from src.api.models.withdrawModel import ShopEarning
 from src.api.core.dependencies import GetSession, requirePermission, isAuthenticated
 from datetime import datetime
@@ -230,7 +231,7 @@ def update_order_status_history(session, order_id: int, status_field: str):
     session.add(order_status)
 
 
-@router.post("/create")
+@router.post("/cartcreate")
 def create(request: OrderCreate, session: GetSession, user: isAuthenticated = None):
     cart_items = request.cart or []
     shipping_address = request.shipping_address
@@ -295,79 +296,79 @@ def create(request: OrderCreate, session: GetSession, user: isAuthenticated = No
     )
 
 
-# @router.post("/create")
-# def create(request: OrderCreate, session: GetSession, user=requirePermission("order")):
-#     # Validate all products before creating order
-#     validation_errors = []
-#     shops_in_order = set()  # Track unique shops in this order
+@router.post("/create")
+def create(request: OrderCreate, session: GetSession):
+    # Validate all products before creating order
+    validation_errors = []
+    shops_in_order = set()  # Track unique shops in this order
 
-#     for product_data in request.order_products:
-#         is_available, message = validate_product_availability(session, product_data)
-#         if not is_available:
-#             validation_errors.append(f"Product {product_data.product_id}: {message}")
-#         else:
-#             # Add shop to unique shops set
-#             if product_data.shop_id:
-#                 shops_in_order.add(product_data.shop_id)
+    for product_data in request.order_products:
+        is_available, message = validate_product_availability(session, product_data)
+        if not is_available:
+            validation_errors.append(f"Product {product_data.product_id}: {message}")
+        else:
+            # Add shop to unique shops set
+            if product_data.shop_id:
+                shops_in_order.add(product_data.shop_id)
 
-#     if validation_errors:
-#         return api_response(400, "Product availability issues", {"errors": validation_errors})
+    if validation_errors:
+        return api_response(400, "Product availability issues", {"errors": validation_errors})
 
-#     # Generate tracking number
-#     tracking_number = generate_tracking_number()
+    # Generate tracking number
+    tracking_number = generate_tracking_number()
 
-#     # Create order
-#     order_data = request.model_dump(exclude={"order_products"})
-#     order = Order(**order_data, tracking_number=tracking_number)
+    # Create order
+    order_data = request.model_dump(exclude={"order_products"})
+    order = Order(**order_data, tracking_number=tracking_number)
 
-#     session.add(order)
-#     session.flush()
+    session.add(order)
+    session.flush()
 
-#     total_admin_commission = Decimal("0.00")
+    total_admin_commission = Decimal("0.00")
 
-#     # Create order products with proper type handling
-#     for product_data in request.order_products:
-#         # Calculate admin commission
-#         admin_commission = calculate_admin_commission(
-#             session,
-#             product_data.product_id,
-#             product_data.unit_price,
-#             product_data.order_quantity,
-#         )
-#         total_admin_commission += admin_commission
+    # Create order products with proper type handling
+    for product_data in request.order_products:
+        # Calculate admin commission
+        admin_commission = calculate_admin_commission(
+            session,
+            product_data.product_id,
+            product_data.unit_price,
+            product_data.order_quantity,
+        )
+        total_admin_commission += admin_commission
 
-#         # Create product snapshots
-#         product_snapshot = get_product_snapshot(session, product_data.product_id)
-#         variation_snapshot = None
-#         if product_data.variation_option_id:
-#             variation_snapshot = get_variation_snapshot(session, product_data.variation_option_id)
+        # Create product snapshots
+        product_snapshot = get_product_snapshot(session, product_data.product_id)
+        variation_snapshot = None
+        if product_data.variation_option_id:
+            variation_snapshot = get_variation_snapshot(session, product_data.variation_option_id)
 
-#         # Create order product with shop_id
-#         order_product = OrderProduct(
-#             **product_data.model_dump(),
-#             order_id=order.id,
-#             admin_commission=admin_commission,
-#             product_snapshot=product_snapshot,
-#             variation_snapshot=variation_snapshot,
-#         )
-#         session.add(order_product)
+        # Create order product with shop_id
+        order_product = OrderProduct(
+            **product_data.model_dump(),
+            order_id=order.id,
+            admin_commission=admin_commission,
+            product_snapshot=product_snapshot,
+            variation_snapshot=variation_snapshot,
+        )
+        session.add(order_product)
 
-#         # Update inventory (deduct quantities)
-#         update_product_inventory(session, product_data, "deduct")
+        # Update inventory (deduct quantities)
+        update_product_inventory(session, product_data, "deduct")
 
-#     # Update order with total admin commission
-#     order.admin_commission_amount = total_admin_commission
+    # Update order with total admin commission
+    order.admin_commission_amount = total_admin_commission
 
-#     # Create initial order status history
-#     order_status = OrderStatus(order_id=order.id, order_pending_date=datetime.now())
-#     session.add(order_status)
+    # Create initial order status history
+    order_status = OrderStatus(order_id=order.id, order_pending_date=datetime.now())
+    session.add(order_status)
 
-#     session.commit()
-#     session.refresh(order)
+    session.commit()
+    session.refresh(order)
 
-#     return api_response(
-#         201, "Order Created Successfully", OrderReadNested.model_validate(order)
-#     )
+    return api_response(
+        201, "Order Created Successfully", OrderReadNested.model_validate(order)
+    )
 
 
 @router.put("/update/{id}")
