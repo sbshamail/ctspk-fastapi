@@ -92,7 +92,7 @@ def delete_role(
 
     session.delete(cart)
     session.commit()
-    return api_response(404, f"Cart {cart.id} deleted")
+    return api_response(200, f"Cart {cart.id} deleted")
 
 
 @router.delete("/delete-many", response_model=dict)
