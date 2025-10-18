@@ -39,6 +39,7 @@ class AttributeValueRead(TimeStampReadModel):
 
 
 class AttributeValueUpdate(SQLModel):
+    id: Optional[int] = None  # 🆕 ADD THIS LINE - makes ID optional for new values
     value: Optional[str] = None
     language: Optional[str] = None
     meta: Optional[str] = None

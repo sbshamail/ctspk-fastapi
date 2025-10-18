@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, Literal, Optional, List
 from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship
-from src.api.models.attributes_model.attributeValueModel import AttributeValueRead
+from src.api.models.attributes_model.attributeValueModel import AttributeValueRead, AttributeValueUpdate  # Add this import
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 
@@ -33,7 +33,7 @@ class AttributeValueCreate(SQLModel):
 class AttributeCreate(SQLModel):
     name: str
     language: str = "en"
-    shop_id: Optional[int] = None
+   # shop_id: Optional[int] = None
     values: Optional[List[AttributeValueCreate]]
 
 
@@ -48,3 +48,4 @@ class AttributeRead(TimeStampReadModel):
 class AttributeUpdate(SQLModel):
     name: Optional[str] = None
     language: Optional[str] = None
+    values: Optional[List[AttributeValueUpdate]] = None  # 🆕 ADD THIS LINE
