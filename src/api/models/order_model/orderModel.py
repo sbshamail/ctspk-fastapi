@@ -183,27 +183,27 @@ class CartItem(SQLModel):
     product_id: int
 
 
-class OrderCreate(SQLModel):
+class OrderCartCreate(SQLModel):
     cart: List[CartItem]
     shipping_address: Optional[dict]
 
 
-# class OrderCreate(SQLModel):
-#     customer_id: Optional[int] = None
-#     customer_contact: str
-#     customer_name: Optional[str] = None
-#     amount: float
-#     sales_tax: Optional[float] = None
-#     paid_total: Optional[float] = None
-#     total: Optional[float] = None
-#     discount: Optional[float] = None
-#     payment_gateway: Optional[str] = None
-#     shipping_address: Optional[Dict[str, Any]] = None
-#     billing_address: Optional[Dict[str, Any]] = None
-#     logistics_provider: Optional[int] = None
-#     delivery_fee: Optional[float] = None
-#     delivery_time: Optional[str] = None
-#     order_products: List[OrderProductCreate]
+class OrderCreate(SQLModel):
+    customer_id: Optional[int] = None
+    customer_contact: str
+    customer_name: Optional[str] = None
+    amount: float
+    sales_tax: Optional[float] = None
+    paid_total: Optional[float] = None
+    total: Optional[float] = None
+    discount: Optional[float] = None
+    payment_gateway: Optional[str] = None
+    shipping_address: Optional[Dict[str, Any]] = None
+    billing_address: Optional[Dict[str, Any]] = None
+    logistics_provider: Optional[int] = None
+    delivery_fee: Optional[float] = None
+    delivery_time: Optional[str] = None
+    order_products: List[OrderProductCreate]
 
 
 class OrderUpdate(SQLModel):
