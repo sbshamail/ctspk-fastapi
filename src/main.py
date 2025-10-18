@@ -56,7 +56,9 @@ from src.api.routers import (
     # Withdraw
     withdrawRoute,
     # setting
-    settings
+    settings,
+    # tax
+    taxRoute
 )
 
 
@@ -125,6 +127,8 @@ app.include_router(manufacturerRoute.router)
 app.include_router(bannerRoute.router)
 # Shipping
 app.include_router(shippingRoute.router)
+# tax
+app.include_router(taxRoute.router)
 # Email Template
 app.include_router(emailRoute.router)
 # Order

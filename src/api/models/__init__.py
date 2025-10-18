@@ -65,6 +65,7 @@ from .product_model.importHistoryModel import ProductImportHistory
 from .product_model.productPurchaseModel import ProductPurchase
 from .withdrawModel import *
 from .settingsModel import Settings
+from .taxModel import Tax
 # from .attributes_model import Attribute, AttributeValue, AttributeProduct
 
 # # tag
