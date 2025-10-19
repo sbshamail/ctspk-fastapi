@@ -10,6 +10,7 @@ from src.api.core.response import api_response, raiseExceptions
 from sqlalchemy.orm import selectinload, joinedload
 from src.api.models.order_model.orderModel import (
     Order,
+    OrderCartCreate,
     OrderCreate,
     OrderUpdate,
     OrderRead,
@@ -28,7 +29,7 @@ from src.api.models.category_model import Category
 from src.api.models.shop_model.shopsModel import Shop
 from src.api.models.withdrawModel import ShopEarning
 from src.api.core.dependencies import GetSession, requirePermission, isAuthenticated
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from decimal import Decimal
 
@@ -232,7 +233,7 @@ def update_order_status_history(session, order_id: int, status_field: str):
 
 
 @router.post("/cartcreate")
-def create(request: OrderCreate, session: GetSession, user: isAuthenticated = None):
+def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated = None):
     cart_items = request.cart or []
     shipping_address = request.shipping_address
     # ✅ 1. Validate cart data
@@ -275,22 +276,83 @@ def create(request: OrderCreate, session: GetSession, user: isAuthenticated = No
                 404, f"Cart item(s) not found for product(s): {missing}"
             )
 
-    if user is None:
-        # handle offline order (no user)
-        order_type = "offline"
-    elif user:
-        # handle authenticated user order
-        order_type = "user"
+    # ✅ 4. Calculate totals
+    amount = 0.0
+    for item in cart_items:
+        product = next((p for p in products if p.id == item.product_id), None)
+        if not product:
+            continue
+        # use sale_price if > 0 else price
+        price = (
+            product.sale_price
+            if product.sale_price and product.sale_price > 0
+            else product.price
+        )
+        amount += price * item.quantity
 
-        # ✅ 5. Prepare response data (for now, just validation)
+    total = amount  # add tax or discount later
+
+    # ✅ 5. Build order fields
+    tracking_number = f"TRK-{uuid.uuid4().hex[:10].upper()}"
+    order = Order(
+        tracking_number=tracking_number,
+        customer_id=user["id"] if user else None,
+        customer_contact=(
+            user.get("phone_no") if user else shipping_address.get("phone")
+        ),
+        customer_name=user.get("name") if user else shipping_address.get("name"),
+        amount=amount,
+        total=total,
+        shipping_address=shipping_address,
+        billing_address=shipping_address,  # same for now
+        order_status="order-pending",
+        payment_status="payment-pending",
+        language="en",
+        created_at=datetime.utcnow(),
+    )
+
+    session.add(order)
+    session.flush()
+
+    # ✅ 6. Create order products
+    order_products = []
+    for item in cart_items:
+        product = next((p for p in products if p.id == item.product_id), None)
+        if not product:
+            continue
+
+        price = (
+            product.sale_price
+            if product.sale_price and product.sale_price > 0
+            else product.price
+        )
+        subtotal = price * item.quantity
+
+        op = OrderProduct(
+            order_id=order.id,
+            product_id=product.id,
+            order_quantity=str(item.quantity),
+            unit_price=price,
+            subtotal=subtotal,
+            admin_commission=0.00,
+            created_at=datetime.now(timezone.utc),
+        )
+        order_products.append(op)
+
+    session.add_all(order_products)
+    session.commit()
+
+    # ✅ 7. Return result
     products_data = [ProductRead.model_validate(p).model_dump() for p in products]
-
     return api_response(
         200,
-        "Order Submit Successfully",
+        "Order created successfully",
         {
-            "cart_count": len(cart_items),
-            "product_count": len(products_data),
+            "order_id": order.id,
+            "tracking_number": tracking_number,
+            "order_type": "offline" if not user else "user",
+            "total": total,
+            "items": len(order_products),
             "products": products_data,
         },
     )
@@ -312,7 +374,9 @@ def create(request: OrderCreate, session: GetSession):
                 shops_in_order.add(product_data.shop_id)
 
     if validation_errors:
-        return api_response(400, "Product availability issues", {"errors": validation_errors})
+        return api_response(
+            400, "Product availability issues", {"errors": validation_errors}
+        )
 
     # Generate tracking number
     tracking_number = generate_tracking_number()
@@ -341,7 +405,9 @@ def create(request: OrderCreate, session: GetSession):
         product_snapshot = get_product_snapshot(session, product_data.product_id)
         variation_snapshot = None
         if product_data.variation_option_id:
-            variation_snapshot = get_variation_snapshot(session, product_data.variation_option_id)
+            variation_snapshot = get_variation_snapshot(
+                session, product_data.variation_option_id
+            )
 
         # Create order product with shop_id
         order_product = OrderProduct(
