@@ -306,7 +306,6 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         order_status="order-pending",
         payment_status="payment-pending",
         language="en",
-        created_at=datetime.utcnow(),
     )
 
     session.add(order)
@@ -333,7 +332,6 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
             unit_price=price,
             subtotal=subtotal,
             admin_commission=0.00,
-            created_at=datetime.now(timezone.utc),
         )
         order_products.append(op)
 
