@@ -243,7 +243,7 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
     product_ids = [
         item.product_id for item in cart_items if item.product_id and item.product_id
     ]
-    cart_ids = [item.id for item in cart_items if item.id]
+    # cart_ids = [item.id for item in cart_items if item.id]
 
     if not product_ids:
         return api_response(400, "Each cart item must include a valid product ID")
@@ -297,10 +297,8 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
     order = Order(
         tracking_number=tracking_number,
         customer_id=user["id"] if user else None,
-        customer_contact=(
-            user.get("phone_no") if user else shipping_address.get("phone")
-        ),
-        customer_name=user.get("name") if user else shipping_address.get("name"),
+        customer_contact=shipping_address.get("phone"),
+        customer_name=shipping_address.get("name"),
         amount=amount,
         total=total,
         shipping_address=shipping_address,

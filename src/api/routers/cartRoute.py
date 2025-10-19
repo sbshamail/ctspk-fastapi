@@ -1,6 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Body
 from sqlalchemy import select
+from src.api.core.utility import Print
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.response import api_response, raiseExceptions
 from src.api.models.cart_model import Cart, CartCreate, CartRead, CartUpdate
@@ -57,7 +58,6 @@ def update_role(
 
 @router.get("/read/{product_id}")
 def get_role(product_id: int, session: GetSession, user: requireSignin):
-
     cart = (
         session.exec(
             select(Cart)
@@ -67,7 +67,7 @@ def get_role(product_id: int, session: GetSession, user: requireSignin):
         .scalars()
         .first()
     )
-    raiseExceptions((cart, 404, "Cart not found"))
+    raiseExceptions((cart, 400, "Cart not found"))
 
     return api_response(200, "Cart Found", CartRead.model_validate(cart))
 
@@ -154,6 +154,7 @@ def list(query_params: ListQueryParams, user: requireSignin):
     query_params = vars(query_params)
     searchFields = []
     return listRecords(
+        customFilters=[["user_id", user["id"]]],
         query_params=query_params,
         searchFields=searchFields,
         Model=Cart,
