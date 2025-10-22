@@ -27,10 +27,7 @@ def api_response(
 
     # Raise error if code >= 400
     if code >= 400:
-        raise HTTPException(
-            status_code=code,
-            detail=detail,
-        )
+        return JSONResponse(status_code=code, content=content)
 
     return JSONResponse(
         status_code=code,
