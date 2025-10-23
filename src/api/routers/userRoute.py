@@ -5,17 +5,18 @@ from fastapi import (
     Query,
     Request,
 )
-from sqlalchemy import select
-
+from sqlalchemy import select,and_, update as sql_update
+from src.api.core.email_service import send_verification_email,send_password_reset_confirmation
 from src.api.core.operation import listop
-
+import datetime
 from src.api.core.security import hash_password
 from src.api.core import updateOp, requireSignin
 from src.api.core.dependencies import GetSession, requirePermission, requireAdmin
 from src.api.core.response import api_response, raiseExceptions
-from src.api.models.usersModel import UserCreate,RegisterUser, UpdateUserByAdmin, User, UserRead, UserUpdate
+from src.api.models.usersModel import UserCreate,RegisterUser, UpdateUserByAdmin, User, UserRead, UserUpdate,ChangePasswordRequest,ForgotPasswordRequest,VerifyCodeRequest,ResetPasswordRequest
 from src.api.models.role_model.roleModel import Role
 from src.api.models.role_model.userRoleModel import UserRole
+import random
 
 router = APIRouter(prefix="/user", tags=["user"])
 
@@ -208,3 +209,151 @@ def list_users(
         data,
         result["total"],
     )
+
+@router.post("/change-password")
+def change_password(
+    request: ChangePasswordRequest,
+    session: GetSession,
+    user: requireSignin,
+):
+    """
+    Change password for authenticated user
+    """
+    user_id = user.get("id")
+    
+    # Get the user object properly
+    db_user = session.get(User, user_id)
+    raiseExceptions((db_user, 404, "User not found"))
+    
+    # Verify current password
+    from src.api.core.security import verify_password
+    if not verify_password(request.current_password, db_user.password):
+        return api_response(400, "Current password is incorrect")
+    
+    # Hash new password
+    hashed_password = hash_password(request.new_password)
+    db_user.password = hashed_password
+    
+    session.add(db_user)
+    session.commit()
+    
+    return api_response(200, "Password changed successfully")
+
+@router.post("/forgot-password")
+def forgot_password(
+    request: ForgotPasswordRequest,
+    session: GetSession,
+):
+    """
+    Send verification code to user's email for password reset
+    """
+    # Find user by email using session.get() with a query result
+    statement = select(User).where(User.email == request.email)
+    db_user = session.exec(statement).first()
+    
+    # Don't reveal if user exists or not for security
+    if not db_user:
+        return api_response(200, "If the email exists, a verification code has been sent")
+    
+    # Generate 5-digit verification code
+    verification_code = str(random.randint(10000, 99999))
+    
+    # Set expiration time (15 minutes from now)
+    expires_at = datetime.datetime.now() + datetime.timedelta(minutes=15)
+    print(f"verification_code:{verification_code}")
+    print(f"expires_at:{expires_at}")
+    
+    # Use SQL update statement to update the user
+    update_stmt = (
+        sql_update(User)
+        .where(User.email == request.email)
+        .values(
+            password_reset_code=verification_code,
+            password_reset_code_expires=expires_at
+        )
+    )
+    session.exec(update_stmt)
+    session.commit()
+    
+    # TODO: Implement email service to send verification code
+    # For now, we'll return the code in response (remove this in production)
+    # Send email with verification code
+    try:
+        send_verification_email(request.email, verification_code)
+    except Exception as e:
+        print(f"Failed to send email: {str(e)}")
+        # Continue even if email fails - user might retry
+    print(f"Verification code for {request.email}: {verification_code}")
+    
+    return api_response(200, "Verification code sent to your email")
+
+@router.post("/verify-code")
+def verify_code(
+    request: VerifyCodeRequest,
+    session: GetSession,
+):
+    """
+    Verify the password reset code
+    """
+    db_user = session.exec(
+        select(User).where(
+            and_(
+                User.email == request.email,
+                User.password_reset_code == request.verification_code,
+                User.password_reset_code_expires > datetime.datetime.now()
+            )
+        )
+    ).first()
+    
+    if not db_user:
+        return api_response(400, "Invalid or expired verification code")
+    
+    return api_response(200, "Verification code is valid")
+
+@router.post("/reset-password")
+def reset_password(
+    request: ResetPasswordRequest,
+    session: GetSession,
+):
+    """
+    Reset password using verification code
+    """
+    # First verify the code exists and is valid
+    statement = select(User).where(
+        and_(
+            User.email == request.email,
+            User.password_reset_code == request.verification_code,
+            User.password_reset_code_expires > datetime.datetime.now()
+        )
+    )
+    db_user = session.exec(statement).first()
+    
+    if not db_user:
+        return api_response(400, "Invalid or expired verification code")
+    
+    # Hash new password
+    hashed_password = hash_password(request.new_password)
+    
+    # Use SQL update statement to update the password and clear reset code
+    update_stmt = (
+        sql_update(User)
+        .where(
+            and_(
+                User.email == request.email,
+                User.password_reset_code == request.verification_code
+            )
+        )
+        .values(
+            password=hashed_password,
+            password_reset_code=None,
+            password_reset_code_expires=None
+        )
+    )
+    session.exec(update_stmt)
+    session.commit()
+    try:
+        send_password_reset_confirmation(request.email)
+    except Exception as e:
+        print(f"Failed to send email: {str(e)}")
+
+    return api_response(200, "Password reset successfully")

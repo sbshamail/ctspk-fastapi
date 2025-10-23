@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, List, Optional
 import datetime
-from pydantic import BaseModel, EmailStr, model_validator
+from pydantic import BaseModel, EmailStr, model_validator,Field as PydanticField
 from sqlmodel import SQLModel, Field, Relationship
 
 from src.api.models.role_model.roleModel import RoleRead
@@ -35,7 +35,8 @@ class User(TimeStampedModel, table=True):
     password: Optional[str] = None
     remember_token: Optional[str] = Field(default=None, max_length=100)
     is_active: bool = Field(default=True)
-
+    password_reset_code: Optional[str] = Field(default=None, max_length=5)
+    password_reset_code_expires: Optional[datetime.datetime] = None
     # relationships
     user_roles: list["UserRole"] = Relationship(back_populates="user")
     media: List["UserMedia"] = Relationship(back_populates="user")
@@ -155,3 +156,33 @@ class UpdateUserByAdmin(UserUpdate):
     # role_id: Optional[List] = None
     #role_ids: Optional[List[int]] = None
     is_active: Optional[bool] = None
+
+class ChangePasswordRequest(SQLModel):
+    current_password: str
+    new_password: str
+    confirm_password: str
+
+    @model_validator(mode="before")
+    def check_password_match(cls, values):
+        if values.get("new_password") != values.get("confirm_password"):
+            raise ValueError("New passwords do not match")
+        return values
+
+class ForgotPasswordRequest(SQLModel):
+    email: EmailStr
+
+class VerifyCodeRequest(SQLModel):
+    email: EmailStr
+    verification_code: str = PydanticField(..., min_length=5, max_length=5)
+
+class ResetPasswordRequest(SQLModel):
+    email: EmailStr
+    verification_code: str = PydanticField(..., min_length=5, max_length=5)
+    new_password: str
+    confirm_password: str
+
+    @model_validator(mode="before")
+    def check_password_match(cls, values):
+        if values.get("new_password") != values.get("confirm_password"):
+            raise ValueError("Passwords do not match")
+        return values
