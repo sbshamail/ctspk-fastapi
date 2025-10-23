@@ -28,7 +28,12 @@ from src.api.models.product_model.variationOptionModel import VariationOption
 from src.api.models.category_model import Category
 from src.api.models.shop_model.shopsModel import Shop
 from src.api.models.withdrawModel import ShopEarning
-from src.api.core.dependencies import GetSession, requirePermission, isAuthenticated
+from src.api.core.dependencies import (
+    GetSession,
+    requirePermission,
+    requireSignin,
+    isAuthenticated,
+)
 from datetime import datetime, timezone
 import uuid
 from decimal import Decimal
@@ -434,12 +439,7 @@ def create(request: OrderCreate, session: GetSession):
 
 
 @router.put("/update/{id}")
-def update(
-    id: int,
-    request: OrderUpdate,
-    session: GetSession,
-    user=requirePermission("order"),
-):
+def update(id: int, request: OrderUpdate, session: GetSession, user: requireSignin):
     order = session.get(Order, id)
     raiseExceptions((order, 404, "Order not found"))
 
@@ -477,10 +477,7 @@ def update(
 
 @router.patch("/{id}/status")
 def update_status(
-    id: int,
-    request: OrderStatusUpdate,
-    session: GetSession,
-    user=requirePermission("order"),
+    id: int, request: OrderStatusUpdate, session: GetSession, user: requireSignin
 ):
     order = session.get(Order, id)
     raiseExceptions((order, 404, "Order not found"))
@@ -547,7 +544,7 @@ def update_status(
 
 
 @router.get("/read/{id}", response_model=OrderReadNested)
-def get(id: int, session: GetSession, user=requirePermission("order")):
+def get(id: int, session: GetSession, user: requireSignin):
     order = session.get(Order, id)
     raiseExceptions((order, 404, "Order not found"))
 
@@ -645,8 +642,12 @@ def delete(
     return api_response(200, f"Order {order.tracking_number} deleted successfully")
 
 
-@router.get("/list", response_model=list[OrderReadNested])
+@router.get(
+    "/list",
+    response_model=list[OrderReadNested],
+)
 def list_orders(
+    user: requireSignin,
     session: GetSession,
     dateRange: Optional[str] = None,
     numberRange: Optional[str] = None,
@@ -659,11 +660,14 @@ def list_orders(
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
 ):
+    customFilters = [["customer_id", user.get("id")]]
+
     filters = {
         "searchTerm": searchTerm,
         "columnFilters": columnFilters,
         "dateRange": dateRange,
         "numberRange": numberRange,
+        "customFilters": customFilters,
     }
 
     searchFields = ["tracking_number", "customer_contact", "customer_name"]
