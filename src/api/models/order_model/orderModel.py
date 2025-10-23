@@ -232,11 +232,17 @@ class OrderStatusUpdate(SQLModel):
     payment_status: Optional[PaymentStatusEnum] = None
 
 
+class ProductOrderRead(SQLModel):
+    image: Optional[Dict[str, Any]] = None
+    name: str
+
+
 # Read Schemas - UPDATED
 class OrderProductRead(TimeStampReadModel):
     id: int
     order_id: int
     product_id: int
+    product: ProductOrderRead
     variation_option_id: Optional[int] = None
     order_quantity: str
     unit_price: float
