@@ -546,6 +546,7 @@ def update_status(
 @router.get("/read/{id}", response_model=OrderReadNested)
 def get(id: int, session: GetSession, user: requireSignin):
     order = session.get(Order, id)
+    print(f"order:{order}")
     raiseExceptions((order, 404, "Order not found"))
 
     # Enhance order data with shops information
@@ -572,9 +573,16 @@ def get(id: int, session: GetSession, user: requireSignin):
 
 @router.get("/tracking/{tracking_number}", response_model=OrderReadNested)
 def get_by_tracking(tracking_number: str, session: GetSession):
-    order = session.exec(
-        select(Order).where(Order.tracking_number == tracking_number)
-    ).first()
+    # order = session.exec(
+    #     select(Order).where(Order.tracking_number == tracking_number)
+    # ).first()
+    # order = session.exec(
+    # select(Order).where(Order.tracking_number == tracking_number)
+    # ).one()
+    order = session.scalar(
+    select(Order).where(Order.tracking_number == tracking_number)
+    )
+    print(f"order:{order}")
     raiseExceptions((order, 404, "Order not found"))
 
     # Enhance order data with shops information

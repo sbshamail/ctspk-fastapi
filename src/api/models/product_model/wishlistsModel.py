@@ -1,5 +1,5 @@
 # src/api/models/wishlistModel.py
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional,Dict,Any
 import datetime
 from sqlmodel import SQLModel, Field, Relationship
 
@@ -22,7 +22,7 @@ class Wishlist(TimeStampedModel, table=True):
     user: Optional["User"] = Relationship(back_populates="wishlists")
     product: Optional["Product"] = Relationship(back_populates="wishlists")
     variation_option: Optional["VariationOption"] = Relationship(back_populates="wishlists")
-
+    
 class WishlistCreate(SQLModel):
     user_id: int
     product_id: int
