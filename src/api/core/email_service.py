@@ -17,7 +17,7 @@ def send_verification_email(recipient_email: str, verification_code: str) -> boo
         bool: True if email sent successfully, False otherwise
     """
     # Email configuration - use environment variables for security
-    SMTP_SERVER = "smtp.gmail.com"
+    SMTP_SERVER = "mail.ghertak.com"
     SMTP_PORT = 587
     SENDER_EMAIL = os.getenv("SMTP_EMAIL")  # Your Gmail address
     SENDER_PASSWORD = os.getenv("SMTP_PASSWORD")  # Your Gmail App Password
