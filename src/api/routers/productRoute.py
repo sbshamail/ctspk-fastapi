@@ -21,7 +21,7 @@ from src.api.models.product_model.productsModel import (
     ProductActivate,
     ProductType,
     ProductStatus,
-    VariationData
+    VariationData,
 )
 from src.api.core.dependencies import (
     GetSession,
@@ -186,12 +186,7 @@ def create(
         total_quantity = request.quantity or 0
 
     # Prepare product data
-    product_data = request.model_dump(
-        exclude={
-            "attributes",
-            "variations"
-        }
-    )
+    product_data = request.model_dump(exclude={"attributes", "variations"})
     product_data.update(
         {
             "min_price": min_price,
@@ -202,7 +197,6 @@ def create(
                 if request.attributes
                 else None
             ),
-            
         }
     )
 
@@ -256,10 +250,7 @@ def update(
     # Prepare update data
     update_data = request.model_dump(
         exclude_none=True,
-        exclude={
-            "attributes",
-            "variations"
-        },
+        exclude={"attributes", "variations"},
     )
 
     # Update quantity
@@ -351,6 +342,7 @@ def list(query_params: ListQueryParams, session: GetSession):
         Schema=ProductRead,
     )
 
+
 @router.get("/products/related/{category_id}")
 def get_products_by_category(category_id: int, session: GetSession):
     try:
@@ -377,6 +369,7 @@ def get_products_by_category(category_id: int, session: GetSession):
         )
     finally:
         session.close()
+
 
 # ✅ PATCH Product status
 @router.patch("/{id}/status")

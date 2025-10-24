@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, List
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 from sqlmodel import JSON, Column, SQLModel, Field, Relationship
 from enum import Enum
 
@@ -32,8 +32,6 @@ class ProductType(str, Enum):
     SIMPLE = "simple"
     VARIABLE = "variable"
     GROUPED = "grouped"
-
-
 
 
 class Product(TimeStampedModel, table=True):
@@ -296,14 +294,32 @@ class ProductRead(TimeStampReadModel):
     shipping_info: Optional[str] = None
     tags: Optional[List[str]] = None
     bar_code: Optional[str] = None
-    attributes: Optional[List[ProductAttribute]] = None
-    variations: Optional[List[VariationOptionReadForProduct]] = None
-    variations_count: Optional[int] = 0
-    total_quantity: Optional[int] = 0
+    attributes: Optional[list["ProductAttribute"]] = None
+    variation_options: Optional[list[VariationOptionReadForProduct]] = None
+
     # ADDED: Purchase and sales tracking
     total_purchased_quantity: int = 0
     total_sold_quantity: int = 0
     current_stock_value: Optional[float] = None
+
+    @computed_field
+    @property
+    def variations_count(self) -> int:
+        """Count how many variation options the product has"""
+        return len(self.variation_options or [])
+
+    @computed_field
+    @property
+    def total_quantity(self) -> int:
+        """Sum product quantity + total from variation options"""
+        base_qty = self.quantity or 0
+        if not self.variation_options:
+            return base_qty
+        # Each variation_option should have a 'quantity' field
+        variation_total = sum(
+            v.get("quantity", 0) for v in self.variation_options if isinstance(v, dict)
+        )
+        return base_qty + variation_total
 
 
 class ProductListRead(TimeStampReadModel):
@@ -326,3 +342,4 @@ class ProductListRead(TimeStampReadModel):
     manufacturer_id: Optional[int] = None
     warranty: Optional[str] = None
     shipping_info: Optional[str] = None
+    tags: Optional[List[str]] = None
