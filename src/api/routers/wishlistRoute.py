@@ -52,14 +52,14 @@ def update_wishlist_item(
     id: int,
     request: WishlistUpdate,
     session: GetSession,
-    user=requireSignin,
+    user:requireSignin,
 ):
     wishlist_item = session.get(Wishlist, id)
     if not wishlist_item:
         return api_response(404, "Wishlist item not found")
 
     # Check if user owns this wishlist item
-    if wishlist_item.user_id != user.id:
+    if wishlist_item.user_id != user.get("id"):
         return api_response(403, "Not authorized to update this wishlist item")
 
     updated = updateOp(wishlist_item, request, session)
@@ -71,13 +71,13 @@ def update_wishlist_item(
 
 # ✅ GET WISHLIST ITEM BY ID
 @router.get("/read/{id}")
-def read_wishlist_item(id: int, session: GetSession, user=requireSignin):
+def read_wishlist_item(id: int, session: GetSession, user:requireSignin):
     wishlist_item = session.get(Wishlist, id)
     if not wishlist_item:
         return api_response(404, "Wishlist item not found")
 
     # Check if user owns this wishlist item
-    if wishlist_item.user_id != user.id:
+    if wishlist_item.user_id != user.get("id"):
         return api_response(403, "Not authorized to view this wishlist item")
 
     # Get product data
@@ -111,14 +111,14 @@ def read_wishlist_item(id: int, session: GetSession, user=requireSignin):
 def remove_from_wishlist(
     id: int,
     session: GetSession,
-    user=requireSignin,
+    user:requireSignin,
 ):
     wishlist_item = session.get(Wishlist, id)
     if not wishlist_item:
         return api_response(404, "Wishlist item not found")
 
     # Check if user owns this wishlist item
-    if wishlist_item.user_id != user.id:
+    if wishlist_item.user_id != user.get("id"):
         return api_response(403, "Not authorized to remove this wishlist item")
 
     session.delete(wishlist_item)
@@ -131,12 +131,12 @@ def remove_from_wishlist(
 def remove_from_wishlist_by_product(
     product_id: int,
     session: GetSession,
-    user=requireSignin,
+    user:requireSignin,
     variation_option_id: Optional[int] = None,
 ):
     # Find the wishlist item
     query = select(Wishlist).where(
-        Wishlist.user_id == user.id,
+        Wishlist.user_id == user.get("id"),
         Wishlist.product_id == product_id
     )
     
@@ -214,15 +214,16 @@ def get_wishlist_count(session, user_id=None):
 # ✅ LIST USER'S WISHLIST
 @router.get("/my-wishlist")
 def list_my_wishlist(
-    query_params: ListQueryParams,
-    session: GetSession,
-    user=requireSignin
+    query_params: ListQueryParams,  
+    session: GetSession,  
+    user:requireSignin,
 ):
     query_params_dict = vars(query_params)
     print(f"user:{user}")
+    print(f"user_id:{user.get("id")}")
     # Get wishlist items with product data
-    enhanced_wishlist = get_wishlist_items_with_products(session, query_params_dict, user)
-    total_count = get_wishlist_count(session, user)
+    enhanced_wishlist = get_wishlist_items_with_products(session, query_params_dict, user.get("id"))
+    total_count = get_wishlist_count(session, user.get("id"))
     
     # If no wishlist items found
     if not enhanced_wishlist:
@@ -256,7 +257,7 @@ def list_all_wishlists(
 def check_in_wishlist(
     product_id: int,
     session: GetSession,
-    user=requireSignin,
+    user:requireSignin,
     variation_option_id: Optional[int] = None,
 ):
     # First, check if product exists
@@ -265,7 +266,7 @@ def check_in_wishlist(
         return api_response(404, "Product not found")
 
     query = select(Wishlist).where(
-        Wishlist.user_id == user.id,
+        Wishlist.user_id == user.get("id"),
         Wishlist.product_id == product_id
     )
     
@@ -320,7 +321,7 @@ def get_wishlist_by_user(
     user_id: int,
     query_params: ListQueryParams,
     session: GetSession,
-    user=requireSignin
+    user:requireSignin
 ):
     # Allow users to view their own wishlist or admin to view any
     if user_id != user.id and not user.has_permission("wishlist:view_all"):

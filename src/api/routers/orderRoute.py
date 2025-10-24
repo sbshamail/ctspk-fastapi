@@ -748,6 +748,103 @@ def list_orders(
 
     return api_response(200, "Orders found", enhanced_orders, result["total"])
 
+@router.get(
+    "/listorder",
+    response_model=list[OrderReadNested],
+)
+def list_orders(
+    user: requireSignin,
+    session: GetSession,
+    dateRange: Optional[str] = None,
+    numberRange: Optional[str] = None,
+    searchTerm: str = None,
+    columnFilters: Optional[str] = Query(None),
+    order_status: Optional[OrderStatusEnum] = None,
+    payment_status: Optional[PaymentStatusEnum] = None,
+    shop_id: Optional[int] = None,  # ADDED: Filter by shop_id (from order products)
+    page: int = None,
+    skip: int = 0,
+    limit: int = Query(200, ge=1, le=200),
+):
+   # customFilters = [["customer_id", user.get("id")]]
+    print(f"user:{user}")
+    filters = {
+        "searchTerm": searchTerm,
+        "columnFilters": columnFilters,
+        "dateRange": dateRange,
+        "numberRange": numberRange,
+       # "customFilters": customFilters,
+    }
+
+    searchFields = ["tracking_number", "customer_contact", "customer_name"]
+
+    # Add status filters
+    if order_status:
+        if "columnFilters" not in filters or not filters["columnFilters"]:
+            filters["columnFilters"] = []
+        filters["columnFilters"].append(["order_status", order_status.value])
+
+    if payment_status:
+        if "columnFilters" not in filters or not filters["columnFilters"]:
+            filters["columnFilters"] = []
+        filters["columnFilters"].append(["payment_status", payment_status.value])
+
+    # Handle shop filtering - we need to filter orders that have products from this shop
+    if shop_id:
+        # First get order IDs that have products from this shop
+        order_ids_with_shop = session.exec(
+            select(OrderProduct.order_id)
+            .where(OrderProduct.shop_id == shop_id)
+            .distinct()
+        ).all()
+
+        if not order_ids_with_shop:
+            return api_response(404, "No orders found for this shop")
+
+        if "columnFilters" not in filters or not filters["columnFilters"]:
+            filters["columnFilters"] = []
+        filters["columnFilters"].append(
+            ["id", [str(oid) for oid in order_ids_with_shop]]
+        )
+
+    result = listop(
+        session=session,
+        Model=Order,
+        searchFields=searchFields,
+        filters=filters,
+        skip=skip,
+        page=page,
+        limit=limit,
+    )
+
+    if not result["data"]:
+        return api_response(404, "No orders found")
+
+    # Enhance each order with shop information
+    enhanced_orders = []
+    for order in result["data"]:
+        order_data = OrderReadNested.model_validate(order)
+
+        # Get unique shops from order products
+        shops = set()
+        for order_product in order.order_products:
+            if order_product.shop_id:
+                shops.add(order_product.shop_id)
+
+        # Get shop details
+        shop_details = []
+        for shop_id in shops:
+            shop = session.get(Shop, shop_id)
+            if shop:
+                shop_details.append(
+                    {"id": shop.id, "name": shop.name, "slug": shop.slug}
+                )
+
+        order_data.shops = shop_details
+        order_data.shop_count = len(shop_details)
+        enhanced_orders.append(order_data)
+
+    return api_response(200, "Orders found", enhanced_orders, result["total"])
 
 @router.get("/customer/{customer_id}", response_model=list[OrderReadNested])
 def get_customer_orders(
