@@ -237,10 +237,132 @@ def update_order_status_history(session, order_id: int, status_field: str):
     session.add(order_status)
 
 
+# @router.post("/cartcreate")
+# def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated = None):
+#     cart_items = request.cart or []
+#     shipping_address = request.shipping_address
+#     # ✅ 1. Validate cart data
+#     if not isinstance(cart_items, list) or not cart_items:
+#         return api_response(400, "Cart cannot be empty")
+
+#     product_ids = [
+#         item.product_id for item in cart_items if item.product_id and item.product_id
+#     ]
+#     # cart_ids = [item.id for item in cart_items if item.id]
+
+#     if not product_ids:
+#         return api_response(400, "Each cart item must include a valid product ID")
+
+#     # ✅ 2. Validate products exist in db
+#     products = (
+#         session.exec(select(Product).where(Product.id.in_(product_ids))).scalars().all()
+#     )
+#     if len(products) != len(product_ids):
+#         found = {p.id for p in products}
+#         missing = [pid for pid in product_ids if pid not in found]
+#         return api_response(404, f"Product(s) not found: {missing}")
+
+#     # ✅ 3. Validate carts if user is authenticated
+#     carts = []
+#     if user:
+#         carts = (
+#             session.exec(
+#                 select(Cart)
+#                 .where(Cart.user_id == user["id"])
+#                 .where(Cart.product_id.in_(product_ids))
+#             )
+#             .scalars()
+#             .all()
+#         )
+#         if len(carts) != len(product_ids):
+#             found_ids = {c.product_id for c in carts}
+#             missing = [pid for pid in product_ids if pid not in found_ids]
+#             return api_response(
+#                 404, f"Cart item(s) not found for product(s): {missing}"
+#             )
+
+#     # ✅ 4. Calculate totals
+#     amount = 0.0
+#     for item in cart_items:
+#         product = next((p for p in products if p.id == item.product_id), None)
+#         if not product:
+#             continue
+#         # use sale_price if > 0 else price
+#         price = (
+#             product.sale_price
+#             if product.sale_price and product.sale_price > 0
+#             else product.price
+#         )
+#         amount += price * item.quantity
+
+#     total = amount  # add tax or discount later
+
+#     # ✅ 5. Build order fields
+#     tracking_number = f"TRK-{uuid.uuid4().hex[:10].upper()}"
+#     order = Order(
+#         tracking_number=tracking_number,
+#         customer_id=user["id"] if user else None,
+#         customer_contact=shipping_address.get("phone"),
+#         customer_name=shipping_address.get("name"),
+#         amount=amount,
+#         total=total,
+#         shipping_address=shipping_address,
+#         billing_address=shipping_address,  # same for now
+#         order_status="order-pending",
+#         payment_status="payment-pending",
+#         language="en",
+#     )
+
+#     session.add(order)
+#     session.flush()
+
+#     # ✅ 6. Create order products
+#     order_products = []
+#     for item in cart_items:
+#         product = next((p for p in products if p.id == item.product_id), None)
+#         if not product:
+#             continue
+
+#         price = (
+#             product.sale_price
+#             if product.sale_price and product.sale_price > 0
+#             else product.price
+#         )
+#         subtotal = price * item.quantity
+
+#         op = OrderProduct(
+#             order_id=order.id,
+#             product_id=product.id,
+#             order_quantity=str(item.quantity),
+#             unit_price=price,
+#             subtotal=subtotal,
+#             admin_commission=0.00,
+#         )
+#         order_products.append(op)
+
+#     session.add_all(order_products)
+#     session.commit()
+
+#     # ✅ 7. Return result
+#     products_data = [ProductRead.model_validate(p).model_dump() for p in products]
+#     return api_response(
+#         200,
+#         "Order created successfully",
+#         {
+#             "order_id": order.id,
+#             "tracking_number": tracking_number,
+#             "order_type": "offline" if not user else "user",
+#             "total": total,
+#             "items": len(order_products),
+#             "products": products_data,
+#         },
+#     )
+
 @router.post("/cartcreate")
 def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated = None):
     cart_items = request.cart or []
     shipping_address = request.shipping_address
+    
     # ✅ 1. Validate cart data
     if not isinstance(cart_items, list) or not cart_items:
         return api_response(400, "Cart cannot be empty")
@@ -248,7 +370,6 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
     product_ids = [
         item.product_id for item in cart_items if item.product_id and item.product_id
     ]
-    # cart_ids = [item.id for item in cart_items if item.id]
 
     if not product_ids:
         return api_response(400, "Each cart item must include a valid product ID")
@@ -281,19 +402,55 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
                 404, f"Cart item(s) not found for product(s): {missing}"
             )
 
-    # ✅ 4. Calculate totals
+    # ✅ 4. Calculate totals and validate variable products
     amount = 0.0
+    validation_errors = []
+    
     for item in cart_items:
         product = next((p for p in products if p.id == item.product_id), None)
         if not product:
+            validation_errors.append(f"Product {item.product_id} not found")
             continue
-        # use sale_price if > 0 else price
-        price = (
-            product.sale_price
-            if product.sale_price and product.sale_price > 0
-            else product.price
-        )
+            
+        # 🔥 NEW: Handle variable products
+        if item.variation_option_id:
+            variation = session.get(VariationOption, item.variation_option_id)
+            if not variation:
+                validation_errors.append(f"Variation option {item.variation_option_id} not found")
+                continue
+                
+            if variation.product_id != product.id:
+                validation_errors.append(f"Variation {item.variation_option_id} does not belong to product {product.id}")
+                continue
+                
+            # Check variation stock
+            if variation.quantity < item.quantity:
+                validation_errors.append(f"Insufficient stock for variation {variation.title}. Available: {variation.quantity}, Requested: {item.quantity}")
+                continue
+                
+            # Use variation price
+            price = (
+                variation.sale_price
+                if variation.sale_price and variation.sale_price > 0
+                else variation.price
+            )
+        else:
+            # Handle simple product
+            if product.quantity < item.quantity:
+                validation_errors.append(f"Insufficient stock for {product.name}. Available: {product.quantity}, Requested: {item.quantity}")
+                continue
+                
+            # Use product price
+            price = (
+                product.sale_price
+                if product.sale_price and product.sale_price > 0
+                else product.price
+            )
+            
         amount += price * item.quantity
+
+    if validation_errors:
+        return api_response(400, "Product validation failed", {"errors": validation_errors})
 
     total = amount  # add tax or discount later
 
@@ -316,35 +473,99 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
     session.add(order)
     session.flush()
 
-    # ✅ 6. Create order products
+    # ✅ 6. Create order products with variable product support
     order_products = []
     for item in cart_items:
         product = next((p for p in products if p.id == item.product_id), None)
         if not product:
             continue
 
-        price = (
-            product.sale_price
-            if product.sale_price and product.sale_price > 0
-            else product.price
-        )
-        subtotal = price * item.quantity
+        # 🔥 UPDATED: Determine product type and pricing
+        item_type = OrderItemType.VARIABLE if item.variation_option_id else OrderItemType.SIMPLE
+        
+        if item_type == OrderItemType.VARIABLE:
+            variation = session.get(VariationOption, item.variation_option_id)
+            price = (
+                variation.sale_price
+                if variation.sale_price and variation.sale_price > 0
+                else variation.price
+            )
+            variation_data = {
+                "id": variation.id,
+                "title": variation.title,
+                "options": variation.options,
+            } if variation else None
+        else:
+            price = (
+                product.sale_price
+                if product.sale_price and product.sale_price > 0
+                else product.price
+            )
+            variation_data = None
 
+        subtotal = price * item.quantity
+        
+        # 🔥 UPDATED: Create OrderProduct with variable product attributes
         op = OrderProduct(
             order_id=order.id,
             product_id=product.id,
+            variation_option_id=item.variation_option_id,  # NEW: Store variation option ID
             order_quantity=str(item.quantity),
             unit_price=price,
             subtotal=subtotal,
             admin_commission=0.00,
+            item_type=item_type,  # NEW: Set product type
+            variation_data=variation_data,  # NEW: Store variation attributes
+            shop_id=product.shop_id,  # NEW: Store shop ID
         )
         order_products.append(op)
 
     session.add_all(order_products)
+    
+    # 🔥 NEW: Update inventory for both simple and variable products
+    for item in cart_items:
+        product = next((p for p in products if p.id == item.product_id), None)
+        if not product:
+            continue
+            
+        if item.variation_option_id:
+            # Update variation inventory
+            variation = session.get(VariationOption, item.variation_option_id)
+            if variation:
+                variation.quantity -= item.quantity
+                if variation.quantity <= 0:
+                    variation.is_active = False
+                session.add(variation)
+                
+                # Update parent product total sold
+                product.total_sold_quantity += item.quantity
+        else:
+            # Update simple product inventory
+            product.quantity -= item.quantity
+            product.total_sold_quantity += item.quantity
+            if product.quantity <= 0:
+                product.in_stock = False
+                
+        session.add(product)
+
     session.commit()
 
     # ✅ 7. Return result
-    products_data = [ProductRead.model_validate(p).model_dump() for p in products]
+    products_data = []
+    for product in products:
+        product_data = ProductRead.model_validate(product).model_dump()
+        # 🔥 NEW: Include variation information in response if applicable
+        cart_item = next((item for item in cart_items if item.product_id == product.id), None)
+        if cart_item and cart_item.variation_option_id:
+            variation = session.get(VariationOption, cart_item.variation_option_id)
+            if variation:
+                product_data["selected_variation"] = {
+                    "id": variation.id,
+                    "title": variation.title,
+                    "options": variation.options,
+                }
+        products_data.append(product_data)
+        
     return api_response(
         200,
         "Order created successfully",
@@ -357,7 +578,6 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
             "products": products_data,
         },
     )
-
 
 @router.post("/create")
 def create(request: OrderCreate, session: GetSession):

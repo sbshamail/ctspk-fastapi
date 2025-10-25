@@ -181,7 +181,7 @@ class CartItem(SQLModel):
     id: int = None  # cart id
     quantity: int
     product_id: int
-
+    variation_option_id: Optional[int] = None  # ADDED for variable products
 
 class OrderCartCreate(SQLModel):
     cart: List[CartItem]
