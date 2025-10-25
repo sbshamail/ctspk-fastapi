@@ -97,6 +97,52 @@ def update_variations_for_product(
     return create_variations_for_product(session, product_id, variations_data, base_sku)
 
 
+# def get_product_with_enhanced_data(session, product_id: int):
+#     """Get product with enhanced data for variable products"""
+#     product = session.get(Product, product_id)
+#     if not product:
+#         return None
+
+#     # Calculate total quantity for variable products
+#     total_quantity = product.quantity
+#     variations_data = []
+
+#     if product.product_type == ProductType.VARIABLE:
+#         variations = session.exec(
+#             select(VariationOption).where(VariationOption.product_id == product_id)
+#         ).all()
+
+#         # Recalculate total quantity from variations
+#         variation_total_quantity = 0
+#         for variation in variations:
+#             variation_total_quantity += variation.quantity
+#             variations_data.append(variation)
+
+#         # Update total quantity
+#         total_quantity = variation_total_quantity
+
+#     # Calculate current stock value
+#     current_stock_value = None
+#     if product.purchase_price and product.quantity:
+#         current_stock_value = product.purchase_price * product.quantity
+
+#     # Convert to ProductRead with enhanced data
+#     product_data = ProductRead.model_validate(product)
+
+#     # Add enhanced data
+#     if hasattr(product_data, "variations"):
+#         product_data.variations = variations_data
+
+#     # Update quantities based on product type
+#     if product.product_type == ProductType.VARIABLE:
+#         product_data.total_quantity = total_quantity
+#         product_data.quantity = total_quantity
+
+#     # Add stock value
+#     product_data.current_stock_value = current_stock_value
+
+#     return product_data
+
 def get_product_with_enhanced_data(session, product_id: int):
     """Get product with enhanced data for variable products"""
     product = session.get(Product, product_id)
@@ -106,6 +152,7 @@ def get_product_with_enhanced_data(session, product_id: int):
     # Calculate total quantity for variable products
     total_quantity = product.quantity
     variations_data = []
+    variations_count = 0
 
     if product.product_type == ProductType.VARIABLE:
         variations = session.exec(
@@ -118,8 +165,9 @@ def get_product_with_enhanced_data(session, product_id: int):
             variation_total_quantity += variation.quantity
             variations_data.append(variation)
 
-        # Update total quantity
+        # Update total quantity and count
         total_quantity = variation_total_quantity
+        variations_count = len(variations)
 
     # Calculate current stock value
     current_stock_value = None
@@ -128,21 +176,13 @@ def get_product_with_enhanced_data(session, product_id: int):
 
     # Convert to ProductRead with enhanced data
     product_data = ProductRead.model_validate(product)
-
-    # Add enhanced data
-    if hasattr(product_data, "variations"):
-        product_data.variations = variations_data
-
-    # Update quantities based on product type
-    if product.product_type == ProductType.VARIABLE:
-        product_data.total_quantity = total_quantity
-        product_data.quantity = total_quantity
-
-    # Add stock value
+    
+    # Set the calculated values
+    product_data.total_quantity = total_quantity
+    product_data.variations_count = variations_count
     product_data.current_stock_value = current_stock_value
 
     return product_data
-
 
 # ✅ CREATE
 @router.post("/create")
