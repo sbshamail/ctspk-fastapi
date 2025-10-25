@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException
 from sqlalchemy import select
 from sqlmodel import col
 from src.api.core.utility import Print
@@ -18,13 +18,35 @@ def create_role(
     session: GetSession,
     user: requireSignin,
 ):
+    user_id = user.get("id")
+    
+    # Check if cart item already exists for this user and product
+    stmt = select(Cart).where(
+        Cart.user_id == user_id,
+        Cart.product_id == request.product_id
+    )
+    existing_cart = session.execute(stmt).scalar_one_or_none()
 
-    cart = Cart(**request.model_dump())
-    cart.user_id = user.get("id")
-    session.add(cart)
-    session.commit()
-    session.refresh(cart)
-    return api_response(200, "Cart Created Successfully", CartRead.model_validate(cart))
+    if existing_cart:
+        # Update quantity if item exists
+        existing_cart.quantity += request.quantity
+        session.add(existing_cart)
+        session.commit()
+        session.refresh(existing_cart)
+        return api_response(200, "Cart quantity updated", CartRead.model_validate(existing_cart))
+    else:
+        # Create new cart item - handle variation_option_id properly
+        cart_data = request.model_dump()
+        # If variation_option_id is not provided, set it to None explicitly
+        if cart_data.get('variation_option_id') is None:
+            cart_data['variation_option_id'] = None
+            
+        cart = Cart(**cart_data)
+        cart.user_id = user_id
+        session.add(cart)
+        session.commit()
+        session.refresh(cart)
+        return api_response(200, "Cart Created Successfully", CartRead.model_validate(cart))
 
 
 @router.post("/bulk-create", response_model=CartBulkResponse)
@@ -38,9 +60,9 @@ def bulk_create_cart_items(
     Example request body:
     {
         "items": [
-            {"product_id": 1, "shop_id": 1, "quantity": 2},
+            {"product_id": 1, "shop_id": 1, "quantity": 2, "variation_option_id": 1},
             {"product_id": 2, "shop_id": 1, "quantity": 1},
-            {"product_id": 3, "shop_id": 2, "quantity": 3}
+            {"product_id": 3, "shop_id": 2, "quantity": 3, "variation_option_id": 2}
         ]
     }
     """
@@ -49,26 +71,33 @@ def bulk_create_cart_items(
     failed_count = 0
     failed_items = []
 
+    # Get all existing cart items for this user to check for duplicates
+    stmt = select(Cart).where(Cart.user_id == user_id)
+    existing_carts = session.execute(stmt).scalars().all()
+    
+    existing_cart_dict = {cart.product_id: cart for cart in existing_carts}
+
     for item in request.items:
         try:
-            # Check if item already exists in cart
-            existing_cart = session.exec(
-                select(Cart)
-                .where(Cart.user_id == user_id)
-                .where(Cart.product_id == item.product_id)
-            ).first()
-
-            if existing_cart:
+            if item.product_id in existing_cart_dict:
                 # Update quantity if item exists
+                existing_cart = existing_cart_dict[item.product_id]
                 existing_cart.quantity += item.quantity
+                session.add(existing_cart)
                 success_count += 1
             else:
-                # Create new cart item
-                cart_item = Cart(
-                    **item.model_dump(),
-                    user_id=user_id
-                )
+                # Create new cart item - handle variation_option_id properly
+                cart_data = {
+                    "product_id": item.product_id,
+                    "shop_id": item.shop_id,
+                    "quantity": item.quantity,
+                    "variation_option_id": item.variation_option_id if item.variation_option_id is not None else None,
+                    "user_id": user_id
+                }
+                cart_item = Cart(**cart_data)
                 session.add(cart_item)
+                # Add to existing dict to prevent duplicates in same request
+                existing_cart_dict[item.product_id] = cart_item
                 success_count += 1
 
         except Exception as e:
@@ -81,10 +110,6 @@ def bulk_create_cart_items(
 
     try:
         session.commit()
-        
-        # Refresh successful items to get their IDs
-        if success_count > 0:
-            session.flush()
         
         message = f"Successfully processed {success_count} items"
         if failed_count > 0:
@@ -99,10 +124,19 @@ def bulk_create_cart_items(
 
     except Exception as e:
         session.rollback()
+        # Create detailed failed items list
+        detailed_failed_items = []
+        for item in request.items:
+            detailed_failed_items.append({
+                "product_id": item.product_id,
+                "shop_id": item.shop_id,
+                "error": f"Database error: {str(e)}"
+            })
+        
         return CartBulkResponse(
             success_count=0,
             failed_count=len(request.items),
-            failed_items=[{"error": f"Database error: {str(e)}"} for _ in request.items],
+            failed_items=detailed_failed_items,
             message="Failed to process bulk insert due to database error"
         )
 
@@ -115,23 +149,19 @@ def update_role(
     user: requireSignin,
 ):
     # ✅ Find cart using product_id + user_id
-    cart = (
-        session.exec(
-            select(Cart)
-            .where(Cart.product_id == product_id)
-            .where(Cart.user_id == user["id"])
-        )
-        .scalars()
-        .first()
+    stmt = select(Cart).where(
+        Cart.product_id == product_id,
+        Cart.user_id == user["id"]
     )
+    cart = session.execute(stmt).scalar_one_or_none()
 
     raiseExceptions((cart, 404, "Cart not found"))
 
-    updateOp(cart, request, session)
-
-    # Ensure min quantity = 1
-    if request.quantity is not None and request.quantity < 1:
-        request.quantity = 1
+    # Update the cart item
+    if request.quantity is not None:
+        cart.quantity = max(1, request.quantity)  # Ensure min quantity = 1
+    
+    session.add(cart)
     session.commit()
     session.refresh(cart)
     return api_response(200, "Cart Update Successfully", CartRead.model_validate(cart))
@@ -139,15 +169,12 @@ def update_role(
 
 @router.get("/read/{product_id}")
 def get_role(product_id: int, session: GetSession, user: requireSignin):
-    cart = (
-        session.exec(
-            select(Cart)
-            .where(Cart.product_id == product_id)
-            .where(Cart.user_id == user["id"])
-        )
-        .scalars()
-        .first()
+    stmt = select(Cart).where(
+        Cart.product_id == product_id,
+        Cart.user_id == user["id"]
     )
+    cart = session.execute(stmt).scalar_one_or_none()
+
     raiseExceptions((cart, 400, "Cart not found"))
 
     return api_response(200, "Cart Found", CartRead.model_validate(cart))
@@ -160,15 +187,12 @@ def delete_role(
     session: GetSession,
     user: requireSignin,
 ):
-    cart = (
-        session.exec(
-            select(Cart)
-            .where(Cart.product_id == product_id)
-            .where(Cart.user_id == user["id"])
-        )
-        .scalars()
-        .first()
+    stmt = select(Cart).where(
+        Cart.product_id == product_id,
+        Cart.user_id == user["id"]
     )
+    cart = session.execute(stmt).scalar_one_or_none()
+
     raiseExceptions((cart, 404, "Cart not found"))
 
     session.delete(cart)
@@ -191,20 +215,16 @@ def delete_many_cart_items(
         "product_ids": [1, 2, 3]
     }
     """
-    carts = (
-        session.exec(
-            select(Cart)
-            .where(Cart.user_id == user["id"])
-            .where(Cart.product_id.in_(product_ids))
-        )
-        .scalars()
-        .all()
+    stmt = select(Cart).where(
+        Cart.user_id == user["id"],
+        Cart.product_id.in_(product_ids)
     )
+    carts = session.execute(stmt).scalars().all()
 
     raiseExceptions((carts, 404, "No matching cart items found"))
 
-    for c in carts:
-        session.delete(c)
+    for cart in carts:
+        session.delete(cart)
     session.commit()
 
     return api_response(200, f"{len(carts)} cart items deleted successfully")
@@ -218,12 +238,13 @@ def delete_all_cart_items(
     """
     Delete all cart items for the logged-in user
     """
-    carts = session.exec(select(Cart).where(Cart.user_id == user["id"])).scalars().all()
+    stmt = select(Cart).where(Cart.user_id == user["id"])
+    carts = session.execute(stmt).scalars().all()
 
     raiseExceptions((carts, 404, "No cart items found"))
 
-    for c in carts:
-        session.delete(c)
+    for cart in carts:
+        session.delete(cart)
     session.commit()
 
     return api_response(200, "All cart items deleted successfully")
