@@ -411,6 +411,13 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         if not product:
             validation_errors.append(f"Product {item.product_id} not found")
             continue
+        
+        # 🔥 FIX: Convert quantity to float (to handle decimal quantities if needed)
+        try:
+            quantity = float(item.quantity)
+        except (ValueError, TypeError):
+            validation_errors.append(f"Invalid quantity for product {product.name}: {item.quantity}")
+            continue
             
         # 🔥 NEW: Handle variable products
         if item.variation_option_id:
@@ -424,30 +431,30 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
                 continue
                 
             # Check variation stock
-            if variation.quantity < item.quantity:
-                validation_errors.append(f"Insufficient stock for variation {variation.title}. Available: {variation.quantity}, Requested: {item.quantity}")
+            if variation.quantity < quantity:
+                validation_errors.append(f"Insufficient stock for variation {variation.title}. Available: {variation.quantity}, Requested: {quantity}")
                 continue
                 
-            # Use variation price
-            price = (
+            # 🔥 FIX: Convert variation price to float
+            price = float(
                 variation.sale_price
                 if variation.sale_price and variation.sale_price > 0
                 else variation.price
             )
         else:
             # Handle simple product
-            if product.quantity < item.quantity:
-                validation_errors.append(f"Insufficient stock for {product.name}. Available: {product.quantity}, Requested: {item.quantity}")
+            if product.quantity < quantity:
+                validation_errors.append(f"Insufficient stock for {product.name}. Available: {product.quantity}, Requested: {quantity}")
                 continue
                 
-            # Use product price
-            price = (
+            # 🔥 FIX: Convert product price to float
+            price = float(
                 product.sale_price
                 if product.sale_price and product.sale_price > 0
                 else product.price
             )
             
-        amount += price * item.quantity
+        amount += price * quantity  # 🔥 FIX: Now both are numeric
 
     if validation_errors:
         return api_response(400, "Product validation failed", {"errors": validation_errors})
@@ -480,12 +487,22 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         if not product:
             continue
 
+        # 🔥 FIX: Convert quantity to float
+        try:
+            quantity = float(item.quantity)
+        except (ValueError, TypeError):
+            continue
+
         # 🔥 UPDATED: Determine product type and pricing
         item_type = OrderItemType.VARIABLE if item.variation_option_id else OrderItemType.SIMPLE
         
         if item_type == OrderItemType.VARIABLE:
             variation = session.get(VariationOption, item.variation_option_id)
-            price = (
+            if not variation:
+                continue
+                
+            # 🔥 FIX: Convert variation price to float
+            price = float(
                 variation.sale_price
                 if variation.sale_price and variation.sale_price > 0
                 else variation.price
@@ -496,21 +513,22 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
                 "options": variation.options,
             } if variation else None
         else:
-            price = (
+            # 🔥 FIX: Convert product price to float
+            price = float(
                 product.sale_price
                 if product.sale_price and product.sale_price > 0
                 else product.price
             )
             variation_data = None
 
-        subtotal = price * item.quantity
+        subtotal = price * quantity
         
         # 🔥 UPDATED: Create OrderProduct with variable product attributes
         op = OrderProduct(
             order_id=order.id,
             product_id=product.id,
             variation_option_id=item.variation_option_id,  # NEW: Store variation option ID
-            order_quantity=str(item.quantity),
+            order_quantity=str(quantity),  # Store as string but use numeric for calculations
             unit_price=price,
             subtotal=subtotal,
             admin_commission=0.00,
@@ -527,22 +545,28 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         product = next((p for p in products if p.id == item.product_id), None)
         if not product:
             continue
+        
+        # 🔥 FIX: Convert quantity to float
+        try:
+            quantity = float(item.quantity)
+        except (ValueError, TypeError):
+            continue
             
         if item.variation_option_id:
             # Update variation inventory
             variation = session.get(VariationOption, item.variation_option_id)
             if variation:
-                variation.quantity -= item.quantity
+                variation.quantity -= quantity
                 if variation.quantity <= 0:
                     variation.is_active = False
                 session.add(variation)
                 
                 # Update parent product total sold
-                product.total_sold_quantity += item.quantity
+                product.total_sold_quantity += quantity
         else:
             # Update simple product inventory
-            product.quantity -= item.quantity
-            product.total_sold_quantity += item.quantity
+            product.quantity -= quantity
+            product.total_sold_quantity += quantity
             if product.quantity <= 0:
                 product.in_stock = False
                 
