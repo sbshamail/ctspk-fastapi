@@ -1,10 +1,11 @@
 from typing import List
 from fastapi import APIRouter, Body
 from sqlalchemy import select
+from sqlmodel import col
 from src.api.core.utility import Print
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.response import api_response, raiseExceptions
-from src.api.models.cart_model import Cart, CartCreate, CartRead, CartUpdate
+from src.api.models.cart_model import Cart, CartCreate, CartRead, CartUpdate, CartBulkCreate, CartBulkResponse
 from src.api.core.dependencies import GetSession, ListQueryParams, requireSignin
 
 
@@ -24,6 +25,86 @@ def create_role(
     session.commit()
     session.refresh(cart)
     return api_response(200, "Cart Created Successfully", CartRead.model_validate(cart))
+
+
+@router.post("/bulk-create", response_model=CartBulkResponse)
+def bulk_create_cart_items(
+    request: CartBulkCreate,
+    session: GetSession,
+    user: requireSignin,
+):
+    """
+    Bulk insert multiple cart items for the logged-in user
+    Example request body:
+    {
+        "items": [
+            {"product_id": 1, "shop_id": 1, "quantity": 2},
+            {"product_id": 2, "shop_id": 1, "quantity": 1},
+            {"product_id": 3, "shop_id": 2, "quantity": 3}
+        ]
+    }
+    """
+    user_id = user["id"]
+    success_count = 0
+    failed_count = 0
+    failed_items = []
+
+    for item in request.items:
+        try:
+            # Check if item already exists in cart
+            existing_cart = session.exec(
+                select(Cart)
+                .where(Cart.user_id == user_id)
+                .where(Cart.product_id == item.product_id)
+            ).first()
+
+            if existing_cart:
+                # Update quantity if item exists
+                existing_cart.quantity += item.quantity
+                success_count += 1
+            else:
+                # Create new cart item
+                cart_item = Cart(
+                    **item.model_dump(),
+                    user_id=user_id
+                )
+                session.add(cart_item)
+                success_count += 1
+
+        except Exception as e:
+            failed_count += 1
+            failed_items.append({
+                "product_id": item.product_id,
+                "shop_id": item.shop_id,
+                "error": str(e)
+            })
+
+    try:
+        session.commit()
+        
+        # Refresh successful items to get their IDs
+        if success_count > 0:
+            session.flush()
+        
+        message = f"Successfully processed {success_count} items"
+        if failed_count > 0:
+            message += f", {failed_count} items failed"
+
+        return CartBulkResponse(
+            success_count=success_count,
+            failed_count=failed_count,
+            failed_items=failed_items,
+            message=message
+        )
+
+    except Exception as e:
+        session.rollback()
+        return CartBulkResponse(
+            success_count=0,
+            failed_count=len(request.items),
+            failed_items=[{"error": f"Database error: {str(e)}"} for _ in request.items],
+            message="Failed to process bulk insert due to database error"
+        )
 
 
 @router.put("/update/{product_id}", response_model=CartRead)
