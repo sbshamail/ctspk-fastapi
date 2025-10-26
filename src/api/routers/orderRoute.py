@@ -309,7 +309,7 @@ def update_order_status_history(session, order_id: int, status_field: str):
 #         shipping_address=shipping_address,
 #         billing_address=shipping_address,  # same for now
 #         order_status="order-pending",
-#         payment_status="payment-pending",
+#         payment_status="payment-cash-on-delivery",
 #         language="en",
 #     )
 
@@ -462,7 +462,7 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
     total = amount  # add tax or discount later
 
     # ✅ 5. Build order fields
-    tracking_number = f"TRK-{uuid.uuid4().hex[:10].upper()}"
+    tracking_number = generate_tracking_number()
     order = Order(
         tracking_number=tracking_number,
         customer_id=user["id"] if user else None,
@@ -473,12 +473,15 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         shipping_address=shipping_address,
         billing_address=shipping_address,  # same for now
         order_status="order-pending",
-        payment_status="payment-pending",
+        payment_status="payment-cash-on-delivery",
         language="en",
     )
 
     session.add(order)
     session.flush()
+
+    # 🔥 NEW: Initialize total admin commission
+    total_admin_commission = Decimal("0.00")
 
     # ✅ 6. Create order products with variable product support
     order_products = []
@@ -496,6 +499,10 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         # 🔥 UPDATED: Determine product type and pricing
         item_type = OrderItemType.VARIABLE if item.variation_option_id else OrderItemType.SIMPLE
         
+        # 🔥 NEW: Create product and variation snapshots
+        product_snapshot = get_product_snapshot(session, product.id)
+        variation_snapshot = None
+        
         if item_type == OrderItemType.VARIABLE:
             variation = session.get(VariationOption, item.variation_option_id)
             if not variation:
@@ -507,6 +514,9 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
                 if variation.sale_price and variation.sale_price > 0
                 else variation.price
             )
+            
+            # 🔥 NEW: Create variation snapshot
+            variation_snapshot = get_variation_snapshot(session, item.variation_option_id)
             variation_data = {
                 "id": variation.id,
                 "title": variation.title,
@@ -523,54 +533,58 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
 
         subtotal = price * quantity
         
-        # 🔥 UPDATED: Create OrderProduct with variable product attributes
+        # 🔥 NEW: Calculate admin commission for this product
+        admin_commission = calculate_admin_commission(
+            session, product.id, price, str(quantity)
+        )
+        total_admin_commission += admin_commission
+        
+        # 🔥 UPDATED: Create OrderProduct with all new attributes
         op = OrderProduct(
             order_id=order.id,
             product_id=product.id,
-            variation_option_id=item.variation_option_id,  # NEW: Store variation option ID
-            order_quantity=str(quantity),  # Store as string but use numeric for calculations
+            variation_option_id=item.variation_option_id,
+            order_quantity=str(quantity),
             unit_price=price,
             subtotal=subtotal,
-            admin_commission=0.00,
-            item_type=item_type,  # NEW: Set product type
-            variation_data=variation_data,  # NEW: Store variation attributes
-            shop_id=product.shop_id,  # NEW: Store shop ID
+            admin_commission=admin_commission,  # 🔥 NEW: Store calculated commission
+            item_type=item_type,
+            variation_data=variation_data,
+            shop_id=product.shop_id,
+            product_snapshot=product_snapshot,  # 🔥 NEW: Store product snapshot
+            variation_snapshot=variation_snapshot,  # 🔥 NEW: Store variation snapshot
         )
         order_products.append(op)
 
     session.add_all(order_products)
     
-    # 🔥 NEW: Update inventory for both simple and variable products
+    # 🔥 NEW: Update order with total admin commission
+    order.admin_commission_amount = total_admin_commission
+    session.add(order)
+    
+    # 🔥 NEW: Create initial order status history
+    order_status = OrderStatus(order_id=order.id, order_pending_date=datetime.now())
+    session.add(order_status)
+    
+    # 🔥 NEW: Update inventory using the proper update_product_inventory function
     for item in cart_items:
         product = next((p for p in products if p.id == item.product_id), None)
         if not product:
             continue
         
-        # 🔥 FIX: Convert quantity to float
-        try:
-            quantity = float(item.quantity)
-        except (ValueError, TypeError):
-            continue
-            
-        if item.variation_option_id:
-            # Update variation inventory
-            variation = session.get(VariationOption, item.variation_option_id)
-            if variation:
-                variation.quantity -= quantity
-                if variation.quantity <= 0:
-                    variation.is_active = False
-                session.add(variation)
-                
-                # Update parent product total sold
-                product.total_sold_quantity += quantity
-        else:
-            # Update simple product inventory
-            product.quantity -= quantity
-            product.total_sold_quantity += quantity
-            if product.quantity <= 0:
-                product.in_stock = False
-                
-        session.add(product)
+        # Create OrderProductCreate object for inventory update
+        product_data = OrderProductCreate(
+            product_id=item.product_id,
+            variation_option_id=item.variation_option_id,
+            order_quantity=str(item.quantity),
+            unit_price=0.0,  # This will be set properly in the actual OrderProduct
+            subtotal=0.0,    # This will be set properly in the actual OrderProduct
+            item_type=OrderItemType.VARIABLE if item.variation_option_id else OrderItemType.SIMPLE,
+            shop_id=product.shop_id,
+        )
+        
+        # 🔥 NEW: Use the centralized update_product_inventory function
+        update_product_inventory(session, product_data, "deduct")
 
     session.commit()
 
