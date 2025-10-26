@@ -50,6 +50,7 @@ class BannerRead(TimeStampReadModel):
     slug: str
     image: Optional[Dict[str, Any]] = None
     is_active: bool
+    category_id: Optional[int] = None
     category: Optional[CategoryRead] = None
 
     class Config:
