@@ -159,37 +159,91 @@ def delete_user(
 
 
 # ✅ READ ALL
-@router.get("/list", response_model=list[UserRead])  # no response_model
+# @router.get("/list", response_model=list[UserRead])  # no response_model
+# def list_users(
+#     user: requireAdmin,
+#     session: GetSession,
+#     dateRange: Optional[
+#         str
+#     ] = None,  # JSON string like '["created_at", "01-01-2025", "01-12-2025"]'
+#     numberRange: Optional[str] = None,  # JSON string like '["amount", "0", "100000"]'
+#     searchTerm: str = None,
+#     columnFilters: Optional[str] = Query(
+#         None
+#     ),  # e.g. '[["name","car"],["description","product"]]'
+#     page: int = None,
+#     skip: int = 0,
+#     limit: int = Query(10, ge=1, le=200),
+# ):
+
+#     filters = {
+#         "searchTerm": searchTerm,
+#         "columnFilters": columnFilters,
+#         "dateRange": dateRange,
+#         "numberRange": numberRange,
+#         # "customFilters": customFilters,
+#     }
+
+#     searchFields = [
+#         "name",
+#         "email",
+#         "roles.name",
+#         "roles.slug"
+#     ]
+#     result = listop(
+#         session=session,
+#         Model=User,
+#         searchFields=searchFields,
+#         filters=filters,
+#         skip=skip,
+#         page=page,
+#         limit=limit,
+#     )
+#     if not result["data"]:
+#         return api_response(404, "No User found")
+#     data = [UserRead.model_validate(prod) for prod in result["data"]]
+
+#     return api_response(
+#         200,
+#         "User found",
+#         data,
+#         result["total"],
+#     )
+
+# ✅ READ ALL with Role Search and Filter
+@router.get("/list", response_model=list[UserRead])
 def list_users(
     user: requireAdmin,
     session: GetSession,
-    dateRange: Optional[
-        str
-    ] = None,  # JSON string like '["created_at", "01-01-2025", "01-12-2025"]'
-    numberRange: Optional[str] = None,  # JSON string like '["amount", "0", "100000"]'
+    dateRange: Optional[str] = None,
+    numberRange: Optional[str] = None,
     searchTerm: str = None,
-    columnFilters: Optional[str] = Query(
-        None
-    ),  # e.g. '[["name","car"],["description","product"]]'
+    columnFilters: Optional[str] = Query(None),
+    role: Optional[int] = Query(None, description="Filter by role ID"),  # Correct parameter name
     page: int = None,
     skip: int = 0,
     limit: int = Query(10, ge=1, le=200),
 ):
-
     filters = {
         "searchTerm": searchTerm,
         "columnFilters": columnFilters,
         "dateRange": dateRange,
         "numberRange": numberRange,
-        # "customFilters": customFilters,
     }
 
+    # Correct path through the relationship chain
     searchFields = [
         "name",
         "email",
-        "roles.name",
-        "roles.slug"
+        "user_roles.role.name",      # Correct path: User -> UserRole -> Role -> name
+        "user_roles.role.slug"       # Correct path: User -> UserRole -> Role -> slug
     ]
+    
+    # Add custom filter for role_id in the format expected by listop
+    if role is not None:
+        # Format as list of tuples: [(column_path, value)]
+        filters["customFilters"] = [("user_roles.role_id", role)]
+
     result = listop(
         session=session,
         Model=User,
@@ -199,8 +253,10 @@ def list_users(
         page=page,
         limit=limit,
     )
+    
     if not result["data"]:
         return api_response(404, "No User found")
+    
     data = [UserRead.model_validate(prod) for prod in result["data"]]
 
     return api_response(
