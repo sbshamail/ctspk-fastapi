@@ -105,7 +105,7 @@ def send_password_reset_confirmation(recipient_email: str, user_name: Optional[s
     Returns:
         bool: True if email sent successfully, False otherwise
     """
-    SMTP_SERVER = "smtp.gmail.com"
+    SMTP_SERVER = "mail.ghertak.com"
     SMTP_PORT = 587
     SENDER_EMAIL = os.getenv("SMTP_EMAIL")
     SENDER_PASSWORD = os.getenv("SMTP_PASSWORD")
