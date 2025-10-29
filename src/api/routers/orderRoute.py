@@ -616,6 +616,239 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
             "products": products_data,
         },
     )
+@router.post("/create-from-cart")
+def create_order_from_cart(
+    request: OrderCartCreate, 
+    session: GetSession, 
+    user: requireSignin
+):
+    """
+    Create order from user's cart items and clear cart after successful order creation
+    """
+    user_id = user.get("id")
+    shipping_address = request.shipping_address
+    
+    # ✅ 1. Validate required fields
+    if not shipping_address:
+        return api_response(400, "Shipping address is required")
+    
+    required_address_fields = ["name", "phone", "address", "city", "country"]
+    missing_fields = [field for field in required_address_fields if not shipping_address.get(field)]
+    if missing_fields:
+        return api_response(400, f"Missing required shipping address fields: {', '.join(missing_fields)}")
+    
+    # ✅ 2. Get user's cart items
+    cart_items = session.exec(
+        select(Cart).where(Cart.user_id == user_id)
+    ).all()
+    
+    if not cart_items:
+        return api_response(400, "Cart is empty")
+    
+    # ✅ 3. Validate cart items and prepare order products
+    product_ids = [item.product_id for item in cart_items]
+    products = session.exec(
+        select(Product).where(Product.id.in_(product_ids))
+    ).all()
+    
+    # Create product lookup dictionary
+    product_dict = {product.id: product for product in products}
+    
+    # ✅ 4. Validate all cart items and calculate totals
+    amount = 0.0
+    validation_errors = []
+    order_products_data = []
+    
+    for cart_item in cart_items:
+        product = product_dict.get(cart_item.product_id)
+        if not product:
+            validation_errors.append(f"Product {cart_item.product_id} not found")
+            continue
+        
+        if not product.is_active:
+            validation_errors.append(f"Product {product.name} is not active")
+            continue
+        
+        # Determine product type and validate availability
+        item_type = OrderItemType.VARIABLE if cart_item.variation_option_id else OrderItemType.SIMPLE
+        
+        try:
+            quantity = float(cart_item.quantity)
+        except (ValueError, TypeError):
+            validation_errors.append(f"Invalid quantity for product {product.name}: {cart_item.quantity}")
+            continue
+        
+        # Validate variable products
+        if item_type == OrderItemType.VARIABLE:
+            variation = session.get(VariationOption, cart_item.variation_option_id)
+            if not variation:
+                validation_errors.append(f"Variation option {cart_item.variation_option_id} not found")
+                continue
+            
+            if variation.product_id != product.id:
+                validation_errors.append(f"Variation {cart_item.variation_option_id} does not belong to product {product.id}")
+                continue
+            
+            # Check variation stock
+            if variation.quantity < quantity:
+                validation_errors.append(f"Insufficient stock for variation {variation.title}. Available: {variation.quantity}, Requested: {quantity}")
+                continue
+            
+            # Get variation price
+            price = float(
+                variation.sale_price
+                if variation.sale_price and variation.sale_price > 0
+                else variation.price
+            )
+            
+            variation_data = {
+                "id": variation.id,
+                "title": variation.title,
+                "options": variation.options,
+            }
+            
+        else:
+            # Validate simple product
+            if product.quantity < quantity:
+                validation_errors.append(f"Insufficient stock for {product.name}. Available: {product.quantity}, Requested: {quantity}")
+                continue
+            
+            # Get product price
+            price = float(
+                product.sale_price
+                if product.sale_price and product.sale_price > 0
+                else product.price
+            )
+            variation_data = None
+        
+        subtotal = price * quantity
+        amount += subtotal
+        
+        # Prepare order product data
+        order_product_data = OrderProductCreate(
+            product_id=product.id,
+            variation_option_id=cart_item.variation_option_id,
+            order_quantity=str(quantity),
+            unit_price=price,
+            subtotal=subtotal,
+            item_type=item_type,
+            variation_data=variation_data,
+            shop_id=product.shop_id,
+        )
+        order_products_data.append(order_product_data)
+    
+    if validation_errors:
+        return api_response(400, "Cart validation failed", {"errors": validation_errors})
+    
+    # ✅ 5. Create order
+    total = amount  # Can add tax, discount, delivery fee later
+    tracking_number = generate_tracking_number()
+    
+    order = Order(
+        tracking_number=tracking_number,
+        customer_id=user_id,
+        customer_contact=shipping_address.get("phone"),
+        customer_name=shipping_address.get("name"),
+        amount=amount,
+        total=total,
+        shipping_address=shipping_address,
+        billing_address=shipping_address,  # Same as shipping for now
+        order_status=OrderStatusEnum.PENDING.value,
+        payment_status=PaymentStatusEnum.PENDING.value,
+        language="en",
+    )
+    
+    session.add(order)
+    session.flush()
+    
+    # ✅ 6. Create order products with snapshots and commissions
+    total_admin_commission = Decimal("0.00")
+    created_order_products = []
+    
+    for product_data in order_products_data:
+        # Calculate admin commission
+        admin_commission = calculate_admin_commission(
+            session,
+            product_data.product_id,
+            product_data.unit_price,
+            product_data.order_quantity,
+        )
+        total_admin_commission += admin_commission
+        
+        # Create product snapshots
+        product_snapshot = get_product_snapshot(session, product_data.product_id)
+        variation_snapshot = None
+        if product_data.variation_option_id:
+            variation_snapshot = get_variation_snapshot(session, product_data.variation_option_id)
+        
+        # Create order product
+        order_product = OrderProduct(
+            **product_data.model_dump(),
+            order_id=order.id,
+            admin_commission=admin_commission,
+            product_snapshot=product_snapshot,
+            variation_snapshot=variation_snapshot,
+        )
+        session.add(order_product)
+        created_order_products.append(order_product)
+        
+        # Update inventory
+        update_product_inventory(session, product_data, "deduct")
+    
+    # ✅ 7. Update order with total admin commission
+    order.admin_commission_amount = total_admin_commission
+    session.add(order)
+    
+    # ✅ 8. Create initial order status history
+    order_status = OrderStatus(order_id=order.id, order_pending_date=datetime.now())
+    session.add(order_status)
+    
+    # ✅ 9. CLEAR USER'S CART after successful order creation
+    try:
+        # Delete all cart items for this user
+        delete_stmt = select(Cart).where(Cart.user_id == user_id)
+        user_cart_items = session.exec(delete_stmt).all()
+        
+        for cart_item in user_cart_items:
+            session.delete(cart_item)
+        
+        # Commit all changes (order creation + cart clearance)
+        session.commit()
+        
+    except Exception as e:
+        # Rollback if cart clearance fails
+        session.rollback()
+        return api_response(500, f"Order created but failed to clear cart: {str(e)}")
+    
+    # ✅ 10. Prepare response data
+    products_data = []
+    for product in products:
+        product_data = ProductRead.model_validate(product).model_dump()
+        # Include variation information if applicable
+        cart_item = next((item for item in cart_items if item.product_id == product.id), None)
+        if cart_item and cart_item.variation_option_id:
+            variation = session.get(VariationOption, cart_item.variation_option_id)
+            if variation:
+                product_data["selected_variation"] = {
+                    "id": variation.id,
+                    "title": variation.title,
+                    "options": variation.options,
+                }
+        products_data.append(product_data)
+    
+    return api_response(
+        201,
+        "Order created successfully from cart and cart cleared",
+        {
+            "order_id": order.id,
+            "tracking_number": tracking_number,
+            "total": total,
+            "items": len(created_order_products),
+            "products": products_data,
+            "cart_cleared": True,
+            "cart_items_removed": len(user_cart_items),
+        },
+    )
 
 @router.post("/create")
 def create(request: OrderCreate, session: GetSession):
