@@ -173,11 +173,11 @@ class ForgotPasswordRequest(SQLModel):
 
 class VerifyCodeRequest(SQLModel):
     email: EmailStr
-    verification_code: str = PydanticField(..., min_length=6, max_length=5)
+    verification_code: str = PydanticField(..., min_length=6, max_length=6)
 
 class ResetPasswordRequest(SQLModel):
     email: EmailStr
-    verification_code: str = PydanticField(..., min_length=6, max_length=5)
+    verification_code: str = PydanticField(..., min_length=6, max_length=6)
     new_password: str
     confirm_password: str
 

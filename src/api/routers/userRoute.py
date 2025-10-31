@@ -360,7 +360,10 @@ def verify_code(
             )
         )
     ).first()
-    
+    #,
+    #            User.password_reset_code_expires > datetime.datetime.now()
+    print(f"db_user:{db_user}")
+    print(f"date:{datetime.datetime.now()}")
     if not db_user:
         return api_response(400, "Invalid or expired verification code")
     
