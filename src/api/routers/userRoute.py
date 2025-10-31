@@ -312,7 +312,7 @@ def forgot_password(
         return api_response(200, "If the email exists, a verification code has been sent")
     
     # Generate 5-digit verification code
-    verification_code = str(random.randint(10000, 99999))
+    verification_code = str(random.randint(100000, 999999))
     
     # Set expiration time (15 minutes from now)
     expires_at = datetime.datetime.now() + datetime.timedelta(minutes=15)
