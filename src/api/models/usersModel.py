@@ -35,7 +35,7 @@ class User(TimeStampedModel, table=True):
     password: Optional[str] = None
     remember_token: Optional[str] = Field(default=None, max_length=100)
     is_active: bool = Field(default=True)
-    password_reset_code: Optional[str] = Field(default=None, max_length=5)
+    password_reset_code: Optional[str] = Field(default=None, max_length=6)
     password_reset_code_expires: Optional[datetime.datetime] = None
     # relationships
     user_roles: list["UserRole"] = Relationship(back_populates="user")
