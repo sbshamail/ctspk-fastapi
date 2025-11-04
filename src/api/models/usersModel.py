@@ -144,6 +144,9 @@ class LoginRequest(SQLModel):
     email: EmailStr
     password: str
 
+class ProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    phone_no: Optional[str] = None
 
 class UserUpdate(SQLModel):
     name: Optional[str] = None

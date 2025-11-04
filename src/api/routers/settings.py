@@ -3,6 +3,8 @@ from fastapi import APIRouter
 from sqlmodel import select
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.operation import listRecords, updateOp
+from src.api.models.shipping_model.shippingModel import Shipping, ShippingRead
+from src.api.models.taxModel import Tax, TaxRead
 from src.api.core.dependencies import (
     GetSession,
     ListQueryParams,
@@ -477,6 +479,53 @@ def get_setting_value(
         return api_response(404, f"Setting '{key}' not found")
 
     return api_response(200, f"Setting '{key}' retrieved successfully", value)
+
+@router.get("/taxinfo")
+def get_tax_value(
+    session: GetSession,
+    language: str = "en"
+):
+    # First get the settings to find the tax_class_id
+    statement = select(Settings).where(Settings.language == language)
+    settings = session.exec(statement).first()
+    print(f"settings:{settings}")
+    if not settings:
+        return api_response(404, f"Settings for language '{language}' not found")
+   
+    tax_class_id = settings.options.get("taxClass")
+    if tax_class_id is None:
+        return api_response(404, "Tax class ID not found in settings")
+
+    # Now get the tax object from tax model
+    tax = session.get(Tax, tax_class_id)
+    if not tax:
+        return api_response(404, f"Tax class with ID '{tax_class_id}' not found")
+
+    return api_response(200, "Tax class retrieved successfully", TaxRead.model_validate(tax))
+
+
+@router.get("/shippinginfo")
+def get_shipping_value(
+    session: GetSession,
+    language: str = "en"
+):
+    # First get the settings to find the shipping_class_id
+    statement = select(Settings).where(Settings.language == language)
+    settings = session.exec(statement).first()
+    
+    if not settings:
+        return api_response(404, f"Settings for language '{language}' not found")
+
+    shipping_class_id = settings.options.get("shippingClass")
+    if shipping_class_id is None:
+        return api_response(404, "Shipping class ID not found in settings")
+
+    # Now get the shipping object from shipping model
+    shipping = session.get(Shipping, shipping_class_id)
+    if not shipping:
+        return api_response(404, f"Shipping class with ID '{shipping_class_id}' not found")
+
+    return api_response(200, "Shipping class retrieved successfully", ShippingRead.model_validate(shipping))
 
 
 # ✅ BULK UPDATE SETTINGS (for React form)

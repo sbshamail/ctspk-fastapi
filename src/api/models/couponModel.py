@@ -1,11 +1,15 @@
 # src/api/models/couponModel.py
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any,TYPE_CHECKING
 from enum import Enum
 from datetime import datetime
 from sqlalchemy import Column, JSON
 from sqlmodel import SQLModel, Field, Relationship
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
+if TYPE_CHECKING:
+    from src.api.models import (
+        Order
+    )
 
 # --------------------------------------------------------------------
 # ENUM: Coupon Types
@@ -34,6 +38,7 @@ class Coupon(TimeStampedModel, table=True):
     expire_at: datetime = Field(default_factory=datetime.utcnow)
     deleted_at: Optional[datetime] = None
 
+    #orders: Optional["Order"] = Relationship(back_populates="coupon")
 
 # --------------------------------------------------------------------
 # CRUD SCHEMAS

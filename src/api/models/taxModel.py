@@ -1,12 +1,16 @@
 # tax_model.py
-from typing import Optional, Literal
+from typing import TYPE_CHECKING,Optional, Literal,List
 from datetime import datetime
 from sqlalchemy import Column, Enum
 from pydantic import field_validator
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field,Relationship
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 from enum import Enum as PyEnum
 
+if TYPE_CHECKING:
+    from src.api.models import (
+        Order
+    )
 
 class Tax(TimeStampedModel, table=True):
     __tablename__: Literal["tax_classes"] = "tax_classes"
@@ -22,6 +26,7 @@ class Tax(TimeStampedModel, table=True):
     priority: int = Field(default=1)
     on_shipping: bool = Field(default=False)
 
+    #orders: List["Order"] = Relationship(back_populates="tax")
 
 class TaxCreate(SQLModel):
     name: str

@@ -13,7 +13,7 @@ from src.api.core.security import hash_password
 from src.api.core import updateOp, requireSignin
 from src.api.core.dependencies import GetSession, requirePermission, requireAdmin
 from src.api.core.response import api_response, raiseExceptions
-from src.api.models.usersModel import UserCreate,RegisterUser, UpdateUserByAdmin, User, UserRead, UserUpdate,ChangePasswordRequest,ForgotPasswordRequest,VerifyCodeRequest,ResetPasswordRequest
+from src.api.models.usersModel import UserCreate,RegisterUser, UpdateUserByAdmin, User, UserRead, UserUpdate,ChangePasswordRequest,ForgotPasswordRequest,VerifyCodeRequest,ResetPasswordRequest,ProfileUpdate
 from src.api.models.role_model.roleModel import Role
 from src.api.models.role_model.userRoleModel import UserRole
 import random
@@ -87,6 +87,24 @@ def update_user(
     session.refresh(db_user)
     return api_response(200, "User Found", UserRead.model_validate(db_user))
 
+@router.put("/profile", response_model=UserRead)
+def update_profile(
+    user: requireSignin,
+    request: ProfileUpdate,
+    session: GetSession,
+):
+    user_id = user.get("id")
+    db_user = session.get(User, user_id)
+    raiseExceptions((db_user, 404, "User not found"))
+    
+    # Update only name and phone
+    update_data = request.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_user, field, value)
+    
+    session.commit()
+    session.refresh(db_user)
+    return api_response(200, "Profile updated successfully", UserRead.model_validate(db_user))
 
 @router.put("/updatebyadmin/{user_id}", response_model=UserRead)
 def update_user_by_admin(
@@ -315,7 +333,7 @@ def forgot_password(
     verification_code = str(random.randint(100000, 999999))
     
     # Set expiration time (15 minutes from now)
-    expires_at = datetime.datetime.now() + datetime.timedelta(minutes=15)
+    expires_at = datetime.datetime.now() + datetime.timedelta(minutes=300)
     print(f"verification_code:{verification_code}")
     print(f"expires_at:{expires_at}")
     
