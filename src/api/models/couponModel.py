@@ -38,7 +38,7 @@ class Coupon(TimeStampedModel, table=True):
     expire_at: datetime = Field(default_factory=datetime.utcnow)
     deleted_at: Optional[datetime] = None
 
-    #orders: Optional["Order"] = Relationship(back_populates="coupon")
+    orders: Optional["Order"] = Relationship(back_populates="coupon")
 
 # --------------------------------------------------------------------
 # CRUD SCHEMAS

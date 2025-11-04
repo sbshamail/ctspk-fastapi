@@ -26,7 +26,7 @@ class Tax(TimeStampedModel, table=True):
     priority: int = Field(default=1)
     on_shipping: bool = Field(default=False)
 
-    #orders: List["Order"] = Relationship(back_populates="tax")
+    orders: List["Order"] = Relationship(back_populates="tax")
 
 class TaxCreate(SQLModel):
     name: str

@@ -17,6 +17,9 @@ if TYPE_CHECKING:
         Review,
         ReturnItem,
         ReturnRequest,
+        Tax,
+        Shipping,
+        Coupon
     )
 
 
@@ -58,10 +61,10 @@ class Order(TimeStampedModel, table=True):
     customer_id: Optional[int] = Field(default=None, foreign_key="users.id")
     customer_contact: str = Field(max_length=191)
     customer_name: Optional[str] = Field(max_length=191, default=None)
-    amount: float = Field()
-    sales_tax: Optional[float] = Field(default=None)
-    paid_total: Optional[float] = Field(default=None)
-    total: Optional[float] = Field(default=None)
+    amount: float = Field()  # Subtotal before any discounts/taxes
+    sales_tax: Optional[float] = Field(default=None)  # Total sales tax
+    paid_total: Optional[float] = Field(default=None)  # Final amount paid
+    total: Optional[float] = Field(default=None)  # Final total after all calculations
     cancelled_amount: Decimal = Field(
         default=Decimal("0.00"), max_digits=10, decimal_places=2
     )
@@ -70,7 +73,8 @@ class Order(TimeStampedModel, table=True):
     )
     language: str = Field(default="en", max_length=191)
     coupon_id: Optional[int] = Field(default=None, foreign_key="coupons.id")
-    discount: Optional[float] = Field(default=None)
+    discount: Optional[float] = Field(default=None)  # Product discount total
+    coupon_discount: Optional[float] = Field(default=None)  # NEW: Coupon discount amount
     payment_gateway: Optional[str] = Field(default=None, max_length=191)
     shipping_address: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
     billing_address: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
@@ -82,6 +86,9 @@ class Order(TimeStampedModel, table=True):
 
     fullfillment_id: Optional[int] = Field(default=None, foreign_key="users.id")
     assign_date: Optional[datetime] = Field(default=None)
+    # NEW: Added tax_id and shipping_id foreign keys
+    tax_id: Optional[int] = Field(default=None, foreign_key="tax_classes.id")
+    shipping_id: Optional[int] = Field(default=None, foreign_key="shipping_classes.id")
 
     # relationships
     customer: Optional["User"] = Relationship(
@@ -106,7 +113,10 @@ class Order(TimeStampedModel, table=True):
         },
     )
     reviews: Optional["Review"] = Relationship(back_populates="order")
-
+    # NEW: Relationships for tax and shipping
+    tax: Optional["Tax"] = Relationship()
+    shipping: Optional["Shipping"] = Relationship()
+    coupon: Optional["Coupon"] = Relationship()
 
 class OrderProduct(TimeStampedModel, table=True):
     __tablename__: Literal["order_product"] = "order_product"
@@ -119,8 +129,6 @@ class OrderProduct(TimeStampedModel, table=True):
     )
     shop_id: Optional[int] = Field(default=None, foreign_key="shops.id")
     order_quantity: str = Field(max_length=191)
-    unit_price: float = Field()
-    subtotal: float = Field()
     admin_commission: Decimal = Field(
         default=Decimal("0.00"), max_digits=10, decimal_places=2
     )
@@ -135,6 +143,11 @@ class OrderProduct(TimeStampedModel, table=True):
     variation_snapshot: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
 
     deleted_at: Optional[datetime] = None
+    unit_price: float = Field()  # Original price
+    sale_price: Optional[float] = Field(default=None)  # NEW: Sale price at time of order
+    subtotal: float = Field()  # Final subtotal after product discount
+    item_discount: Optional[float] = Field(default=0.0)  # NEW: Discount for this item
+    item_tax: Optional[float] = Field(default=0.0)  # NEW: Tax for this item
 
     # relationships
     orders: "Order" = Relationship(back_populates="order_products")
@@ -182,11 +195,33 @@ class CartItem(SQLModel):
     quantity: int
     product_id: int
     variation_option_id: Optional[int] = None  # ADDED for variable products
-
+    
+# For /cartcreate route - expects cart items in request
 class OrderCartCreate(SQLModel):
+    customer_contact: Optional[str] = None
+    customer_name: Optional[str] = None
+    payment_gateway: Optional[str] = None
+    delivery_time: Optional[str] = None
     cart: List[CartItem]
     shipping_address: Optional[dict]
+    billing_address: Optional[Dict[str, Any]] = None
+    # NEW: Added tax_id, shipping_id, coupon_id for validation
+    tax_id: Optional[int] = None
+    shipping_id: Optional[int] = None
+    coupon_id: Optional[int] = None
 
+# For /create-from-cart route - gets cart items from cart table, no cart in request
+class OrderFromCartCreate(SQLModel):
+    shipping_address: Dict[str, Any]
+    billing_address: Optional[Dict[str, Any]] = None
+    payment_method: Optional[str] = None
+    shipping_id: Optional[int] = None
+    tax_id: Optional[int] = None
+    coupon_id: Optional[int] = None
+    customer_name: Optional[str] = None
+    customer_contact: Optional[str] = None
+    customer_id: Optional[int] = None
+    delivery_time: Optional[str] = None
 
 class OrderCreate(SQLModel):
     customer_id: Optional[int] = None
@@ -197,12 +232,17 @@ class OrderCreate(SQLModel):
     paid_total: Optional[float] = None
     total: Optional[float] = None
     discount: Optional[float] = None
+    coupon_discount: Optional[float] = None  # NEW: Coupon discount field
     payment_gateway: Optional[str] = None
     shipping_address: Optional[Dict[str, Any]] = None
     billing_address: Optional[Dict[str, Any]] = None
     logistics_provider: Optional[int] = None
     delivery_fee: Optional[float] = None
     delivery_time: Optional[str] = None
+    # NEW: Added required fields
+    tax_id: Optional[int] = None
+    shipping_id: Optional[int] = None
+    coupon_id: Optional[int] = None
     order_products: List[OrderProductCreate]
 
 
@@ -215,12 +255,17 @@ class OrderUpdate(SQLModel):
     paid_total: Optional[float] = None
     total: Optional[float] = None
     discount: Optional[float] = None
+    coupon_discount: Optional[float] = None  # NEW: Coupon discount field
     payment_gateway: Optional[str] = None
     shipping_address: Optional[Dict[str, Any]] = None
     billing_address: Optional[Dict[str, Any]] = None
     logistics_provider: Optional[int] = None
     delivery_fee: Optional[float] = None
     delivery_time: Optional[str] = None
+    # NEW: Added tax and shipping fields
+    tax_id: Optional[int] = None
+    shipping_id: Optional[int] = None
+    coupon_id: Optional[int] = None
     order_status: Optional[OrderStatusEnum] = None
     payment_status: Optional[PaymentStatusEnum] = None
     fullfillment_id: Optional[int] = None
@@ -246,7 +291,10 @@ class OrderProductRead(TimeStampReadModel):
     variation_option_id: Optional[int] = None
     order_quantity: str
     unit_price: float
+    sale_price: Optional[float] = None  # NEW: Sale price field
     subtotal: float
+    item_discount: Optional[float] = None  # NEW: Item discount field
+    item_tax: Optional[float] = None  # NEW: Item tax field
     admin_commission: Decimal
     item_type: OrderItemType
     variation_data: Optional[Dict[str, Any]] = None
@@ -272,12 +320,16 @@ class OrderRead(TimeStampReadModel):
     language: str
     coupon_id: Optional[int] = None
     discount: Optional[float] = None
+    coupon_discount: Optional[float] = None  # NEW: Coupon discount field
     payment_gateway: Optional[str] = None
     shipping_address: Optional[Dict[str, Any]] = None
     billing_address: Optional[Dict[str, Any]] = None
     logistics_provider: Optional[int] = None
     delivery_fee: Optional[float] = None
     delivery_time: Optional[str] = None
+    # NEW: Added tax and shipping fields
+    tax_id: Optional[int] = None
+    shipping_id: Optional[int] = None
     order_status: OrderStatusEnum
     payment_status: PaymentStatusEnum
     fullfillment_id: Optional[int] = None

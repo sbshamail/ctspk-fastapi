@@ -30,7 +30,7 @@ class Shipping(TimeStampedModel, table=True):
     type: Optional[ShippingType] = ShippingType.FIXED
 
     # 🔴 NEW: Relationship with orders
-    #orders: List["Order"] = Relationship(back_populates="shipping")
+    orders: List["Order"] = Relationship(back_populates="shipping")
 
 class ShippingCreate(SQLModel):
     name: str
