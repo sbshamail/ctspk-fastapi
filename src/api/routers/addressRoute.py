@@ -13,6 +13,7 @@ from src.api.models.addressModel import (
     AddressCreate,
     AddressUpdate,
     AddressRead,
+    Location,
 )
 
 router = APIRouter(prefix="/address", tags=["Address"])
@@ -26,7 +27,8 @@ def create_address(
     user=requirePermission("system:*"),
 ):
     print("📦 Incoming request:", request.model_dump())
-
+    
+    # Handle missing location by setting default values
     request_data = request.model_dump()
     if request_data.get('location') is None:
         request_data['location'] = {"lat": 0.0, "lng": 0.0}
@@ -50,17 +52,23 @@ def update_address(
 ):
     address = session.get(Address, id)
     raiseExceptions((address, 404, "Address not found"))
+
+    # Handle location update - only update if provided
     update_data = request.model_dump(exclude_unset=True)
     
     # If location is being set to None, handle it properly
     if 'location' in update_data and update_data['location'] is None:
         update_data['location'] = {"lat": 0.0, "lng": 0.0}
     
-    updated = updateOp(address, update_data, session)
+    # Manually update the address fields instead of using updateOp
+    for field, value in update_data.items():
+        if hasattr(address, field):
+            setattr(address, field, value)
+    
     session.commit()
-    session.refresh(updated)
+    session.refresh(address)
 
-    return api_response(200, "Address Updated Successfully", AddressRead.model_validate(updated))
+    return api_response(200, "Address Updated Successfully", AddressRead.model_validate(address))
 
 
 # ✅ READ (ID)
