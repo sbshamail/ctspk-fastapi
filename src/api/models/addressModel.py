@@ -21,9 +21,8 @@ class AddressDetail(BaseModel):
     country: Optional[str] = None
 
 class Location(BaseModel):
-    lat: float
-    lng: float
-
+    lat: Optional[float] = None  # Make optional
+    lng: Optional[float] = None  # Make optional
 # --------------------------------------------------------------------
 # SQLModel Table
 # --------------------------------------------------------------------
@@ -37,7 +36,7 @@ class Address(TimeStampedModel, table=True):
     is_default: bool = Field(default=False)
 
     address: AddressDetail = Field(sa_column=Column(JSON))
-    location: Optional[Location] = Field(sa_column=Column(JSON))
+    location: Optional[Location] = Field(default=None,sa_column=Column(JSON))
 
     customer_id: int = Field(foreign_key="users.id")
 
