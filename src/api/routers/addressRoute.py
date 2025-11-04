@@ -27,7 +27,11 @@ def create_address(
 ):
     print("📦 Incoming request:", request.model_dump())
 
-    address = Address(**request.model_dump())
+    request_data = request.model_dump()
+    if request_data.get('location') is None:
+        request_data['location'] = {"lat": 0.0, "lng": 0.0}
+    
+    address = Address(**request_data)
     session.add(address)
     session.commit()
     session.refresh(address)
@@ -46,8 +50,13 @@ def update_address(
 ):
     address = session.get(Address, id)
     raiseExceptions((address, 404, "Address not found"))
-
-    updated = updateOp(address, request, session)
+    update_data = request.model_dump(exclude_unset=True)
+    
+    # If location is being set to None, handle it properly
+    if 'location' in update_data and update_data['location'] is None:
+        update_data['location'] = {"lat": 0.0, "lng": 0.0}
+    
+    updated = updateOp(address, update_data, session)
     session.commit()
     session.refresh(updated)
 
