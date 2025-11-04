@@ -2,7 +2,7 @@
 import ast
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Query
-from sqlalchemy import select
+from sqlalchemy import select,func
 from src.api.models.cart_model.cartModel import Cart
 from src.api.core.utility import Print, uniqueSlugify
 from src.api.core.operation import listop, updateOp
@@ -181,13 +181,14 @@ def update_product_inventory(
                 else:
                     product.total_sold_quantity -= float(product_data.order_quantity)
 
-                # Recalculate total quantity from variations
-                variations = session.exec(
-                    select(VariationOption).where(
+                # FIXED: Recalculate total quantity from variations using scalar()
+                total_variation_quantity = session.scalar(
+                    select(func.sum(VariationOption.quantity)).where(
                         VariationOption.product_id == product_data.product_id
                     )
-                ).all()
-                product.quantity = sum(var.quantity for var in variations)
+                ) or 0
+                
+                product.quantity = total_variation_quantity
                 session.add(product)
 
             if variation.quantity <= 0:
