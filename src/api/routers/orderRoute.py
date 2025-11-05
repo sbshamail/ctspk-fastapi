@@ -3,11 +3,13 @@ import ast
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Query
 from sqlalchemy import select,func
+from sqlmodel import SQLModel, Field,Relationship
 from src.api.models.cart_model.cartModel import Cart
 from src.api.core.utility import Print, uniqueSlugify
 from src.api.core.operation import listop, updateOp
 from src.api.core.response import api_response, raiseExceptions
 from sqlalchemy.orm import selectinload, joinedload
+
 from src.api.models.order_model.orderModel import (
     Order,
     OrderCartCreate,
@@ -42,6 +44,18 @@ from src.api.core.dependencies import (
 from datetime import datetime, timezone
 import uuid
 from decimal import Decimal
+# Add this cancellation request model to your orderModel.py
+class OrderCancelRequest(SQLModel):
+    reason: Optional[str] = Field(default=None, max_length=500)
+    notify_customer: bool = Field(default=True)
+
+class OrderCancelResponse(SQLModel):
+    message: str
+    order_id: int
+    status: str
+    products_restocked: bool
+    cancelled_at: datetime
+    cancelled_by: Optional[int] = None
 
 router = APIRouter(prefix="/order", tags=["Order"])
 
@@ -231,14 +245,28 @@ def calculate_admin_commission(
 
 def update_order_status_history(session, order_id: int, status_field: str):
     """Update order status history when order status changes"""
+    # Get the OrderStatus record properly
     order_status = session.exec(
         select(OrderStatus).where(OrderStatus.order_id == order_id)
     ).first()
+    
+    # Handle Row object if returned
+    if order_status and hasattr(order_status, '_mapping'):
+        order_status = order_status._mapping.get('OrderStatus') or order_status._mapping.get(OrderStatus)
+        if not order_status:
+            # Try to find OrderStatus in mapping values
+            for value in order_status._mapping.values():
+                if isinstance(value, OrderStatus):
+                    order_status = value
+                    break
 
     if not order_status:
+        # Create new order status record if it doesn't exist
         order_status = OrderStatus(order_id=order_id)
         session.add(order_status)
+        session.flush()  # Flush to get the ID
 
+    # Now set the attribute on the model instance
     setattr(order_status, status_field, datetime.now())
     session.add(order_status)
 
@@ -1794,6 +1822,360 @@ def get_sales_report(
     except Exception as e:
         return api_response(500, f"Error generating sales report: {str(e)}")
 
+
+# Add this endpoint to check cancellation eligibility
+# Enhanced version with admin-only cancellation for specific scenarios
+@router.get("/{order_id}/cancellation-eligibility")
+def check_cancellation_eligibility(
+    order_id: int,
+    session: GetSession,
+    user: requireSignin = None  # Changed from isAuthenticated to requireSignin
+):
+    """Check if the current user can cancel this order"""
+    Print(f"🔐 User : {user}")
+    user_data = user.get("user") if user else None
+    
+    Print(f"🔐 User data: {user_data}")
+    
+    order = session.get(Order, order_id)
+    if not order:
+        return api_response(404, "Order not found")
+    
+    Print(f"📦 Order: {order.tracking_number}, Customer ID: {order.customer_id}, Status: {order.order_status}")
+    
+    eligibility = get_order_cancellation_eligibility(order, user)  # Pass user_data instead of user
+    
+    
+    
+    return api_response(
+        200,
+        "Cancellation eligibility checked",
+        eligibility
+    )
+
+# Add this route to your orderRoute.py after the existing routes
+@router.post("/{order_id}/cancel", response_model=OrderCancelResponse)
+def cancel_order(
+    order_id: int,
+    session: GetSession,
+    request: Optional[OrderCancelRequest] = None,    
+    user: requireSignin = None
+):
+    """
+    Cancel an order and return products to stock with proper authorization
+    """
+    
+    # Extract user data from the nested structure
+    user_data = user.get("user") if user else None
+    user_id = user_data.get("id") if user_data else None
+    is_admin = user_data.get("is_root", False) if user_data else False
+    
+    Print(f"🔐 User data: {user_data}")
+    Print(f"🔐 User ID: {user_id}, Is Admin: {is_admin}")
+    
+    # Get the order using scalar() - simpler approach
+    order = session.scalar(
+        select(Order)
+        .options(selectinload(Order.order_products))
+        .where(Order.id == order_id)
+    )
+    
+    if not order:
+        return api_response(404, "Order not found")
+    
+    # Check if order is already cancelled
+    if order.order_status == OrderStatusEnum.CANCELLED:
+        return api_response(400, "Order is already cancelled")
+    
+    # Check if order can be cancelled (only pending/processing orders)
+    non_cancellable_statuses = [
+        OrderStatusEnum.COMPLETED,
+        OrderStatusEnum.REFUNDED,
+        OrderStatusEnum.FAILED
+    ]
+    
+    if order.order_status in non_cancellable_statuses:
+        return api_response(400, f"Cannot cancel order with status: {order.order_status}")
+    
+    # Authorization check
+    is_guest_order = order.customer_id is None
+    
+    Print(f"🔐 Authorization check - User ID: {user_id}, Is Admin: {is_admin}, Guest Order: {is_guest_order}, Order Customer ID: {order.customer_id}")
+    
+    if is_guest_order:
+        # Guest order - only admin can cancel
+        if not user_data or not is_admin:
+            return api_response(403, "Only admin can cancel guest orders")
+        Print("✅ Admin cancelling guest order")
+    else:
+        # User order - only the order owner or admin can cancel
+        if user_id != order.customer_id and not is_admin:
+            return api_response(403, "You can only cancel your own orders")
+        Print(f"✅ {'Admin' if is_admin else 'User'} cancelling {'their own' if user_id == order.customer_id else 'user'} order")
+    
+    try:
+        # Start transaction
+        Print(f"🔄 Starting cancellation process for order {order_id}")
+        
+        # 1. Restore inventory for all order products
+        products_restocked = return_products_to_stock(session, order)
+        
+        # 2. Update order status
+        order.order_status = OrderStatusEnum.CANCELLED
+        order.payment_status = PaymentStatusEnum.REVERSAL
+        
+        # 3. Update cancelled amount if needed
+        if order.paid_total and order.paid_total > 0:
+            order.cancelled_amount = Decimal(str(order.paid_total))
+        
+        # 4. Update order status history
+        update_order_status_history(session, order.id, "order_cancelled_date")
+        
+        # 5. Update shop earnings if order was completed (reverse earnings)
+        reverse_shop_earnings(session, order)
+        
+        session.add(order)
+        session.commit()
+        session.refresh(order)
+        
+        Print(f"✅ Order {order_id} cancelled successfully")
+        
+        return OrderCancelResponse(
+            message="Order cancelled successfully",
+            order_id=order_id,
+            status="cancelled",
+            products_restocked=products_restocked,
+            cancelled_at=datetime.now(),
+            cancelled_by=user_id
+        )
+        
+    except Exception as e:
+        session.rollback()
+        Print(f"❌ Error cancelling order {order_id}: {str(e)}")
+        import traceback
+        Print(f"📋 Traceback: {traceback.format_exc()}")
+        return api_response(500, f"Failed to cancel order: {str(e)}")
+
+        
+
+def return_products_to_stock(session: GetSession, order: Order) -> bool:
+    """Return all products in order back to stock"""
+    Print(f"📦 Restoring inventory for {len(order.order_products)} products")
+    
+    products_restocked = False
+    
+    for order_product in order.order_products:
+        try:
+            quantity = float(order_product.order_quantity)
+            Print(f"  🔄 Processing product {order_product.product_id}, quantity: {quantity}")
+            
+            if order_product.item_type == OrderItemType.SIMPLE:
+                # Handle simple product
+                product = session.get(Product, order_product.product_id)
+                if product:
+                    product.quantity += quantity
+                    
+                    # Update sales tracking
+                    product.total_sold_quantity = max(0, product.total_sold_quantity - quantity)
+                    
+                    if product.quantity > 0:
+                        product.in_stock = True
+                    
+                    session.add(product)
+                    Print(f"    ✅ Restored {quantity} units to simple product {product.name}")
+                    products_restocked = True
+            
+            elif order_product.item_type == OrderItemType.VARIABLE and order_product.variation_option_id:
+                # Handle variable product
+                variation = session.get(VariationOption, order_product.variation_option_id)
+                if variation:
+                    # Restore variation stock
+                    variation.quantity += quantity
+                    
+                    # Update parent product quantity and sales tracking
+                    product = session.get(Product, order_product.product_id)
+                    if product:
+                        product.total_sold_quantity = max(0, product.total_sold_quantity - quantity)
+                        
+                        # Recalculate total quantity from variations
+                        total_variation_quantity = session.scalar(
+                            select(func.sum(VariationOption.quantity)).where(
+                                VariationOption.product_id == order_product.product_id
+                            )
+                        ) or 0
+                        
+                        product.quantity = total_variation_quantity
+                        session.add(product)
+                    
+                    if variation.quantity > 0:
+                        variation.is_active = True
+                    
+                    session.add(variation)
+                    Print(f"    ✅ Restored {quantity} units to variation {variation.title}")
+                    products_restocked = True
+                    
+        except (ValueError, TypeError) as e:
+            Print(f"    ❌ Error processing product {order_product.product_id}: {str(e)}")
+            continue
+        except Exception as e:
+            Print(f"    ❌ Unexpected error with product {order_product.product_id}: {str(e)}")
+            continue
+    
+    return products_restocked
+
+def reverse_shop_earnings(session: GetSession, order: Order):
+    """Reverse shop earnings if order was completed before cancellation"""
+    Print(f"💰 Reversing shop earnings for order {order.id}")
+    
+    # Find and delete shop earnings for this order
+    shop_earnings = session.exec(
+        select(ShopEarning).where(ShopEarning.order_id == order.id)
+    ).all()
+    
+    for earning in shop_earnings:
+        session.delete(earning)
+        Print(f"    ✅ Reversed shop earning for shop {earning.shop_id}")
+    
+    return len(shop_earnings) > 0
+
+
+
+# Update the admin cancel route (already using requirePermission which should be fine)
+@router.get("/{order_id}/cancellation-eligibility")
+def check_cancellation_eligibility(
+    order_id: int,
+    session: GetSession,
+    user: requireSignin = None
+):
+    """Check if the current user can cancel this order"""
+    
+    # Extract user data from the nested structure
+    user_data = user.get("user") if user else None
+    
+    Print(f"🔐 User data: {user_data}")
+    
+    order = session.get(Order, order_id)
+    if not order:
+        return api_response(404, "Order not found")
+    
+    Print(f"📦 Order: {order.tracking_number}, Customer ID: {order.customer_id}, Status: {order.order_status}")
+    
+    eligibility = get_order_cancellation_eligibility(order, user_data)  # Pass user_data instead of user
+    
+    return api_response(
+        200,
+        "Cancellation eligibility checked",
+        eligibility
+    )
+
+@router.post("/{order_id}/admin-cancel", response_model=OrderCancelResponse)
+def admin_cancel_order(
+    order_id: int,
+    request: OrderCancelRequest,
+    session: GetSession,
+    user = requirePermission("order-cancel")
+):
+    """
+    Admin-only cancellation with additional controls
+    """
+    
+    # Extract user data from the nested structure
+    user_data = user.get("user") if user else None
+    user_id = user_data.get("id") if user_data else None
+    is_admin = user_data.get("is_root", False) if user_data else False
+    
+    Print(f"🔐 Admin user data: {user_data}")
+    
+    # Get the order
+    order = session.scalar(
+        select(Order)
+        .options(selectinload(Order.order_products))
+        .where(Order.id == order_id)
+    )
+    
+    if not order:
+        return api_response(404, "Order not found")
+    
+    if order.order_status == OrderStatusEnum.CANCELLED:
+        return api_response(400, "Order is already cancelled")
+    
+    Print(f"🔐 Admin cancellation by user {user_id} for order {order_id}")
+    Print(f"📝 Cancellation reason: {request.reason}")
+    
+    try:
+        # Restore inventory
+        products_restocked = return_products_to_stock(session, order)
+        
+        # Update order status
+        order.order_status = OrderStatusEnum.CANCELLED
+        order.payment_status = PaymentStatusEnum.REVERSAL
+        
+        # Store cancellation reason
+        if request.reason:
+            Print(f"💾 Storing cancellation reason: {request.reason}")
+        
+        # Update order status history
+        update_order_status_history(session, order.id, "order_cancelled_date")
+        
+        # Reverse shop earnings
+        reverse_shop_earnings(session, order)
+        
+        session.add(order)
+        session.commit()
+        
+        return OrderCancelResponse(
+            message=f"Order cancelled by admin. Reason: {request.reason or 'Not specified'}",
+            order_id=order_id,
+            status="cancelled",
+            products_restocked=products_restocked,
+            cancelled_at=datetime.now(),
+            cancelled_by=user_id
+        )
+        
+    except Exception as e:
+        session.rollback()
+        Print(f"❌ Admin cancellation failed: {str(e)}")
+        return api_response(500, f"Admin cancellation failed: {str(e)}")       
+
+
+def get_order_cancellation_eligibility(order: Order, user_data: Optional[Dict]) -> Dict[str, Any]:
+    """
+    Check if order can be cancelled by current user
+    Returns eligibility information
+    """
+    print(f"user_data:{user_data}")
+    is_guest_order = order.customer_id is None
+    user_id = user_data.get("id") if user_data else None
+    is_admin = user_data.get("is_root", False) if user_data else False
+    
+    Print(f"🔐 Eligibility check - User ID: {user_id}, Is Admin: {is_admin}, Order Customer ID: {order.customer_id}")
+    
+    # Basic eligibility
+    can_cancel = False
+    reason = ""
+    
+    if order.order_status == OrderStatusEnum.CANCELLED:
+        reason = "Order is already cancelled"
+    elif order.order_status in [OrderStatusEnum.COMPLETED, OrderStatusEnum.REFUNDED]:
+        reason = f"Cannot cancel order with status: {order.order_status}"
+    elif is_guest_order:
+        can_cancel = is_admin
+        reason = "Guest orders can only be cancelled by admin" if not is_admin else "Admin can cancel guest orders"
+    else:
+        can_cancel = (user_id == order.customer_id) or is_admin
+        reason = "You can only cancel your own orders" if not can_cancel else "Eligible for cancellation"
+    
+    return {
+        "can_cancel": can_cancel,
+        "reason": reason,
+        "is_guest_order": is_guest_order,
+        "requires_admin": is_guest_order,
+        "current_user_is_owner": user_id == order.customer_id,
+        "current_user_is_admin": is_admin,
+        "order_status": order.order_status,
+        "order_customer_id": order.customer_id,
+        "current_user_id": user_id
+    }
 
 def create_shop_earning(session, order: Order):
     """Create shop earning records when order is completed - UPDATED for multi-shop orders"""

@@ -130,7 +130,7 @@ class UserReadBase(TimeStampReadModel):
     phone_no: str
     email: EmailStr
     is_active: bool
-
+    is_root: bool
 
 class UserRead(UserReadBase):
     roles: List[RoleRead] = None

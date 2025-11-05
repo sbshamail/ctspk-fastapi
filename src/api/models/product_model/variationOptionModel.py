@@ -18,7 +18,7 @@ class VariationOption(TimeStampedModel, table=True):
     sale_price: Optional[str] = Field(max_length=191)
     purchase_price: Optional[float] = None
     language: str = Field(default="en", max_length=191)
-    quantity: int
+    quantity: int = Field(default=0)
     is_disable: bool = Field(default=False)
     sku: Optional[str] = Field(max_length=191)
     bar_code: Optional[str] = Field(max_length=250)  # ADDED: Barcode for variations
