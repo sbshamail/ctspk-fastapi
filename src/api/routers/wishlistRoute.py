@@ -22,14 +22,15 @@ router = APIRouter(prefix="/wishlist", tags=["Wishlist"])
 def add_to_wishlist(
     request: WishlistCreate,
     session: GetSession,
-    user=requireSignin,
+    user:requireSignin,  # This provides the authenticated user
 ):
     print("❤️ Adding to wishlist:", request.model_dump())
+    print(f"👤 Authenticated user ID: {user.get("id")}")
 
     # Check if item already exists in wishlist
     existing_item = session.exec(
         select(Wishlist).where(
-            Wishlist.user_id == request.user_id,
+            Wishlist.user_id == user.get("id"),  # Use user.id from requireSignin
             Wishlist.product_id == request.product_id,
             Wishlist.variation_option_id == request.variation_option_id
         )
@@ -38,7 +39,11 @@ def add_to_wishlist(
     if existing_item:
         return api_response(400, "Item already exists in wishlist")
 
-    wishlist_item = Wishlist(**request.model_dump())
+    # Create wishlist item with user_id from authenticated user
+    wishlist_data = request.model_dump()
+    wishlist_data["user_id"] = user.get("id")  # Override with authenticated user ID
+    
+    wishlist_item = Wishlist(**wishlist_data)
     session.add(wishlist_item)
     session.commit()
     session.refresh(wishlist_item)

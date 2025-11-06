@@ -24,7 +24,7 @@ class Wishlist(TimeStampedModel, table=True):
     variation_option: Optional["VariationOption"] = Relationship(back_populates="wishlists")
     
 class WishlistCreate(SQLModel):
-    user_id: int
+   # user_id: int
     product_id: int
     variation_option_id: Optional[int] = None
 
