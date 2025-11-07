@@ -82,7 +82,7 @@ async def upload_images(
                 continue
             
             # Check if file already exists on disk
-            target_folder = os.path.join(MEDIA_DIR, user["email"])
+            target_folder = os.path.join(MEDIA_DIR, str(user["id"]))
             os.makedirs(target_folder, exist_ok=True)
             file_path = os.path.join(target_folder, sanitized_filename)
             
@@ -253,7 +253,7 @@ async def get_image(user: requireSignin, filename: str):
     sanitized_filename = sanitize_filename(filename)
     
     # build the user folder path
-    safe_email = user["email"]
+    safe_email = str(user["id"])
     user_dir = os.path.join(MEDIA_DIR, safe_email)
 
     file_path = os.path.join(user_dir, sanitized_filename)
@@ -285,7 +285,7 @@ class FilenameList(BaseModel):
 
 @router.post("/get-multiple")
 async def get_multiple_images(user: requireSignin, data: FilenameList):
-    user_dir = os.path.join(MEDIA_DIR, user["email"])
+    user_dir = os.path.join(MEDIA_DIR, str(user["id"]))
     results = []
 
     for filename in data.filenames:
@@ -394,7 +394,7 @@ async def delete_by_ids(
     deleted = delete_media_items(
         session=session,
         user_id=user["id"],
-        user_email=user["email"],
+        user_email=str(user["id"]),
         ids=ids,
     )
 
@@ -424,7 +424,7 @@ async def delete_by_filenames(
     deleted = delete_media_items(
         session=session,
         user_id=user["id"],
-        user_email=user["email"],
+        user_email=str(user["id"]),
         filenames=filenames,
     )
     if not deleted:

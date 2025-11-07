@@ -1833,9 +1833,9 @@ def check_cancellation_eligibility(
 ):
     """Check if the current user can cancel this order"""
     Print(f"🔐 User : {user}")
-    user_data = user.get("user") if user else None
+    #user_data = user.get("user") if user else None
     
-    Print(f"🔐 User data: {user_data}")
+    #Print(f"🔐 User data: {user_data}")
     
     order = session.get(Order, order_id)
     if not order:
@@ -1867,10 +1867,10 @@ def cancel_order(
     
     # Extract user data from the nested structure
     user_data = user.get("user") if user else None
-    user_id = user_data.get("id") if user_data else None
-    is_admin = user_data.get("is_root", False) if user_data else False
+    user_id = user.get("id") if user else None
+    is_admin = user.get("is_root", False) if user else False
     
-    Print(f"🔐 User data: {user_data}")
+    Print(f"🔐 User data: {user}")
     Print(f"🔐 User ID: {user_id}, Is Admin: {is_admin}")
     
     # Get the order using scalar() - simpler approach
