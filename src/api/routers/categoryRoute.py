@@ -191,7 +191,7 @@ def delete_category_tree(session, category_id: int):
 def deleteMany(
     id: int,
     session: GetSession,
-    user=requirePermission("category-delete"),
+    user=requirePermission("system:*"),
 ):
     category = session.get(Category, id)
     raiseExceptions((category, 404, "category not found"))
@@ -205,17 +205,15 @@ def deleteMany(
 
 
 # ✅ LIST
+# ✅ LIST
 @router.get("/list", response_model=list[CategoryReadNested])
 def list(
     session: GetSession,
-    dateRange: Optional[
-        str
-    ] = None,  # JSON string like '["created_at", "01-01-2025", "01-12-2025"]'
-    numberRange: Optional[str] = None,  # JSON string like '["amount", "0", "100000"]'
+    dateRange: Optional[str] = None,
+    numberRange: Optional[str] = None,
     searchTerm: str = None,
-    columnFilters: Optional[str] = Query(
-        None
-    ),  # e.g. '[["name","car"],["description","product"]]'
+    columnFilters: Optional[str] = Query(None),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
     page: int = None,
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
@@ -226,11 +224,31 @@ def list(
         "columnFilters": columnFilters,
         "dateRange": dateRange,
         "numberRange": numberRange,
-        # "customFilters": customFilters,
     }
-    searchFields = [
-        "name",
-    ]
+    searchFields = ["name"]
+
+    # ✅ DEBUG: Print the is_active value
+    print(f"DEBUG: is_active filter value = {is_active}")
+    
+    # Check if listop supports custom_filters by looking at its function signature
+    # Let's try a different approach - modify the columnFilters to include is_active
+    
+    if is_active is not None:
+        # Convert is_active to string for columnFilters
+        is_active_str = "true" if is_active else "false"
+        if columnFilters:
+            try:
+                # Parse existing columnFilters and add is_active
+                existing_filters = ast.literal_eval(columnFilters)
+                existing_filters.append(["is_active", is_active_str])
+                filters["columnFilters"] = str(existing_filters)
+            except:
+                # If parsing fails, create new filter
+                filters["columnFilters"] = f'[["is_active", "{is_active_str}"]]'
+        else:
+            filters["columnFilters"] = f'[["is_active", "{is_active_str}"]]'
+    
+    print(f"DEBUG: Final filters = {filters}")
 
     result = listop(
         session=session,
@@ -242,6 +260,14 @@ def list(
         limit=limit,
         join_options=[selectinload(Category.children)],
     )
+    
+    # ✅ DEBUG: Check what results we got
+    print(f"DEBUG: Found {len(result['data']) if result['data'] else 0} categories")
+    if result['data']:
+        for cat in result['data']:
+            print(f"DEBUG: Category '{cat.name}' - is_active: {cat.is_active}")
+
+    # ... rest of your code
     if not result["data"]:
         return api_response(404, "No products found")
 
