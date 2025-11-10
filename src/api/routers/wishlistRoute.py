@@ -197,6 +197,7 @@ def get_wishlist_items_with_products(session, query_params, user_id=None):
                     sale_price=product.sale_price,
                     image=product.image,
                     in_stock=product.in_stock,
+                    shop_id=product.shop_id,
                     slug=product.slug
                 )
             )
