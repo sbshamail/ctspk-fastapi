@@ -54,6 +54,7 @@ class CartRead(CartBase, TimeStampReadModel):
 
 
 class CartBulkResponse(BaseModel):
+    success:int
     success_count: int
     failed_count: int
     failed_items: List[dict]

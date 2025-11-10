@@ -116,6 +116,7 @@ def bulk_create_cart_items(
             message += f", {failed_count} items failed"
 
         return CartBulkResponse(
+            success = 1 if success_count > 0 else 0,
             success_count=success_count,
             failed_count=failed_count,
             failed_items=failed_items,
@@ -134,6 +135,7 @@ def bulk_create_cart_items(
             })
         
         return CartBulkResponse(
+            success =  0,
             success_count=0,
             failed_count=len(request.items),
             failed_items=detailed_failed_items,
