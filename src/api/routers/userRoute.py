@@ -302,7 +302,7 @@ def change_password(
     # Verify current password
     from src.api.core.security import verify_password
     if not verify_password(request.current_password, db_user.password):
-        return api_response(200, "Current password is incorrect")
+        return api_response(400, "Current password is incorrect")
     
     # Hash new password
     hashed_password = hash_password(request.new_password)
