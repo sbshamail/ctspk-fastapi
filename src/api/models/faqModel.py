@@ -12,6 +12,7 @@ class FAQ(TimeStampedModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     question: Optional[str] = None
+    question_type: Optional[str] = None
     answer: Optional[str] = None
     order: int = Field(default=0, index=True)  # For manual ordering
     is_active: bool = Field(default=True, index=True)  # To show/hide FAQs
@@ -25,6 +26,7 @@ class FAQ(TimeStampedModel, table=True):
 # --------------------------------------------------------------------
 class FAQCreate(SQLModel):
     question: str
+    question_type: str
     answer: str
     order: Optional[int] = 0
     is_active: Optional[bool] = True
@@ -33,6 +35,7 @@ class FAQCreate(SQLModel):
 class FAQRead(TimeStampReadModel):
     id: int
     question: str
+    question_type: str
     answer: str
     order: int
     is_active: bool
@@ -40,6 +43,7 @@ class FAQRead(TimeStampReadModel):
 
 class FAQUpdate(SQLModel):
     question: Optional[str] = None
+    question_type: Optional[str] = None
     answer: Optional[str] = None
     order: Optional[int] = None
     is_active: Optional[bool] = None

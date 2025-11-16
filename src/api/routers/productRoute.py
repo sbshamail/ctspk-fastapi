@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_, or_, cast, Float, exists
 from typing import List, Dict, Optional
 from sqlmodel import select
 from src.api.models.category_model.categoryModel import Category
@@ -491,12 +491,145 @@ def sync_variable_product_quantity(id: int, session: GetSession):
     )
 
 
-# Product Stock Report
+@router.get("/trending")
+def get_trending_products(
+    session: GetSession,
+    limit: int = 10,
+    days: int = 30  # Trending in last X days
+):
+    """
+    Get trending products based on sales in recent days
+    """
+    try:
+        # Calculate date threshold
+        from datetime import datetime, timedelta
+        threshold_date = datetime.now() - timedelta(days=days)
+        
+        # Query products with highest sales in recent period
+        # Using total_sold_quantity as a proxy for trending
+        query = (
+            select(Product)
+            .where(
+                and_(
+                    Product.is_active == True,
+                    Product.total_sold_quantity > 0,
+                    Product.created_at >= threshold_date
+                )
+            )
+            .order_by(Product.total_sold_quantity.desc())
+            .limit(limit)
+        )
+        
+        products = session.exec(query).all()
+        
+        enhanced_products = []
+        for product in products:
+            enhanced_product = get_product_with_enhanced_data(session, product.id)
+            if enhanced_product:
+                enhanced_products.append(enhanced_product)
+        
+        return api_response(
+            200, 
+            f"Found {len(enhanced_products)} trending products", 
+            enhanced_products, 
+            len(enhanced_products)
+        )
+        
+    except Exception as e:
+        return api_response(500, f"Error fetching trending products: {str(e)}")
+
+@router.get("/limited-edition")
+def get_limited_edition_products(
+    session: GetSession,
+    limit: int = 10,
+    low_stock_threshold: int = 20
+):
+    """
+    Get limited edition products (low stock items)
+    """
+    try:
+        query = (
+            select(Product)
+            .where(
+                and_(
+                    Product.is_active == True,
+                    Product.quantity > 0,
+                    Product.quantity <= low_stock_threshold
+                )
+            )
+            .order_by(Product.quantity.asc())  # Lowest quantity first
+            .limit(limit)
+        )
+        
+        products = session.exec(query).all()
+        
+        enhanced_products = []
+        for product in products:
+            enhanced_product = get_product_with_enhanced_data(session, product.id)
+            if enhanced_product:
+                enhanced_products.append(enhanced_product)
+        
+        return api_response(
+            200, 
+            f"Found {len(enhanced_products)} limited edition products", 
+            enhanced_products, 
+            len(enhanced_products)
+        )
+        
+    except Exception as e:
+        return api_response(500, f"Error fetching limited edition products: {str(e)}")
+
+@router.get("/best-sellers")
+def get_best_seller_products(
+    session: GetSession,
+    limit: int = 10,
+    days: Optional[int] = None  # Optional: best sellers in specific period
+):
+    """
+    Get best seller products based on total sold quantity
+    """
+    try:
+        query = select(Product).where(Product.is_active == True)
+        
+        # If days parameter provided, filter by date
+        if days:
+            from datetime import datetime, timedelta
+            threshold_date = datetime.now() - timedelta(days=days)
+            query = query.where(Product.created_at >= threshold_date)
+        
+        query = (
+            query
+            .where(Product.total_sold_quantity > 0)
+            .order_by(Product.total_sold_quantity.desc())
+            .limit(limit)
+        )
+        
+        products = session.exec(query).all()
+        
+        enhanced_products = []
+        for product in products:
+            enhanced_product = get_product_with_enhanced_data(session, product.id)
+            if enhanced_product:
+                enhanced_products.append(enhanced_product)
+        
+        return api_response(
+            200, 
+            f"Found {len(enhanced_products)} best seller products", 
+            enhanced_products, 
+            len(enhanced_products)
+        )
+        
+    except Exception as e:
+        return api_response(500, f"Error fetching best seller products: {str(e)}")
+
+# NEW: Enhanced stock report with filtering options
 @router.get("/stock-report")
 def get_stock_report(
     session: GetSession,
     shop_id: Optional[int] = None,
     low_stock_threshold: int = 10,
+    is_active: Optional[bool] = None,  # NEW: Filter by active status
+    order_by: Optional[str] = None,    # NEW: Order by field
     user=requirePermission("product_view", "shop_admin"),
 ):
     """Get product stock report with purchase and sales data"""
@@ -513,6 +646,23 @@ def get_stock_report(
             if shop_id not in shop_ids:
                 return api_response(403, "Access denied to specified shop")
             query = query.where(Product.shop_id == shop_id)
+            
+        # NEW: Filter by is_active status
+        if is_active is not None:
+            query = query.where(Product.is_active == is_active)
+
+        # NEW: Add ordering
+        if order_by:
+            if order_by.startswith('-'):
+                # Descending order
+                field = getattr(Product, order_by[1:], None)
+                if field:
+                    query = query.order_by(field.desc())
+            else:
+                # Ascending order
+                field = getattr(Product, order_by, None)
+                if field:
+                    query = query.order_by(field.asc())
 
         products = session.exec(query).all()
 
@@ -546,6 +696,7 @@ def get_stock_report(
                     "current_stock_value": current_stock_value,
                     "stock_status": stock_status,
                     "in_stock": product.in_stock,
+                    "is_active": product.is_active,  # NEW: Include active status
                     "last_updated": (
                         product.updated_at.isoformat() if product.updated_at else None
                     ),
@@ -558,3 +709,508 @@ def get_stock_report(
 
     except Exception as e:
         return api_response(500, f"Error generating stock report: {str(e)}")
+    
+    # Add this new route in productRoute.py
+
+@router.get("/sales")
+def get_sale_products(
+    session: GetSession,
+    is_active: bool = True,  # Filter by active status
+    limit: int = 50,
+    page: int = 1,
+    user=requirePermission("product_view", "shop_admin"),
+):
+    """
+    Get products that are on sale
+    - For simple products: sale_price > 0 and sale_price < price
+    - For variable products: variation options with sale_price > 0 and sale_price < price
+    - Includes is_active filter
+    """
+    try:
+        skip = (page - 1) * limit
+        
+        # Build base query for simple products on sale
+        simple_products_query = (
+            select(Product)
+            .where(
+                and_(
+                    Product.is_active == is_active,
+                    Product.product_type == ProductType.SIMPLE,
+                    Product.sale_price > 0,
+                    Product.sale_price < Product.price,
+                    Product.price > 0  # Ensure price is valid
+                )
+            )
+        )
+
+        # Filter by user's shops if applicable
+        shop_ids = [s["id"] for s in user.get("shops", [])]
+        if shop_ids:
+            simple_products_query = simple_products_query.where(Product.shop_id.in_(shop_ids))
+
+        # Get simple products on sale
+        simple_products = session.exec(
+            simple_products_query
+            .offset(skip)
+            .limit(limit)
+        ).all()
+
+        # Query for variable products that have variations on sale
+        variable_products_query = (
+            select(Product)
+            .join(VariationOption, Product.id == VariationOption.product_id)
+            .where(
+                and_(
+                    Product.is_active == is_active,
+                    Product.product_type == ProductType.VARIABLE,
+                    VariationOption.sale_price.isnot(None),
+                    VariationOption.sale_price != "",
+                    cast(VariationOption.sale_price, Float) > 0,
+                    cast(VariationOption.sale_price, Float) < cast(VariationOption.price, Float),
+                    cast(VariationOption.price, Float) > 0
+                )
+            )
+            .distinct(Product.id)  # Avoid duplicate products
+        )
+
+        # Filter by user's shops if applicable
+        if shop_ids:
+            variable_products_query = variable_products_query.where(Product.shop_id.in_(shop_ids))
+
+        # Get variable products with sale variations
+        variable_products = session.exec(
+            variable_products_query
+            .offset(skip)
+            .limit(limit)
+        ).all()
+
+        # Combine and deduplicate products
+        all_products = simple_products + variable_products
+        unique_products = {product.id: product for product in all_products}.values()
+
+        # Convert to list and limit results
+        sale_products = list(unique_products)[:limit]
+
+        # Enhance product data
+        enhanced_products = []
+        for product in sale_products:
+            enhanced_product = get_product_with_enhanced_data(session, product.id)
+            if enhanced_product:
+                # Add sale-specific information
+                product_dict = enhanced_product.model_dump()
+                
+                # Calculate discount percentage for simple products
+                if product.product_type == ProductType.SIMPLE:
+                    if product.price and product.sale_price:
+                        discount_percent = ((product.price - product.sale_price) / product.price) * 100
+                        product_dict['discount_percent'] = round(discount_percent, 2)
+                    else:
+                        product_dict['discount_percent'] = 0
+                
+                # For variable products, find which variations are on sale
+                elif product.product_type == ProductType.VARIABLE:
+                    sale_variations = session.exec(
+                        select(VariationOption)
+                        .where(
+                            and_(
+                                VariationOption.product_id == product.id,
+                                VariationOption.sale_price.isnot(None),
+                                VariationOption.sale_price != "",
+                                cast(VariationOption.sale_price, Float) > 0,
+                                cast(VariationOption.sale_price, Float) < cast(VariationOption.price, Float)
+                            )
+                        )
+                    ).all()
+                    
+                    product_dict['sale_variations_count'] = len(sale_variations)
+                    
+                    # Calculate average discount for variable products
+                    if sale_variations:
+                        total_discount = 0
+                        for var in sale_variations:
+                            try:
+                                price_val = float(var.price)
+                                sale_price_val = float(var.sale_price) if var.sale_price else price_val
+                                if price_val > 0:
+                                    discount = ((price_val - sale_price_val) / price_val) * 100
+                                    total_discount += discount
+                            except (ValueError, TypeError):
+                                continue
+                        
+                        if total_discount > 0:
+                            product_dict['average_discount_percent'] = round(total_discount / len(sale_variations), 2)
+                        else:
+                            product_dict['average_discount_percent'] = 0
+                    else:
+                        product_dict['average_discount_percent'] = 0
+                
+                enhanced_products.append(product_dict)
+
+        return api_response(
+            200,
+            f"Found {len(enhanced_products)} sale products",
+            enhanced_products,
+            len(enhanced_products)
+        )
+
+    except Exception as e:
+        print(f"Error fetching sale products: {str(e)}")
+        return api_response(500, f"Error fetching sale products: {str(e)}")
+
+
+# Alternative version with better performance using subqueries
+@router.get("/sales-optimized")
+def get_sale_products_optimized(
+    session: GetSession,
+    is_active: bool = True,
+    limit: int = 50,
+    page: int = 1,
+    product_type: Optional[str] = None,  # Optional filter by product type
+    user=requirePermission("product_view", "shop_admin"),
+):
+    """
+    Optimized version of sale products query
+    """
+    try:
+        skip = (page - 1) * limit
+        
+        # Build the main query
+        query = select(Product).where(Product.is_active == is_active)
+        
+        # Filter by user's shops
+        shop_ids = [s["id"] for s in user.get("shops", [])]
+        if shop_ids:
+            query = query.where(Product.shop_id.in_(shop_ids))
+        
+        # Filter by product type if specified
+        if product_type:
+            if product_type.upper() == "SIMPLE":
+                query = query.where(Product.product_type == ProductType.SIMPLE)
+            elif product_type.upper() == "VARIABLE":
+                query = query.where(Product.product_type == ProductType.VARIABLE)
+        
+        # Subquery for simple products on sale
+        simple_sale_condition = and_(
+            Product.product_type == ProductType.SIMPLE,
+            Product.sale_price > 0,
+            Product.sale_price < Product.price
+        )
+        
+        # Subquery for variable products with sale variations
+        variable_sale_condition = and_(
+            Product.product_type == ProductType.VARIABLE,
+            exists().where(
+                and_(
+                    VariationOption.product_id == Product.id,
+                    VariationOption.sale_price.isnot(None),
+                    VariationOption.sale_price != "",
+                    cast(VariationOption.sale_price, Float) > 0,
+                    cast(VariationOption.sale_price, Float) < cast(VariationOption.price, Float)
+                )
+            )
+        )
+        
+        # Combine conditions
+        query = query.where(or_(simple_sale_condition, variable_sale_condition))
+        
+        # Add ordering by discount amount (highest discount first)
+        from sqlalchemy import case
+        
+        discount_case = case(
+            (Product.product_type == ProductType.SIMPLE, 
+             (Product.price - Product.sale_price) / Product.price * 100),
+            else_=0
+        ).label('discount_percent')
+        
+        query = query.order_by(discount_case.desc())
+        
+        # Execute query
+        products = session.exec(
+            query
+            .offset(skip)
+            .limit(limit)
+        ).all()
+        
+        # Enhance product data
+        enhanced_products = []
+        for product in products:
+            enhanced_product = get_product_with_enhanced_data(session, product.id)
+            if enhanced_product:
+                product_data = enhanced_product.model_dump()
+                
+                # Add sale information
+                if product.product_type == ProductType.SIMPLE:
+                    discount = ((product.price - product.sale_price) / product.price) * 100
+                    product_data['discount_percent'] = round(discount, 2)
+                    product_data['sale_variations_count'] = 0
+                    
+                elif product.product_type == ProductType.VARIABLE:
+                    # Count sale variations
+                    sale_vars = session.exec(
+                        select(VariationOption)
+                        .where(
+                            and_(
+                                VariationOption.product_id == product.id,
+                                VariationOption.sale_price.isnot(None),
+                                cast(VariationOption.sale_price, Float) > 0,
+                                cast(VariationOption.sale_price, Float) < cast(VariationOption.price, Float)
+                            )
+                        )
+                    ).all()
+                    
+                    product_data['sale_variations_count'] = len(sale_vars)
+                    
+                    # Calculate max discount
+                    max_discount = 0
+                    for var in sale_vars:
+                        try:
+                            price_val = float(var.price)
+                            sale_val = float(var.sale_price)
+                            discount = ((price_val - sale_val) / price_val) * 100
+                            max_discount = max(max_discount, discount)
+                        except (ValueError, TypeError):
+                            continue
+                    
+                    product_data['max_discount_percent'] = round(max_discount, 2)
+                
+                enhanced_products.append(product_data)
+        
+        # Get total count for pagination
+        count_query = select(func.count(Product.id)).where(
+            and_(
+                Product.is_active == is_active,
+                or_(simple_sale_condition, variable_sale_condition)
+            )
+        )
+        if shop_ids:
+            count_query = count_query.where(Product.shop_id.in_(shop_ids))
+        
+        total_count = session.exec(count_query).first()
+        
+        return api_response(
+            200,
+            f"Found {len(enhanced_products)} sale products",
+            {
+                "products": enhanced_products,
+                "pagination": {
+                    "page": page,
+                    "limit": limit,
+                    "total": total_count,
+                    "pages": (total_count + limit - 1) // limit if total_count else 0
+                }
+            }
+        )
+        
+    except Exception as e:
+        print(f"Error in optimized sale products: {str(e)}")
+        return api_response(500, f"Error fetching sale products: {str(e)}")
+
+
+# Simple version for public access (without shop filtering)
+@router.get("/sales/public")
+def get_public_sale_products(
+    session: GetSession,
+    is_active: bool = True,
+    limit: int = 20,
+    page: int = 1
+):
+    """
+    Public endpoint for sale products (no authentication required)
+    """
+    try:
+        skip = (page - 1) * limit
+        
+        # Simple products on sale
+        simple_products = session.exec(
+            select(Product)
+            .where(
+                and_(
+                    Product.is_active == is_active,
+                    Product.product_type == ProductType.SIMPLE,
+                    Product.sale_price > 0,
+                    Product.sale_price < Product.price
+                )
+            )
+            .offset(skip)
+            .limit(limit)
+        ).all()
+        
+        # Variable products with sale variations
+        variable_products = session.exec(
+            select(Product)
+            .join(VariationOption, Product.id == VariationOption.product_id)
+            .where(
+                and_(
+                    Product.is_active == is_active,
+                    Product.product_type == ProductType.VARIABLE,
+                    VariationOption.sale_price.isnot(None),
+                    cast(VariationOption.sale_price, Float) > 0,
+                    cast(VariationOption.sale_price, Float) < cast(VariationOption.price, Float)
+                )
+            )
+            .distinct(Product.id)
+            .offset(skip)
+            .limit(limit)
+        ).all()
+        
+        # Combine results
+        all_products = simple_products + variable_products
+        unique_products = {product.id: product for product in all_products}.values()
+        sale_products = list(unique_products)[:limit]
+        
+        # Enhance data - FIX: Pass session parameter
+        enhanced_products = []
+        for product in sale_products:
+            # FIX: Pass the session parameter
+            enhanced_product = get_product_with_enhanced_data(session, product.id)
+            if enhanced_product:
+                enhanced_products.append(enhanced_product.model_dump())
+        
+        return api_response(
+            200,
+            f"Found {len(enhanced_products)} sale products",
+            enhanced_products,
+            len(enhanced_products)
+        )
+        
+    except Exception as e:
+        return api_response(500, f"Error fetching sale products: {str(e)}")
+    
+@router.get("/sales-simple")
+def get_sale_products_simple(
+    session: GetSession,
+    is_active: bool = True,
+    limit: int = 50,
+    page: int = 1,
+):
+    """
+    Simple version of sale products without complex enhancements
+    """
+    try:
+        skip = (page - 1) * limit
+        
+        print(f"Fetching sale products: is_active={is_active}, limit={limit}, page={page}")
+        
+        # SIMPLE PRODUCTS - Direct query without joins first
+        simple_condition = and_(
+            Product.is_active == is_active,
+            Product.product_type == ProductType.SIMPLE,
+            Product.sale_price > 0,
+            Product.sale_price < Product.price
+        )
+        
+        simple_products_stmt = (
+            select(Product)
+            .where(simple_condition)
+            .offset(skip)
+            .limit(limit)
+        )
+        
+        print("Executing simple products query...")
+        simple_products = session.exec(simple_products_stmt).all()
+        print(f"Found {len(simple_products)} simple products on sale")
+        
+        # VARIABLE PRODUCTS - Separate query to avoid complex joins
+        # First get product IDs that have sale variations
+        variable_product_ids_stmt = (
+            select(VariationOption.product_id)
+            .where(
+                and_(
+                    VariationOption.sale_price.isnot(None),
+                    cast(VariationOption.sale_price, Float) > 0,
+                    cast(VariationOption.sale_price, Float) < cast(VariationOption.price, Float)
+                )
+            )
+            .distinct()
+        )
+        
+        print("Getting variable product IDs...")
+        variable_product_ids = session.exec(variable_product_ids_stmt).all()
+        print(f"Found {len(variable_product_ids)} variable products with sale variations")
+        
+        # Now get the actual products
+        variable_products = []
+        if variable_product_ids:
+            variable_condition = and_(
+                Product.is_active == is_active,
+                Product.product_type == ProductType.VARIABLE,
+                Product.id.in_(variable_product_ids)
+            )
+            
+            variable_products_stmt = (
+                select(Product)
+                .where(variable_condition)
+                .offset(skip)
+                .limit(limit)
+            )
+            
+            print("Executing variable products query...")
+            variable_products = session.exec(variable_products_stmt).all()
+            print(f"Retrieved {len(variable_products)} variable products")
+        
+        # Combine results manually - NO list() function calls
+        all_products = []
+        all_products.extend(simple_products)
+        all_products.extend(variable_products)
+        
+        # Remove duplicates using a dictionary
+        unique_products_dict = {}
+        for product in all_products:
+            unique_products_dict[product.id] = product
+        
+        # Convert to list using list comprehension - NOT the list() function
+        sale_products = [product for product in unique_products_dict.values()]
+        
+        # Apply limit
+        if len(sale_products) > limit:
+            sale_products = sale_products[:limit]
+        
+        print(f"Total unique sale products: {len(sale_products)}")
+        
+        # Build response - completely manual, no external function calls
+        response_data = []
+        for product in sale_products:
+            try:
+                product_data = {
+                    "id": product.id,
+                    "name": product.name,
+                    "slug": product.slug,
+                    "price": float(product.price) if product.price else 0.0,
+                    "sale_price": float(product.sale_price) if product.sale_price else None,
+                    "product_type": product.product_type.value if hasattr(product.product_type, 'value') else str(product.product_type),
+                    "is_active": product.is_active,
+                    "image": product.image,
+                    "category_id": product.category_id,
+                    "shop_id": product.shop_id,
+                    "quantity": product.quantity
+                }
+                
+                # Calculate discount for simple products
+                if (product.product_type == ProductType.SIMPLE and 
+                    product.price and product.sale_price and 
+                    product.price > 0):
+                    discount = ((product.price - product.sale_price) / product.price) * 100
+                    product_data['discount_percent'] = round(float(discount), 2)
+                else:
+                    product_data['discount_percent'] = 0
+                
+                response_data.append(product_data)
+                
+            except Exception as product_error:
+                print(f"Error processing product {product.id}: {product_error}")
+                continue
+        
+        print(f"Successfully processed {len(response_data)} products for response")
+        
+        return api_response(
+            200,
+            f"Found {len(response_data)} sale products",
+            response_data,
+            len(response_data)
+        )
+        
+    except Exception as e:
+        print(f"CRITICAL ERROR in sales-simple: {str(e)}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        return api_response(500, f"Error fetching sale products: {str(e)}")

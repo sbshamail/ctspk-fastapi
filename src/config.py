@@ -9,7 +9,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(
     os.getenv(
         "ACCESS_TOKEN_EXPIRE_MINUTES",
-        30,
+        1440,
     )
 )
 DOMAIN = os.getenv("DOMAIN", "https://api.ctspk.com")
