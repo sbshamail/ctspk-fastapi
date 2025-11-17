@@ -1214,3 +1214,102 @@ def get_sale_products_simple(
         import traceback
         print(f"Full traceback: {traceback.format_exc()}")
         return api_response(500, f"Error fetching sale products: {str(e)}")
+
+@router.get("/new-arrivals")
+def get_new_arrivals(
+    session: GetSession,
+    is_active: bool = True,
+    days: int = 30,  # Products added in last X days
+    limit: int = 20,
+    page: int = 1,
+    sort_by: str = "created_at",  # Field to sort by
+    sort_order: str = "desc",  # asc or desc
+    #user=requirePermission("product_view", "shop_admin"),
+):
+    """
+    Get newly added products with filtering and sorting options
+    """
+    try:
+        skip = (page - 1) * limit
+        
+        # Calculate date threshold for new arrivals
+        from datetime import datetime, timedelta
+        threshold_date = datetime.now() - timedelta(days=days)
+        
+        # Build base query
+        query = select(Product).where(
+            and_(
+                Product.is_active == is_active,
+                Product.created_at >= threshold_date
+            )
+        )
+        
+        
+        
+        # Validate and apply sorting
+        valid_sort_fields = [
+            "created_at", "updated_at", "name", "price", "sale_price", 
+            "quantity", "total_sold_quantity", "total_purchased_quantity"
+        ]
+        
+        if sort_by not in valid_sort_fields:
+            sort_by = "created_at"  # Default to created_at if invalid
+        
+        sort_field = getattr(Product, sort_by, None)
+        if sort_field is None:
+            sort_field = Product.created_at
+        
+        # Apply sort order
+        if sort_order.lower() == "asc":
+            query = query.order_by(sort_field.asc())
+        else:
+            query = query.order_by(sort_field.desc())
+        
+        # Execute query
+        products = session.exec(
+            query
+            .offset(skip)
+            .limit(limit)
+        ).all()
+        
+        # Get total count for pagination
+        count_query = select(func.count(Product.id)).where(
+            and_(
+                Product.is_active == is_active,
+                Product.created_at >= threshold_date
+            )
+        )
+        
+        
+        total_count = session.exec(count_query).first()
+        
+        # Enhance product data
+        enhanced_products = []
+        for product in products:
+            enhanced_product = get_product_with_enhanced_data(session, product.id)
+            if enhanced_product:
+                enhanced_products.append(enhanced_product.model_dump())
+        
+        return api_response(
+            200,
+            f"Found {len(enhanced_products)} new arrival products",
+            {
+                "products": enhanced_products,
+                "pagination": {
+                    "page": page,
+                    "limit": limit,
+                    "total": total_count,
+                    "pages": (total_count + limit - 1) // limit if total_count else 0
+                },
+                "filters": {
+                    "is_active": is_active,
+                    "days": days,
+                    "sort_by": sort_by,
+                    "sort_order": sort_order
+                }
+            }
+        )
+        
+    except Exception as e:
+        print(f"Error fetching new arrivals: {str(e)}")
+        return api_response(500, f"Error fetching new arrivals: {str(e)}")
