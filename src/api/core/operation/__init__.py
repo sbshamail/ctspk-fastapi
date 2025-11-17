@@ -95,7 +95,7 @@ def listop(
         numberRange=numberRange,
         customFilters=customFilters,
         otherFilters=otherFilters,
-        sort=sort,
+        sort=sort if sort else '["created_at", "desc"]',
         stringArrayFilters=stringArrayFilters,
         objectArrayFilters=objectArrayFilters,
     )
