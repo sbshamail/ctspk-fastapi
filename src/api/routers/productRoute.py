@@ -386,6 +386,16 @@ def list(query_params: ListQueryParams, session: GetSession):
 @router.get("/products/related/{category_id}")
 def get_products_by_category(category_id: int, session: GetSession):
     try:
+        # Validate that category exists
+        category = session.get(Category, category_id)
+        if not category:
+            return api_response(
+                404,
+                f"Category with id {category_id} not found",
+                [],
+                0
+            )
+
         # Get all descendant category IDs (recursively)
         def get_descendants(cat_id: int):
             q = session.exec(select(Category).where(Category.parent_id == cat_id)).all()
@@ -400,13 +410,27 @@ def get_products_by_category(category_id: int, session: GetSession):
         # Fetch products belonging to any of those categories
         stmt = select(Product).where(Product.category_id.in_(category_ids))
         products = session.exec(stmt).all()
-        # return {"products": [ProductRead.model_validate(p) for p in products]}
+
+        # Validate products list
+        product_list = [ProductRead.model_validate(p) for p in products]
+
+        # Check if no products found
+        if not product_list:
+            return api_response(
+                404,
+                f"No products found for category '{category.name}' and its subcategories",
+                [],
+                0
+            )
+
         return api_response(
             200,
-            "found product",
-            [ProductRead.model_validate(p) for p in products],
-            len(products),
+            f"Found {len(product_list)} products for category '{category.name}'",
+            product_list,
+            len(product_list),
         )
+    except Exception as e:
+        return api_response(500, f"Error fetching related products: {str(e)}")
     finally:
         session.close()
 
@@ -494,29 +518,70 @@ def sync_variable_product_quantity(id: int, session: GetSession):
 @router.get("/trending")
 def get_trending_products(
     session: GetSession,
-    limit: int = 10,
+    query_params: ListQueryParams,
+    is_active: bool = True,
+    shop_id: Optional[int] = None,  # Filter by shop
     days: int = 30  # Trending in last X days
 ):
     """
-    Get trending products based on sales in recent days
+    Get trending products based on sales in recent days with advanced filtering
     """
     try:
+        # Extract query params
+        query_params_dict = vars(query_params)
+        limit = query_params_dict.get('limit', 10)
+        page = query_params_dict.get('page', 1)
+        skip = (page - 1) * limit
+
         # Calculate date threshold
         from datetime import datetime, timedelta
         threshold_date = datetime.now() - timedelta(days=days)
-        
+
         # Query products with highest sales in recent period
         # Using total_sold_quantity as a proxy for trending
         query = (
             select(Product)
             .where(
                 and_(
-                    Product.is_active == True,
+                    Product.is_active == is_active,
                     Product.total_sold_quantity > 0,
                     Product.created_at >= threshold_date
                 )
             )
+        )
+
+        # Add shop filter
+        if shop_id:
+            query = query.where(Product.shop_id == shop_id)
+
+        # Apply searchTerm
+        if query_params_dict.get('searchTerm'):
+            search = f"%{query_params_dict['searchTerm']}%"
+            query = query.where(
+                or_(
+                    Product.name.ilike(search),
+                    Product.description.ilike(search),
+                    Product.sku.ilike(search)
+                )
+            )
+
+        # Apply columnFilters
+        if query_params_dict.get('columnFilters'):
+            import ast
+            column_filters = ast.literal_eval(query_params_dict['columnFilters'])
+            for col_filter in column_filters:
+                field_name, field_value = col_filter[0], col_filter[1]
+                if hasattr(Product, field_name):
+                    field = getattr(Product, field_name)
+                    if isinstance(field_value, list):
+                        query = query.where(field.in_(field_value))
+                    else:
+                        query = query.where(field == field_value)
+
+        query = (
+            query
             .order_by(Product.total_sold_quantity.desc())
+            .offset(skip)
             .limit(limit)
         )
         
@@ -527,37 +592,87 @@ def get_trending_products(
             enhanced_product = get_product_with_enhanced_data(session, product.id)
             if enhanced_product:
                 enhanced_products.append(enhanced_product)
-        
+
+        # Check if no products found
+        if not enhanced_products:
+            return api_response(
+                404,
+                "No trending products found",
+                [],
+                0
+            )
+
         return api_response(
-            200, 
-            f"Found {len(enhanced_products)} trending products", 
-            enhanced_products, 
+            200,
+            f"Found {len(enhanced_products)} trending products",
+            enhanced_products,
             len(enhanced_products)
         )
-        
+
     except Exception as e:
         return api_response(500, f"Error fetching trending products: {str(e)}")
 
 @router.get("/limited-edition")
 def get_limited_edition_products(
     session: GetSession,
-    limit: int = 10,
+    query_params: ListQueryParams,
+    is_active: bool = True,
+    shop_id: Optional[int] = None,  # Filter by shop
     low_stock_threshold: int = 20
 ):
     """
-    Get limited edition products (low stock items)
+    Get limited edition products (low stock items) with advanced filtering
     """
     try:
+        # Extract query params
+        query_params_dict = vars(query_params)
+        limit = query_params_dict.get('limit', 10)
+        page = query_params_dict.get('page', 1)
+        skip = (page - 1) * limit
+
         query = (
             select(Product)
             .where(
                 and_(
-                    Product.is_active == True,
+                    Product.is_active == is_active,
                     Product.quantity > 0,
                     Product.quantity <= low_stock_threshold
                 )
             )
+        )
+
+        # Add shop filter
+        if shop_id:
+            query = query.where(Product.shop_id == shop_id)
+
+        # Apply searchTerm
+        if query_params_dict.get('searchTerm'):
+            search = f"%{query_params_dict['searchTerm']}%"
+            query = query.where(
+                or_(
+                    Product.name.ilike(search),
+                    Product.description.ilike(search),
+                    Product.sku.ilike(search)
+                )
+            )
+
+        # Apply columnFilters
+        if query_params_dict.get('columnFilters'):
+            import ast
+            column_filters = ast.literal_eval(query_params_dict['columnFilters'])
+            for col_filter in column_filters:
+                field_name, field_value = col_filter[0], col_filter[1]
+                if hasattr(Product, field_name):
+                    field = getattr(Product, field_name)
+                    if isinstance(field_value, list):
+                        query = query.where(field.in_(field_value))
+                    else:
+                        query = query.where(field == field_value)
+
+        query = (
+            query
             .order_by(Product.quantity.asc())  # Lowest quantity first
+            .offset(skip)
             .limit(limit)
         )
         
@@ -568,39 +683,85 @@ def get_limited_edition_products(
             enhanced_product = get_product_with_enhanced_data(session, product.id)
             if enhanced_product:
                 enhanced_products.append(enhanced_product)
-        
+
+        # Check if no products found
+        if not enhanced_products:
+            return api_response(
+                404,
+                "No limited edition products found",
+                [],
+                0
+            )
+
         return api_response(
-            200, 
-            f"Found {len(enhanced_products)} limited edition products", 
-            enhanced_products, 
+            200,
+            f"Found {len(enhanced_products)} limited edition products",
+            enhanced_products,
             len(enhanced_products)
         )
-        
+
     except Exception as e:
         return api_response(500, f"Error fetching limited edition products: {str(e)}")
 
 @router.get("/best-sellers")
 def get_best_seller_products(
     session: GetSession,
-    limit: int = 10,
+    query_params: ListQueryParams,
+    is_active: bool = True,
+    shop_id: Optional[int] = None,  # Filter by shop
     days: Optional[int] = None  # Optional: best sellers in specific period
 ):
     """
-    Get best seller products based on total sold quantity
+    Get best seller products based on total sold quantity with advanced filtering
     """
     try:
-        query = select(Product).where(Product.is_active == True)
-        
+        # Extract query params
+        query_params_dict = vars(query_params)
+        limit = query_params_dict.get('limit', 10)
+        page = query_params_dict.get('page', 1)
+        skip = (page - 1) * limit
+
+        query = select(Product).where(Product.is_active == is_active)
+
+        # Add shop filter
+        if shop_id:
+            query = query.where(Product.shop_id == shop_id)
+
         # If days parameter provided, filter by date
         if days:
             from datetime import datetime, timedelta
             threshold_date = datetime.now() - timedelta(days=days)
             query = query.where(Product.created_at >= threshold_date)
-        
+
+        # Apply searchTerm
+        if query_params_dict.get('searchTerm'):
+            search = f"%{query_params_dict['searchTerm']}%"
+            query = query.where(
+                or_(
+                    Product.name.ilike(search),
+                    Product.description.ilike(search),
+                    Product.sku.ilike(search)
+                )
+            )
+
+        # Apply columnFilters
+        if query_params_dict.get('columnFilters'):
+            import ast
+            column_filters = ast.literal_eval(query_params_dict['columnFilters'])
+            for col_filter in column_filters:
+                field_name, field_value = col_filter[0], col_filter[1]
+                if hasattr(Product, field_name):
+                    field = getattr(Product, field_name)
+                    if isinstance(field_value, list):
+                        query = query.where(field.in_(field_value))
+                    else:
+                        query = query.where(field == field_value)
+
         query = (
             query
             .where(Product.total_sold_quantity > 0)
             .order_by(Product.total_sold_quantity.desc())
+            .offset(skip)
             .limit(limit)
         )
         
@@ -611,14 +772,23 @@ def get_best_seller_products(
             enhanced_product = get_product_with_enhanced_data(session, product.id)
             if enhanced_product:
                 enhanced_products.append(enhanced_product)
-        
+
+        # Check if no products found
+        if not enhanced_products:
+            return api_response(
+                404,
+                "No best seller products found",
+                [],
+                0
+            )
+
         return api_response(
-            200, 
-            f"Found {len(enhanced_products)} best seller products", 
-            enhanced_products, 
+            200,
+            f"Found {len(enhanced_products)} best seller products",
+            enhanced_products,
             len(enhanced_products)
         )
-        
+
     except Exception as e:
         return api_response(500, f"Error fetching best seller products: {str(e)}")
 
@@ -715,20 +885,24 @@ def get_stock_report(
 @router.get("/sales")
 def get_sale_products(
     session: GetSession,
+    query_params: ListQueryParams,
     is_active: bool = True,  # Filter by active status
-    limit: int = 50,
-    page: int = 1,
+    shop_id: Optional[int] = None,  # Filter by shop
     user=requirePermission("product_view", "shop_admin"),
 ):
     """
-    Get products that are on sale
+    Get products that are on sale with advanced filtering
     - For simple products: sale_price > 0 and sale_price < price
     - For variable products: variation options with sale_price > 0 and sale_price < price
     - Includes is_active filter
     """
     try:
+        # Extract query params
+        query_params_dict = vars(query_params)
+        limit = query_params_dict.get('limit', 50)
+        page = query_params_dict.get('page', 1)
         skip = (page - 1) * limit
-        
+
         # Build base query for simple products on sale
         simple_products_query = (
             select(Product)
@@ -743,10 +917,24 @@ def get_sale_products(
             )
         )
 
-        # Filter by user's shops if applicable
-        shop_ids = [s["id"] for s in user.get("shops", [])]
-        if shop_ids:
-            simple_products_query = simple_products_query.where(Product.shop_id.in_(shop_ids))
+        # Filter by shop_id parameter or user's shops
+        if shop_id:
+            simple_products_query = simple_products_query.where(Product.shop_id == shop_id)
+        else:
+            shop_ids = [s["id"] for s in user.get("shops", [])]
+            if shop_ids:
+                simple_products_query = simple_products_query.where(Product.shop_id.in_(shop_ids))
+
+        # Apply searchTerm
+        if query_params_dict.get('searchTerm'):
+            search = f"%{query_params_dict['searchTerm']}%"
+            simple_products_query = simple_products_query.where(
+                or_(
+                    Product.name.ilike(search),
+                    Product.description.ilike(search),
+                    Product.sku.ilike(search)
+                )
+            )
 
         # Get simple products on sale
         simple_products = session.exec(
@@ -773,9 +961,24 @@ def get_sale_products(
             .distinct(Product.id)  # Avoid duplicate products
         )
 
-        # Filter by user's shops if applicable
-        if shop_ids:
-            variable_products_query = variable_products_query.where(Product.shop_id.in_(shop_ids))
+        # Filter by shop_id parameter or user's shops
+        if shop_id:
+            variable_products_query = variable_products_query.where(Product.shop_id == shop_id)
+        else:
+            shop_ids = [s["id"] for s in user.get("shops", [])]
+            if shop_ids:
+                variable_products_query = variable_products_query.where(Product.shop_id.in_(shop_ids))
+
+        # Apply searchTerm for variable products
+        if query_params_dict.get('searchTerm'):
+            search = f"%{query_params_dict['searchTerm']}%"
+            variable_products_query = variable_products_query.where(
+                or_(
+                    Product.name.ilike(search),
+                    Product.description.ilike(search),
+                    Product.sku.ilike(search)
+                )
+            )
 
         # Get variable products with sale variations
         variable_products = session.exec(
@@ -846,6 +1049,15 @@ def get_sale_products(
                 
                 enhanced_products.append(product_dict)
 
+        # Check if no products found
+        if not enhanced_products:
+            return api_response(
+                404,
+                "No sale products found",
+                [],
+                0
+            )
+
         return api_response(
             200,
             f"Found {len(enhanced_products)} sale products",
@@ -862,25 +1074,32 @@ def get_sale_products(
 @router.get("/sales-optimized")
 def get_sale_products_optimized(
     session: GetSession,
+    query_params: ListQueryParams,
     is_active: bool = True,
-    limit: int = 50,
-    page: int = 1,
+    shop_id: Optional[int] = None,  # Filter by shop
     product_type: Optional[str] = None,  # Optional filter by product type
     user=requirePermission("product_view", "shop_admin"),
 ):
     """
-    Optimized version of sale products query
+    Optimized version of sale products query with advanced filtering
     """
     try:
+        # Extract query params
+        query_params_dict = vars(query_params)
+        limit = query_params_dict.get('limit', 50)
+        page = query_params_dict.get('page', 1)
         skip = (page - 1) * limit
-        
+
         # Build the main query
         query = select(Product).where(Product.is_active == is_active)
-        
-        # Filter by user's shops
-        shop_ids = [s["id"] for s in user.get("shops", [])]
-        if shop_ids:
-            query = query.where(Product.shop_id.in_(shop_ids))
+
+        # Filter by shop_id parameter or user's shops
+        if shop_id:
+            query = query.where(Product.shop_id == shop_id)
+        else:
+            shop_ids = [s["id"] for s in user.get("shops", [])]
+            if shop_ids:
+                query = query.where(Product.shop_id.in_(shop_ids))
         
         # Filter by product type if specified
         if product_type:
@@ -912,7 +1131,31 @@ def get_sale_products_optimized(
         
         # Combine conditions
         query = query.where(or_(simple_sale_condition, variable_sale_condition))
-        
+
+        # Apply searchTerm
+        if query_params_dict.get('searchTerm'):
+            search = f"%{query_params_dict['searchTerm']}%"
+            query = query.where(
+                or_(
+                    Product.name.ilike(search),
+                    Product.description.ilike(search),
+                    Product.sku.ilike(search)
+                )
+            )
+
+        # Apply columnFilters
+        if query_params_dict.get('columnFilters'):
+            import ast
+            column_filters = ast.literal_eval(query_params_dict['columnFilters'])
+            for col_filter in column_filters:
+                field_name, field_value = col_filter[0], col_filter[1]
+                if hasattr(Product, field_name):
+                    field = getattr(Product, field_name)
+                    if isinstance(field_value, list):
+                        query = query.where(field.in_(field_value))
+                    else:
+                        query = query.where(field == field_value)
+
         # Add ordering by discount amount (highest discount first)
         from sqlalchemy import case
         
@@ -984,23 +1227,25 @@ def get_sale_products_optimized(
         )
         if shop_ids:
             count_query = count_query.where(Product.shop_id.in_(shop_ids))
-        
+
         total_count = session.exec(count_query).first()
-        
+
+        # Check if no products found
+        if not enhanced_products:
+            return api_response(
+                404,
+                "No sale products found",
+                [],
+                0
+            )
+
         return api_response(
             200,
             f"Found {len(enhanced_products)} sale products",
-            {
-                "products": enhanced_products,
-                "pagination": {
-                    "page": page,
-                    "limit": limit,
-                    "total": total_count,
-                    "pages": (total_count + limit - 1) // limit if total_count else 0
-                }
-            }
+            enhanced_products,
+            total_count
         )
-        
+
     except Exception as e:
         print(f"Error in optimized sale products: {str(e)}")
         return api_response(500, f"Error fetching sale products: {str(e)}")
@@ -1010,33 +1255,53 @@ def get_sale_products_optimized(
 @router.get("/sales/public")
 def get_public_sale_products(
     session: GetSession,
+    query_params: ListQueryParams,
     is_active: bool = True,
-    limit: int = 20,
-    page: int = 1
+    shop_id: Optional[int] = None
 ):
     """
     Public endpoint for sale products (no authentication required)
     """
     try:
+        # Extract query params
+        query_params_dict = vars(query_params)
+        limit = query_params_dict.get('limit', 20)
+        page = query_params_dict.get('page', 1)
         skip = (page - 1) * limit
-        
+
         # Simple products on sale
-        simple_products = session.exec(
-            select(Product)
-            .where(
-                and_(
-                    Product.is_active == is_active,
-                    Product.product_type == ProductType.SIMPLE,
-                    Product.sale_price > 0,
-                    Product.sale_price < Product.price
+        simple_query = select(Product).where(
+            and_(
+                Product.is_active == is_active,
+                Product.product_type == ProductType.SIMPLE,
+                Product.sale_price > 0,
+                Product.sale_price < Product.price
+            )
+        )
+
+        # Add shop filter if provided
+        if shop_id:
+            simple_query = simple_query.where(Product.shop_id == shop_id)
+
+        # Apply searchTerm
+        if query_params_dict.get('searchTerm'):
+            search = f"%{query_params_dict['searchTerm']}%"
+            simple_query = simple_query.where(
+                or_(
+                    Product.name.ilike(search),
+                    Product.description.ilike(search),
+                    Product.sku.ilike(search)
                 )
             )
+
+        simple_products = session.exec(
+            simple_query
             .offset(skip)
             .limit(limit)
         ).all()
         
         # Variable products with sale variations
-        variable_products = session.exec(
+        variable_query = (
             select(Product)
             .join(VariationOption, Product.id == VariationOption.product_id)
             .where(
@@ -1049,6 +1314,25 @@ def get_public_sale_products(
                 )
             )
             .distinct(Product.id)
+        )
+
+        # Add shop filter if provided
+        if shop_id:
+            variable_query = variable_query.where(Product.shop_id == shop_id)
+
+        # Apply searchTerm
+        if query_params_dict.get('searchTerm'):
+            search = f"%{query_params_dict['searchTerm']}%"
+            variable_query = variable_query.where(
+                or_(
+                    Product.name.ilike(search),
+                    Product.description.ilike(search),
+                    Product.sku.ilike(search)
+                )
+            )
+
+        variable_products = session.exec(
+            variable_query
             .offset(skip)
             .limit(limit)
         ).all()
@@ -1065,28 +1349,41 @@ def get_public_sale_products(
             enhanced_product = get_product_with_enhanced_data(session, product.id)
             if enhanced_product:
                 enhanced_products.append(enhanced_product.model_dump())
-        
+
+        # Check if no products found
+        if not enhanced_products:
+            return api_response(
+                404,
+                "No sale products found",
+                [],
+                0
+            )
+
         return api_response(
             200,
             f"Found {len(enhanced_products)} sale products",
             enhanced_products,
             len(enhanced_products)
         )
-        
+
     except Exception as e:
         return api_response(500, f"Error fetching sale products: {str(e)}")
     
 @router.get("/sales-simple")
 def get_sale_products_simple(
     session: GetSession,
+    query_params: ListQueryParams,
     is_active: bool = True,
-    limit: int = 50,
-    page: int = 1,
+    shop_id: Optional[int] = None,  # Filter by shop
 ):
     """
-    Simple version of sale products without complex enhancements
+    Simple version of sale products with advanced filtering
     """
     try:
+        # Extract query params
+        query_params_dict = vars(query_params)
+        limit = query_params_dict.get('limit', 50)
+        page = query_params_dict.get('page', 1)
         skip = (page - 1) * limit
         
         print(f"Fetching sale products: is_active={is_active}, limit={limit}, page={page}")
@@ -1098,10 +1395,39 @@ def get_sale_products_simple(
             Product.sale_price > 0,
             Product.sale_price < Product.price
         )
-        
+
+        simple_products_stmt = select(Product).where(simple_condition)
+
+        # Add shop filter
+        if shop_id:
+            simple_products_stmt = simple_products_stmt.where(Product.shop_id == shop_id)
+
+        # Apply columnFilters
+        if query_params_dict.get('columnFilters'):
+            import ast
+            column_filters = ast.literal_eval(query_params_dict['columnFilters'])
+            for col_filter in column_filters:
+                field_name, field_value = col_filter[0], col_filter[1]
+                if hasattr(Product, field_name):
+                    field = getattr(Product, field_name)
+                    if isinstance(field_value, list):
+                        simple_products_stmt = simple_products_stmt.where(field.in_(field_value))
+                    else:
+                        simple_products_stmt = simple_products_stmt.where(field == field_value)
+
+        # Apply searchTerm
+        if query_params_dict.get('searchTerm'):
+            search = f"%{query_params_dict['searchTerm']}%"
+            simple_products_stmt = simple_products_stmt.where(
+                or_(
+                    Product.name.ilike(search),
+                    Product.description.ilike(search),
+                    Product.sku.ilike(search)
+                )
+            )
+
         simple_products_stmt = (
-            select(Product)
-            .where(simple_condition)
+            simple_products_stmt
             .offset(skip)
             .limit(limit)
         )
@@ -1136,10 +1462,39 @@ def get_sale_products_simple(
                 Product.product_type == ProductType.VARIABLE,
                 Product.id.in_(variable_product_ids)
             )
-            
+
+            variable_products_stmt = select(Product).where(variable_condition)
+
+            # Add shop filter
+            if shop_id:
+                variable_products_stmt = variable_products_stmt.where(Product.shop_id == shop_id)
+
+            # Apply columnFilters
+            if query_params_dict.get('columnFilters'):
+                import ast
+                column_filters = ast.literal_eval(query_params_dict['columnFilters'])
+                for col_filter in column_filters:
+                    field_name, field_value = col_filter[0], col_filter[1]
+                    if hasattr(Product, field_name):
+                        field = getattr(Product, field_name)
+                        if isinstance(field_value, list):
+                            variable_products_stmt = variable_products_stmt.where(field.in_(field_value))
+                        else:
+                            variable_products_stmt = variable_products_stmt.where(field == field_value)
+
+            # Apply searchTerm
+            if query_params_dict.get('searchTerm'):
+                search = f"%{query_params_dict['searchTerm']}%"
+                variable_products_stmt = variable_products_stmt.where(
+                    or_(
+                        Product.name.ilike(search),
+                        Product.description.ilike(search),
+                        Product.sku.ilike(search)
+                    )
+                )
+
             variable_products_stmt = (
-                select(Product)
-                .where(variable_condition)
+                variable_products_stmt
                 .offset(skip)
                 .limit(limit)
             )
@@ -1201,14 +1556,23 @@ def get_sale_products_simple(
                 continue
         
         print(f"Successfully processed {len(response_data)} products for response")
-        
+
+        # Check if no products found
+        if not response_data:
+            return api_response(
+                404,
+                "No sale products found",
+                [],
+                0
+            )
+
         return api_response(
             200,
             f"Found {len(response_data)} sale products",
             response_data,
             len(response_data)
         )
-        
+
     except Exception as e:
         print(f"CRITICAL ERROR in sales-simple: {str(e)}")
         import traceback
@@ -1218,24 +1582,27 @@ def get_sale_products_simple(
 @router.get("/new-arrivals")
 def get_new_arrivals(
     session: GetSession,
+    query_params: ListQueryParams,
     is_active: bool = True,
     days: int = 30,  # Products added in last X days
-    limit: int = 20,
-    page: int = 1,
-    sort_by: str = "created_at",  # Field to sort by
-    sort_order: str = "desc",  # asc or desc
+    shop_id: Optional[int] = None,  # Filter by shop
     #user=requirePermission("product_view", "shop_admin"),
 ):
     """
-    Get newly added products with filtering and sorting options
+    Get newly added products with advanced filtering and sorting options
+    Similar to product/list with additional new arrivals specific filters
     """
     try:
-        skip = (page - 1) * limit
-        
         # Calculate date threshold for new arrivals
         from datetime import datetime, timedelta
         threshold_date = datetime.now() - timedelta(days=days)
-        
+
+        # Extract query params
+        query_params_dict = vars(query_params)
+        limit = query_params_dict.get('limit', 20)
+        page = query_params_dict.get('page', 1)
+        skip = (page - 1) * limit
+
         # Build base query
         query = select(Product).where(
             and_(
@@ -1243,27 +1610,51 @@ def get_new_arrivals(
                 Product.created_at >= threshold_date
             )
         )
-        
-        
-        
-        # Validate and apply sorting
-        valid_sort_fields = [
-            "created_at", "updated_at", "name", "price", "sale_price", 
-            "quantity", "total_sold_quantity", "total_purchased_quantity"
-        ]
-        
-        if sort_by not in valid_sort_fields:
-            sort_by = "created_at"  # Default to created_at if invalid
-        
-        sort_field = getattr(Product, sort_by, None)
-        if sort_field is None:
-            sort_field = Product.created_at
-        
-        # Apply sort order
-        if sort_order.lower() == "asc":
-            query = query.order_by(sort_field.asc())
+
+        # Add shop filter if provided
+        if shop_id:
+            query = query.where(Product.shop_id == shop_id)
+
+        # Apply columnFilters from query_params
+        if query_params_dict.get('columnFilters'):
+            import ast
+            column_filters = ast.literal_eval(query_params_dict['columnFilters'])
+            for col_filter in column_filters:
+                field_name, field_value = col_filter[0], col_filter[1]
+                if hasattr(Product, field_name):
+                    field = getattr(Product, field_name)
+                    if isinstance(field_value, list):
+                        query = query.where(field.in_(field_value))
+                    else:
+                        query = query.where(field == field_value)
+
+        # Apply searchTerm
+        if query_params_dict.get('searchTerm'):
+            search = f"%{query_params_dict['searchTerm']}%"
+            query = query.where(
+                or_(
+                    Product.name.ilike(search),
+                    Product.description.ilike(search),
+                    Product.sku.ilike(search)
+                )
+            )
+
+        # Apply sorting from query_params
+        if query_params_dict.get('sort'):
+            sort_params = query_params_dict['sort'].replace("'", "").replace("[", "").replace("]", "").split(',')
+            if len(sort_params) >= 2:
+                sort_by = sort_params[0].strip()
+                sort_order = sort_params[1].strip()
+
+                sort_field = getattr(Product, sort_by, None)
+                if sort_field is not None:
+                    if sort_order.lower() == "asc":
+                        query = query.order_by(sort_field.asc())
+                    else:
+                        query = query.order_by(sort_field.desc())
         else:
-            query = query.order_by(sort_field.desc())
+            # Default sorting by created_at desc
+            query = query.order_by(Product.created_at.desc())
         
         # Execute query
         products = session.exec(
@@ -1279,8 +1670,11 @@ def get_new_arrivals(
                 Product.created_at >= threshold_date
             )
         )
-        
-        
+
+        # Apply shop filter to count query
+        if shop_id:
+            count_query = count_query.where(Product.shop_id == shop_id)
+
         total_count = session.exec(count_query).first()
         
         # Enhance product data
@@ -1289,27 +1683,23 @@ def get_new_arrivals(
             enhanced_product = get_product_with_enhanced_data(session, product.id)
             if enhanced_product:
                 enhanced_products.append(enhanced_product.model_dump())
-        
+
+        # Check if no products found
+        if not enhanced_products:
+            return api_response(
+                404,
+                "No new arrival products found",
+                [],
+                0
+            )
+
         return api_response(
             200,
             f"Found {len(enhanced_products)} new arrival products",
-            {
-                "products": enhanced_products,
-                "pagination": {
-                    "page": page,
-                    "limit": limit,
-                    "total": total_count,
-                    "pages": (total_count + limit - 1) // limit if total_count else 0
-                },
-                "filters": {
-                    "is_active": is_active,
-                    "days": days,
-                    "sort_by": sort_by,
-                    "sort_order": sort_order
-                }
-            }
+            enhanced_products,
+            total_count
         )
-        
+
     except Exception as e:
         print(f"Error fetching new arrivals: {str(e)}")
         return api_response(500, f"Error fetching new arrivals: {str(e)}")

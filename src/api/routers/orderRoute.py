@@ -9,6 +9,7 @@ from src.api.core.utility import Print, uniqueSlugify
 from src.api.core.operation import listop, updateOp
 from src.api.core.response import api_response, raiseExceptions
 from sqlalchemy.orm import selectinload, joinedload
+from src.api.core.email_helper import send_email
 
 from src.api.models.order_model.orderModel import (
     Order,
@@ -216,9 +217,12 @@ def update_product_inventory(
 
 
 def calculate_admin_commission(
-    session, product_id: int, unit_price: float, order_quantity: str
+    session, product_id: int, subtotal_after_discount: float
 ) -> Decimal:
-    """Calculate admin commission based on product's category commission rate"""
+    """
+    Calculate admin commission based on product's category commission rate
+    Commission is calculated on the subtotal AFTER sale price discount is applied
+    """
     try:
         product = session.exec(
             select(Product).where(Product.id == product_id)
@@ -231,8 +235,8 @@ def calculate_admin_commission(
         if not category or not category.admin_commission_rate:
             return Decimal("0.00")
 
-        quantity = float(order_quantity)
-        commission_amount = (unit_price * quantity) * (
+        # Calculate commission on the discounted subtotal
+        commission_amount = subtotal_after_discount * (
             category.admin_commission_rate / 100
         )
 
@@ -536,10 +540,10 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         subtotal = final_price * quantity
         item_discount = calculate_product_discount(price, sale_price, quantity)
         item_tax = calculate_item_tax(subtotal, calc_data['tax_rate'])
-        
-        # Calculate admin commission for this product
+
+        # Calculate admin commission on subtotal (after sale price discount)
         admin_commission = calculate_admin_commission(
-            session, product.id, final_price, str(quantity)
+            session, product.id, subtotal
         )
         total_admin_commission += admin_commission
         
@@ -600,6 +604,27 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
 
     try:
         session.commit()
+        session.refresh(order)
+
+        # Send order confirmation email
+        try:
+            send_email(
+                to_email=shipping_address.get("email") or order.customer_contact,
+                email_template_id=2,  # Use appropriate template ID for order confirmation
+                replacements={
+                    "customer_name": order.customer_name,
+                    "tracking_number": tracking_number,
+                    "order_id": order.id,
+                    "amount": order.amount,
+                    "total": order.total,
+                    "delivery_fee": order.delivery_fee,
+                },
+                session=session
+            )
+        except Exception as e:
+            # Log email error but don't fail order creation
+            Print(f"Failed to send order confirmation email: {e}")
+
         return api_response(
             201,
             "Order created successfully",
@@ -984,21 +1009,12 @@ def create_order_from_cart(
         if not product:
             continue
             
-        # Calculate admin commission
-        admin_commission = calculate_admin_commission(
-            session,
-            product_data.product_id,
-            product_data.unit_price,
-            product_data.order_quantity,
-        )
-        total_admin_commission += admin_commission
-        
         # Create product snapshots
         product_snapshot = get_product_snapshot(session, product_data.product_id)
         variation_snapshot = None
         if product_data.variation_option_id:
             variation_snapshot = get_variation_snapshot(session, product_data.variation_option_id)
-        
+
         # Calculate item-level values
         quantity = float(product_data.order_quantity)
         item_discount = calculate_product_discount(
@@ -1007,6 +1023,14 @@ def create_order_from_cart(
             quantity
         )
         item_tax = calculate_item_tax(product_data.subtotal, calc_data['tax_rate'])
+
+        # Calculate admin commission on subtotal (after sale price discount)
+        admin_commission = calculate_admin_commission(
+            session,
+            product_data.product_id,
+            product_data.subtotal
+        )
+        total_admin_commission += admin_commission
         
         # Create order product with enhanced fields
         order_product = OrderProduct(
@@ -1100,7 +1124,26 @@ def create_order_from_cart(
                     "options": variation.options,
                 }
         products_data.append(product_data)
-    
+
+    # Send order confirmation email
+    try:
+        send_email(
+            to_email=shipping_address.get("email") or order.customer_contact,
+            email_template_id=2,  # Use appropriate template ID for order confirmation
+            replacements={
+                "customer_name": order.customer_name,
+                "tracking_number": tracking_number,
+                "order_id": order.id,
+                "amount": order.amount,
+                "total": order.total,
+                "delivery_fee": order.delivery_fee,
+            },
+            session=session
+        )
+    except Exception as e:
+        # Log email error but don't fail order creation
+        Print(f"Failed to send order confirmation email: {e}")
+
     return api_response(
         201,
         "Order created successfully from cart and cart cleared",
@@ -1234,10 +1277,10 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
             quantity
         )
         item_tax = calculate_item_tax(op_request.subtotal, calc_data['tax_rate'])
-        
-        # Calculate admin commission
+
+        # Calculate admin commission on subtotal (after sale price discount)
         admin_commission = calculate_admin_commission(
-            session, product.id, op_request.unit_price, op_request.order_quantity
+            session, product.id, op_request.subtotal
         )
         total_admin_commission += admin_commission
         
@@ -1395,6 +1438,34 @@ def update_status(
     session.commit()
     session.refresh(order)
     create_shop_earning(session, order)
+
+    # Send order status update email
+    try:
+        # Get user email if customer exists
+        customer_email = None
+        if order.customer_id:
+            from src.api.models.usersModel import User
+            customer = session.get(User, order.customer_id)
+            if customer:
+                customer_email = customer.email
+
+        if customer_email or order.customer_contact:
+            send_email(
+                to_email=customer_email or order.customer_contact,
+                email_template_id=3,  # Use appropriate template ID for order status update
+                replacements={
+                    "customer_name": order.customer_name,
+                    "tracking_number": order.tracking_number,
+                    "order_id": order.id,
+                    "order_status": request.order_status,
+                    "payment_status": request.payment_status or order.payment_status,
+                },
+                session=session
+            )
+    except Exception as e:
+        # Log email error but don't fail status update
+        Print(f"Failed to send order status update email: {e}")
+
     return api_response(
         200, "Order Status Updated Successfully", OrderRead.model_validate(order)
     )
