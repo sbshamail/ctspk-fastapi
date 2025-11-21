@@ -411,8 +411,14 @@ def get_products_by_category(category_id: int, session: GetSession):
         stmt = select(Product).where(Product.category_id.in_(category_ids))
         products = session.exec(stmt).all()
 
-        # Validate products list
-        product_list = [ProductRead.model_validate(p) for p in products]
+        # Validate products list - remove duplicates by product id
+        seen_ids = set()
+        product_list = []
+        for p in products:
+            if p.id in seen_ids:
+                continue
+            seen_ids.add(p.id)
+            product_list.append(ProductRead.model_validate(p))
 
         # Check if no products found
         if not product_list:
@@ -584,11 +590,16 @@ def get_trending_products(
             .offset(skip)
             .limit(limit)
         )
-        
+
         products = session.exec(query).all()
-        
+
+        # Remove duplicates by product id
+        seen_ids = set()
         enhanced_products = []
         for product in products:
+            if product.id in seen_ids:
+                continue
+            seen_ids.add(product.id)
             enhanced_product = get_product_with_enhanced_data(session, product.id)
             if enhanced_product:
                 enhanced_products.append(enhanced_product)
@@ -675,11 +686,16 @@ def get_limited_edition_products(
             .offset(skip)
             .limit(limit)
         )
-        
+
         products = session.exec(query).all()
-        
+
+        # Remove duplicates by product id
+        seen_ids = set()
         enhanced_products = []
         for product in products:
+            if product.id in seen_ids:
+                continue
+            seen_ids.add(product.id)
             enhanced_product = get_product_with_enhanced_data(session, product.id)
             if enhanced_product:
                 enhanced_products.append(enhanced_product)
@@ -764,11 +780,16 @@ def get_best_seller_products(
             .offset(skip)
             .limit(limit)
         )
-        
+
         products = session.exec(query).all()
-        
+
+        # Remove duplicates by product id
+        seen_ids = set()
         enhanced_products = []
         for product in products:
+            if product.id in seen_ids:
+                continue
+            seen_ids.add(product.id)
             enhanced_product = get_product_with_enhanced_data(session, product.id)
             if enhanced_product:
                 enhanced_products.append(enhanced_product)
@@ -1662,7 +1683,7 @@ def get_new_arrivals(
             .offset(skip)
             .limit(limit)
         ).all()
-        
+
         # Get total count for pagination
         count_query = select(func.count(Product.id)).where(
             and_(
@@ -1676,10 +1697,14 @@ def get_new_arrivals(
             count_query = count_query.where(Product.shop_id == shop_id)
 
         total_count = session.exec(count_query).first()
-        
-        # Enhance product data
+
+        # Enhance product data - remove duplicates by product id
+        seen_ids = set()
         enhanced_products = []
         for product in products:
+            if product.id in seen_ids:
+                continue
+            seen_ids.add(product.id)
             enhanced_product = get_product_with_enhanced_data(session, product.id)
             if enhanced_product:
                 enhanced_products.append(enhanced_product.model_dump())
