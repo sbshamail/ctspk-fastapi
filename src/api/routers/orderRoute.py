@@ -1592,6 +1592,7 @@ def list_orders(
     order_status: Optional[OrderStatusEnum] = None,
     payment_status: Optional[PaymentStatusEnum] = None,
     shop_id: Optional[int] = None,  # ADDED: Filter by shop_id (from order products)
+    sort: Optional[str] = Query(None, description="Sort by column. Example: ['created_at','desc'] or ['total','asc']"),
     page: int = None,
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
@@ -1645,6 +1646,7 @@ def list_orders(
         skip=skip,
         page=page,
         limit=limit,
+        sort=sort,
     )
 
     if not result["data"]:
@@ -1663,8 +1665,8 @@ def list_orders(
 
         # Get shop details
         shop_details = []
-        for shop_id in shops:
-            shop = session.get(Shop, shop_id)
+        for s_id in shops:
+            shop = session.get(Shop, s_id)
             if shop:
                 shop_details.append(
                     {"id": shop.id, "name": shop.name, "slug": shop.slug}
@@ -1676,11 +1678,12 @@ def list_orders(
 
     return api_response(200, "Orders found", enhanced_orders, result["total"])
 
+
 @router.get(
     "/listorder",
     response_model=list[OrderReadNested],
 )
-def list_orders(
+def list_all_orders(
     user: requireSignin,
     session: GetSession,
     dateRange: Optional[str] = None,
@@ -1690,6 +1693,7 @@ def list_orders(
     order_status: Optional[OrderStatusEnum] = None,
     payment_status: Optional[PaymentStatusEnum] = None,
     shop_id: Optional[int] = None,  # ADDED: Filter by shop_id (from order products)
+    sort: Optional[str] = Query(None, description="Sort by column. Example: ['created_at','desc'] or ['total','asc']"),
     page: int = None,
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
@@ -1743,6 +1747,7 @@ def list_orders(
         skip=skip,
         page=page,
         limit=limit,
+        sort=sort,
     )
 
     if not result["data"]:
@@ -1761,8 +1766,8 @@ def list_orders(
 
         # Get shop details
         shop_details = []
-        for shop_id in shops:
-            shop = session.get(Shop, shop_id)
+        for s_id in shops:
+            shop = session.get(Shop, s_id)
             if shop:
                 shop_details.append(
                     {"id": shop.id, "name": shop.name, "slug": shop.slug}
@@ -1773,6 +1778,7 @@ def list_orders(
         enhanced_orders.append(order_data)
 
     return api_response(200, "Orders found", enhanced_orders, result["total"])
+
 
 @router.get("/customer/{customer_id}", response_model=list[OrderReadNested])
 def get_customer_orders(
