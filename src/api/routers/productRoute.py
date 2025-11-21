@@ -35,6 +35,74 @@ from sqlalchemy.orm import aliased
 router = APIRouter(prefix="/product", tags=["Product"])
 
 
+def apply_number_range_filter(query, query_params_dict, Model):
+    """Helper function to apply numberRange filter to a query"""
+    if query_params_dict.get('numberRange'):
+        try:
+            import json
+            import ast
+            number_range = query_params_dict['numberRange']
+            try:
+                parsed = json.loads(number_range)
+            except json.JSONDecodeError:
+                parsed = ast.literal_eval(number_range)
+
+            column_name = parsed[0]
+            min_val = float(parsed[1]) if len(parsed) > 1 and parsed[1] is not None else None
+            max_val = float(parsed[2]) if len(parsed) > 2 and parsed[2] is not None else None
+
+            if hasattr(Model, column_name):
+                column = getattr(Model, column_name)
+                if min_val is not None and max_val is not None:
+                    query = query.where(column.between(min_val, max_val))
+                elif min_val is not None:
+                    query = query.where(column >= min_val)
+                elif max_val is not None:
+                    query = query.where(column <= max_val)
+        except Exception as e:
+            print(f"Error parsing numberRange: {e}")
+    return query
+
+
+def apply_sort_filter(query, query_params_dict, Model, default_sort_field=None, default_sort_order="desc"):
+    """Helper function to apply sort filter to a query"""
+    if query_params_dict.get('sort'):
+        try:
+            import json
+            import ast
+            sort_param = query_params_dict['sort']
+            try:
+                parsed = json.loads(sort_param)
+            except json.JSONDecodeError:
+                parsed = ast.literal_eval(sort_param)
+
+            column_name, direction = parsed[0], parsed[1]
+
+            if hasattr(Model, column_name):
+                column = getattr(Model, column_name)
+                if direction.lower() == "asc":
+                    query = query.order_by(column.asc())
+                else:
+                    query = query.order_by(column.desc())
+        except Exception as e:
+            print(f"Error parsing sort: {e}")
+            # Apply default sort if parsing fails
+            if default_sort_field and hasattr(Model, default_sort_field):
+                column = getattr(Model, default_sort_field)
+                if default_sort_order.lower() == "asc":
+                    query = query.order_by(column.asc())
+                else:
+                    query = query.order_by(column.desc())
+    elif default_sort_field and hasattr(Model, default_sort_field):
+        # Apply default sort if no sort param provided
+        column = getattr(Model, default_sort_field)
+        if default_sort_order.lower() == "asc":
+            query = query.order_by(column.asc())
+        else:
+            query = query.order_by(column.desc())
+    return query
+
+
 def create_variations_for_product(
     session, product_id: int, variations_data: List[VariationData], base_sku: str
 ):
@@ -584,9 +652,14 @@ def get_trending_products(
                     else:
                         query = query.where(field == field_value)
 
+        # Apply numberRange filter
+        query = apply_number_range_filter(query, query_params_dict, Product)
+
+        # Apply sort filter
+        query = apply_sort_filter(query, query_params_dict, Product, "total_sold_quantity", "desc")
+
         query = (
             query
-            .order_by(Product.total_sold_quantity.desc())
             .offset(skip)
             .limit(limit)
         )
@@ -680,9 +753,14 @@ def get_limited_edition_products(
                     else:
                         query = query.where(field == field_value)
 
+        # Apply numberRange filter
+        query = apply_number_range_filter(query, query_params_dict, Product)
+
+        # Apply sort filter
+        query = apply_sort_filter(query, query_params_dict, Product, "quantity", "asc")
+
         query = (
             query
-            .order_by(Product.quantity.asc())  # Lowest quantity first
             .offset(skip)
             .limit(limit)
         )
@@ -773,10 +851,16 @@ def get_best_seller_products(
                     else:
                         query = query.where(field == field_value)
 
+        # Apply numberRange filter
+        query = apply_number_range_filter(query, query_params_dict, Product)
+
+        query = query.where(Product.total_sold_quantity > 0)
+
+        # Apply sort filter
+        query = apply_sort_filter(query, query_params_dict, Product, "total_sold_quantity", "desc")
+
         query = (
             query
-            .where(Product.total_sold_quantity > 0)
-            .order_by(Product.total_sold_quantity.desc())
             .offset(skip)
             .limit(limit)
         )
@@ -1447,12 +1531,18 @@ def get_sale_products_simple(
                 )
             )
 
+        # Apply numberRange filter
+        simple_products_stmt = apply_number_range_filter(simple_products_stmt, query_params_dict, Product)
+
+        # Apply sort filter
+        simple_products_stmt = apply_sort_filter(simple_products_stmt, query_params_dict, Product, "created_at", "desc")
+
         simple_products_stmt = (
             simple_products_stmt
             .offset(skip)
             .limit(limit)
         )
-        
+
         print("Executing simple products query...")
         simple_products = session.exec(simple_products_stmt).all()
         print(f"Found {len(simple_products)} simple products on sale")
@@ -1514,12 +1604,18 @@ def get_sale_products_simple(
                     )
                 )
 
+            # Apply numberRange filter
+            variable_products_stmt = apply_number_range_filter(variable_products_stmt, query_params_dict, Product)
+
+            # Apply sort filter
+            variable_products_stmt = apply_sort_filter(variable_products_stmt, query_params_dict, Product, "created_at", "desc")
+
             variable_products_stmt = (
                 variable_products_stmt
                 .offset(skip)
                 .limit(limit)
             )
-            
+
             print("Executing variable products query...")
             variable_products = session.exec(variable_products_stmt).all()
             print(f"Retrieved {len(variable_products)} variable products")
@@ -1660,22 +1756,11 @@ def get_new_arrivals(
                 )
             )
 
-        # Apply sorting from query_params
-        if query_params_dict.get('sort'):
-            sort_params = query_params_dict['sort'].replace("'", "").replace("[", "").replace("]", "").split(',')
-            if len(sort_params) >= 2:
-                sort_by = sort_params[0].strip()
-                sort_order = sort_params[1].strip()
+        # Apply numberRange filter
+        query = apply_number_range_filter(query, query_params_dict, Product)
 
-                sort_field = getattr(Product, sort_by, None)
-                if sort_field is not None:
-                    if sort_order.lower() == "asc":
-                        query = query.order_by(sort_field.asc())
-                    else:
-                        query = query.order_by(sort_field.desc())
-        else:
-            # Default sorting by created_at desc
-            query = query.order_by(Product.created_at.desc())
+        # Apply sort filter
+        query = apply_sort_filter(query, query_params_dict, Product, "created_at", "desc")
         
         # Execute query
         products = session.exec(

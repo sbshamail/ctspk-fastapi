@@ -363,51 +363,66 @@ def applyFilters(
 
     # Number range
     if numberRange:
-        # number_range should be like ("amount", "0", "100000")
-        parsed = tuple(json.loads(numberRange))
-        column_name, *values = parsed  # first element is column name, rest are values
+        try:
+            # number_range should be like ("amount", "0", "100000")
+            # Try json.loads first, fall back to ast.literal_eval for single quotes
+            try:
+                parsed = tuple(json.loads(numberRange))
+            except json.JSONDecodeError:
+                parsed = tuple(ast.literal_eval(numberRange))
 
-        # Assign safely
-        min_val = float(values[0]) if len(values) >= 1 and values[0] else None
-        max_val = float(values[1]) if len(values) >= 2 else None
+            column_name, *values = parsed  # first element is column name, rest are values
 
-        # Ensure numeric types
+            # Assign safely
+            min_val = float(values[0]) if len(values) >= 1 and values[0] else None
+            max_val = float(values[1]) if len(values) >= 2 else None
 
-        column = getattr(Model, column_name)
-        if min_val is not None and max_val is not None:
-            statement = statement.where(column.between(min_val, max_val))
-        elif min_val is not None:
-            statement = statement.where(column >= min_val)
-        elif max_val is not None:
-            statement = statement.where(column <= max_val)
+            # Ensure numeric types
+            column = getattr(Model, column_name)
+            if min_val is not None and max_val is not None:
+                statement = statement.where(column.between(min_val, max_val))
+            elif min_val is not None:
+                statement = statement.where(column >= min_val)
+            elif max_val is not None:
+                statement = statement.where(column <= max_val)
+        except Exception as e:
+            print(f"Error parsing numberRange: {e}")
 
     # Date range
     if dateRange:
-        dateRangeParse = json.loads(dateRange)
-        dateRange = tuple(dateRangeParse)
+        try:
+            # Try json.loads first, fall back to ast.literal_eval for single quotes
+            try:
+                dateRangeParse = json.loads(dateRange)
+            except json.JSONDecodeError:
+                dateRangeParse = ast.literal_eval(dateRange)
 
-        column_name = dateRange[0]  # e.g. "created_at"
-        column = getattr(Model, column_name)  # map to SQLModel column
+            dateRange = tuple(dateRangeParse)
 
-        start_date = parse_date(dateRange[1])
-        end_date = (
-            parse_date(dateRange[2])
-            if len(dateRange) > 2 and dateRange[2]
-            else datetime.now(timezone.utc)
-        )
+            column_name = dateRange[0]  # e.g. "created_at"
+            column = getattr(Model, column_name)  # map to SQLModel column
 
-        # If user didn’t specify end time, set to 23:59:59
-        if (
-            end_date.hour == 0
-            and end_date.minute == 0
-            and end_date.second == 0
-            and end_date.microsecond == 0
-        ):
-            end_date = end_date.replace(
-                hour=23, minute=59, second=59, microsecond=999999
+            start_date = parse_date(dateRange[1])
+            end_date = (
+                parse_date(dateRange[2])
+                if len(dateRange) > 2 and dateRange[2]
+                else datetime.now(timezone.utc)
             )
 
-        statement = statement.where(and_(column >= start_date, column <= end_date))
+            # If user didn't specify end time, set to 23:59:59
+            if (
+                end_date.hour == 0
+                and end_date.minute == 0
+                and end_date.second == 0
+                and end_date.microsecond == 0
+            ):
+                end_date = end_date.replace(
+                    hour=23, minute=59, second=59, microsecond=999999
+                )
+
+            statement = statement.where(and_(column >= start_date, column <= end_date))
+        except Exception as e:
+            print(f"Error parsing dateRange: {e}")
 
         # Sorting
 
