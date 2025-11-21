@@ -339,7 +339,6 @@ def applyFilters(
                 filters.append(or_(*ors))
 
             statement = statement.where(and_(*filters))
-            return statement
 
         except Exception as e:
             return api_response(
@@ -361,8 +360,6 @@ def applyFilters(
                 filters.append(attr == value)
 
         statement = statement.where(and_(*filters))
-
-        return statement
 
     # Number range
     if numberRange:
@@ -416,7 +413,13 @@ def applyFilters(
 
     if sort:
         try:
-            column_name, direction = json.loads(sort)
+            # Try json.loads first, fall back to ast.literal_eval for single quotes
+            try:
+                parsed_sort = json.loads(sort)
+            except json.JSONDecodeError:
+                parsed_sort = ast.literal_eval(sort)
+
+            column_name, direction = parsed_sort
             attr, statement = resolve_column(Model, column_name, statement)
             col_type = _get_column_type(attr)
 
@@ -426,9 +429,9 @@ def applyFilters(
             else:
                 order_expr = attr
 
-            if direction.lower() in ["asc", "asc"]:
+            if direction.lower() == "asc":
                 statement = statement.order_by(asc(order_expr))
-            elif direction.lower() in ["desc", "desc"]:
+            elif direction.lower() == "desc":
                 statement = statement.order_by(desc(order_expr))
         except Exception as e:
             return api_response(
