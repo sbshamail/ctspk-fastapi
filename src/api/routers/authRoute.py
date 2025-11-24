@@ -111,7 +111,7 @@ def register_user(
     try:
         send_email(
             to_email=user.email,
-            email_template_id=1,  # Use appropriate template ID for user registration
+            email_template_id=3,  # Use appropriate template ID for user registration
             replacements={
                 "name": user.name,
                 "email": user.email,

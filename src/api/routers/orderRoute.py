@@ -610,7 +610,7 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         try:
             send_email(
                 to_email=shipping_address.get("email") or order.customer_contact,
-                email_template_id=2,  # Use appropriate template ID for order confirmation
+                email_template_id=5,  # Use appropriate template ID for order confirmation
                 replacements={
                     "customer_name": order.customer_name,
                     "tracking_number": tracking_number,
@@ -1129,7 +1129,7 @@ def create_order_from_cart(
     try:
         send_email(
             to_email=shipping_address.get("email") or order.customer_contact,
-            email_template_id=2,  # Use appropriate template ID for order confirmation
+            email_template_id=5,  # Use appropriate template ID for order confirmation
             replacements={
                 "customer_name": order.customer_name,
                 "tracking_number": tracking_number,
@@ -1452,7 +1452,7 @@ def update_status(
         if customer_email or order.customer_contact:
             send_email(
                 to_email=customer_email or order.customer_contact,
-                email_template_id=3,  # Use appropriate template ID for order status update
+                email_template_id=6,  # Use appropriate template ID for order status update
                 replacements={
                     "customer_name": order.customer_name,
                     "tracking_number": order.tracking_number,
