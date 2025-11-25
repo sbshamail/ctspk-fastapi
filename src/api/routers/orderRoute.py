@@ -2314,7 +2314,7 @@ def get_my_order_statistics(
     - root role: Count all orders (includes cancelled/returned)
     """
     user_id = user.get("id")
-    role_names = user.get("role_names", [])
+    role_names = user.get("roles", [])
 
     # Determine role priority: root > shop_admin > fulfillment
     is_root = user.get("is_root", False) or "root" in role_names
@@ -2337,10 +2337,10 @@ def get_my_order_statistics(
         # Root: All orders, no filters
         pass
     elif is_shop_admin:
-        # Get user's shops
+        # Get user's shops (use scalars to get list of IDs)
         user_shops = session.exec(
             select(Shop.id).where(Shop.owner_id == user_id)
-        ).all()
+        ).scalars().all()
 
         if not user_shops:
             return api_response(200, "No shops found for user", {
@@ -2350,12 +2350,12 @@ def get_my_order_statistics(
                 "returned": 0,
             })
 
-        # Get order IDs that contain products from user's shops
+        # Get order IDs that contain products from user's shops (use scalars)
         order_ids_with_shop = session.exec(
             select(OrderProduct.order_id)
             .where(OrderProduct.shop_id.in_(user_shops))
             .distinct()
-        ).all()
+        ).scalars().all()
 
         if not order_ids_with_shop:
             return api_response(200, "No orders found for user's shops", {
@@ -2423,7 +2423,7 @@ def get_my_completed_orders(
     - root role: All completed orders
     """
     user_id = user.get("id")
-    role_names = user.get("role_names", [])
+    role_names = user.get("roles", [])
 
     # Determine role priority: root > shop_admin > fulfillment
     is_root = user.get("is_root", False) or "root" in role_names
@@ -2446,20 +2446,20 @@ def get_my_completed_orders(
         # Root: All completed orders
         pass
     elif is_shop_admin:
-        # Get user's shops
+        # Get user's shops (use scalars to get list of IDs)
         user_shops = session.exec(
             select(Shop.id).where(Shop.owner_id == user_id)
-        ).all()
+        ).scalars().all()
 
         if not user_shops:
             return api_response(200, "No shops found for user", [], 0)
 
-        # Get order IDs that contain products from user's shops
+        # Get order IDs that contain products from user's shops (use scalars)
         order_ids_with_shop = session.exec(
             select(OrderProduct.order_id)
             .where(OrderProduct.shop_id.in_(user_shops))
             .distinct()
-        ).all()
+        ).scalars().all()
 
         if not order_ids_with_shop:
             return api_response(200, "No orders found for user's shops", [], 0)
@@ -2518,7 +2518,7 @@ def get_my_not_completed_orders(
     - root role: All not-completed orders
     """
     user_id = user.get("id")
-    role_names = user.get("role_names", [])
+    role_names = user.get("roles", [])
 
     # Determine role priority: root > shop_admin > fulfillment
     is_root = user.get("is_root", False) or "root" in role_names
@@ -2541,20 +2541,20 @@ def get_my_not_completed_orders(
         # Root: All not-completed orders
         pass
     elif is_shop_admin:
-        # Get user's shops
+        # Get user's shops (use scalars to get list of IDs)
         user_shops = session.exec(
             select(Shop.id).where(Shop.owner_id == user_id)
-        ).all()
+        ).scalars().all()
 
         if not user_shops:
             return api_response(200, "No shops found for user", [], 0)
 
-        # Get order IDs that contain products from user's shops
+        # Get order IDs that contain products from user's shops (use scalars)
         order_ids_with_shop = session.exec(
             select(OrderProduct.order_id)
             .where(OrderProduct.shop_id.in_(user_shops))
             .distinct()
-        ).all()
+        ).scalars().all()
 
         if not order_ids_with_shop:
             return api_response(200, "No orders found for user's shops", [], 0)
