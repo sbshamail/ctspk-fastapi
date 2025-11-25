@@ -2319,7 +2319,7 @@ def get_my_order_statistics(
     # Determine role priority: root > shop_admin > fulfillment
     is_root = user.get("is_root", False) or "root" in role_names
     is_shop_admin = "shop_admin" in role_names
-    is_fulfillment = "fulfillment" in role_names or "fullfillment" in role_names
+    is_fulfillment = "fulfillment" in role_names or "fulfillment" in role_names
 
     # Build base query
     completed_query = select(func.count(Order.id)).where(
@@ -2428,7 +2428,7 @@ def get_my_completed_orders(
     # Determine role priority: root > shop_admin > fulfillment
     is_root = user.get("is_root", False) or "root" in role_names
     is_shop_admin = "shop_admin" in role_names
-    is_fulfillment = "fulfillment" in role_names or "fullfillment" in role_names
+    is_fulfillment = "fulfillment" in role_names or "fulfillment" in role_names
 
     # Build base query
     query = (
@@ -2523,7 +2523,7 @@ def get_my_not_completed_orders(
     # Determine role priority: root > shop_admin > fulfillment
     is_root = user.get("is_root", False) or "root" in role_names
     is_shop_admin = "shop_admin" in role_names
-    is_fulfillment = "fulfillment" in role_names or "fullfillment" in role_names
+    is_fulfillment = "fulfillment" in role_names or "fulfillment" in role_names
 
     # Build base query
     query = (
