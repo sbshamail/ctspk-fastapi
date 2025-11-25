@@ -2296,3 +2296,305 @@ def create_shop_earning(session, order: Order):
         )
 
         session.add(earning)
+
+
+# ==========================================
+# NEW: Role-based Order Statistics & Lists
+# ==========================================
+
+@router.get("/my-statistics")
+def get_my_order_statistics(
+    user: requireSignin,
+    session: GetSession,
+):
+    """
+    Get order statistics based on user role:
+    - fulfillment role: Count orders assigned to user (fullfillment_id)
+    - shop_admin role: Count orders from user's shops (includes cancelled/returned)
+    - root role: Count all orders (includes cancelled/returned)
+    """
+    user_id = user.get("id")
+    role_names = user.get("role_names", [])
+
+    # Determine role priority: root > shop_admin > fulfillment
+    is_root = user.get("is_root", False) or "root" in role_names
+    is_shop_admin = "shop_admin" in role_names
+    is_fulfillment = "fulfillment" in role_names or "fullfillment" in role_names
+
+    # Build base query
+    completed_query = select(func.count(Order.id)).where(
+        Order.order_status == OrderStatusEnum.COMPLETED
+    )
+    not_completed_query = select(func.count(Order.id)).where(
+        Order.order_status != OrderStatusEnum.COMPLETED
+    )
+
+    # Additional counts for shop_admin and root
+    cancelled_count = 0
+    returned_count = 0
+
+    if is_root:
+        # Root: All orders, no filters
+        pass
+    elif is_shop_admin:
+        # Get user's shops
+        user_shops = session.exec(
+            select(Shop.id).where(Shop.owner_id == user_id)
+        ).all()
+
+        if not user_shops:
+            return api_response(200, "No shops found for user", {
+                "completed": 0,
+                "not_completed": 0,
+                "cancelled": 0,
+                "returned": 0,
+            })
+
+        # Get order IDs that contain products from user's shops
+        order_ids_with_shop = session.exec(
+            select(OrderProduct.order_id)
+            .where(OrderProduct.shop_id.in_(user_shops))
+            .distinct()
+        ).all()
+
+        if not order_ids_with_shop:
+            return api_response(200, "No orders found for user's shops", {
+                "completed": 0,
+                "not_completed": 0,
+                "cancelled": 0,
+                "returned": 0,
+            })
+
+        # Filter by shop orders
+        completed_query = completed_query.where(Order.id.in_(order_ids_with_shop))
+        not_completed_query = not_completed_query.where(Order.id.in_(order_ids_with_shop))
+
+    elif is_fulfillment:
+        # Fulfillment: Only orders assigned to this user
+        completed_query = completed_query.where(Order.fullfillment_id == user_id)
+        not_completed_query = not_completed_query.where(Order.fullfillment_id == user_id)
+    else:
+        return api_response(403, "User does not have required role for this endpoint")
+
+    # Execute queries using scalar() to get the count value directly
+    completed_count = session.exec(completed_query).scalar() or 0
+    not_completed_count = session.exec(not_completed_query).scalar() or 0
+
+    # Calculate cancelled and returned for shop_admin and root
+    if is_root or is_shop_admin:
+        cancelled_query = select(func.count(Order.id)).where(
+            Order.order_status == OrderStatusEnum.CANCELLED
+        )
+
+        if is_shop_admin and order_ids_with_shop:
+            cancelled_query = cancelled_query.where(Order.id.in_(order_ids_with_shop))
+
+        cancelled_count = session.exec(cancelled_query).scalar() or 0
+
+        # Count returned orders (order status = refunded)
+        returned_query = select(func.count(Order.id)).where(
+            Order.order_status == OrderStatusEnum.REFUNDED
+        )
+
+        if is_shop_admin and order_ids_with_shop:
+            returned_query = returned_query.where(Order.id.in_(order_ids_with_shop))
+
+        returned_count = session.exec(returned_query).scalar() or 0
+
+    return api_response(200, "Order statistics retrieved", {
+        "completed": completed_count,
+        "not_completed": not_completed_count,
+        "cancelled": cancelled_count,
+        "returned": returned_count,
+        "role": "root" if is_root else "shop_admin" if is_shop_admin else "fulfillment",
+    })
+
+
+@router.get("/my-completed", response_model=list[OrderReadNested])
+def get_my_completed_orders(
+    user: requireSignin,
+    session: GetSession,
+    limit: int = Query(20, ge=1, le=200, description="Number of orders to return (default: 20)"),
+):
+    """
+    Get last N completed orders based on user role:
+    - fulfillment role: Orders assigned to user (fullfillment_id)
+    - shop_admin role: Orders from user's shops
+    - root role: All completed orders
+    """
+    user_id = user.get("id")
+    role_names = user.get("role_names", [])
+
+    # Determine role priority: root > shop_admin > fulfillment
+    is_root = user.get("is_root", False) or "root" in role_names
+    is_shop_admin = "shop_admin" in role_names
+    is_fulfillment = "fulfillment" in role_names or "fullfillment" in role_names
+
+    # Build base query
+    query = (
+        select(Order)
+        .where(Order.order_status == OrderStatusEnum.COMPLETED)
+        .order_by(Order.created_at.desc())
+        .limit(limit)
+        .options(
+            selectinload(Order.order_products).selectinload(OrderProduct.product),
+            selectinload(Order.order_status_history),
+        )
+    )
+
+    if is_root:
+        # Root: All completed orders
+        pass
+    elif is_shop_admin:
+        # Get user's shops
+        user_shops = session.exec(
+            select(Shop.id).where(Shop.owner_id == user_id)
+        ).all()
+
+        if not user_shops:
+            return api_response(200, "No shops found for user", [], 0)
+
+        # Get order IDs that contain products from user's shops
+        order_ids_with_shop = session.exec(
+            select(OrderProduct.order_id)
+            .where(OrderProduct.shop_id.in_(user_shops))
+            .distinct()
+        ).all()
+
+        if not order_ids_with_shop:
+            return api_response(200, "No orders found for user's shops", [], 0)
+
+        query = query.where(Order.id.in_(order_ids_with_shop))
+
+    elif is_fulfillment:
+        # Fulfillment: Only orders assigned to this user
+        query = query.where(Order.fullfillment_id == user_id)
+    else:
+        return api_response(403, "User does not have required role for this endpoint")
+
+    # Execute query and get scalar results (Order objects, not Row tuples)
+    orders = session.exec(query).scalars().all()
+
+    if not orders:
+        return api_response(200, "No completed orders found", [], 0)
+
+    # Enhance each order with shop information
+    enhanced_orders = []
+    for order in orders:
+        order_data = OrderReadNested.model_validate(order)
+
+        # Get unique shops from order products
+        shops = set()
+        for order_product in order.order_products:
+            if order_product.shop_id:
+                shops.add(order_product.shop_id)
+
+        # Get shop details
+        shop_details = []
+        for s_id in shops:
+            shop = session.get(Shop, s_id)
+            if shop:
+                shop_details.append(
+                    {"id": shop.id, "name": shop.name, "slug": shop.slug}
+                )
+
+        order_data.shops = shop_details
+        order_data.shop_count = len(shop_details)
+        enhanced_orders.append(order_data)
+
+    return api_response(200, "Completed orders retrieved", enhanced_orders, len(enhanced_orders))
+
+
+@router.get("/my-not-completed", response_model=list[OrderReadNested])
+def get_my_not_completed_orders(
+    user: requireSignin,
+    session: GetSession,
+    limit: int = Query(20, ge=1, le=200, description="Number of orders to return (default: 20)"),
+):
+    """
+    Get last N not-completed orders based on user role:
+    - fulfillment role: Orders assigned to user (fullfillment_id)
+    - shop_admin role: Orders from user's shops
+    - root role: All not-completed orders
+    """
+    user_id = user.get("id")
+    role_names = user.get("role_names", [])
+
+    # Determine role priority: root > shop_admin > fulfillment
+    is_root = user.get("is_root", False) or "root" in role_names
+    is_shop_admin = "shop_admin" in role_names
+    is_fulfillment = "fulfillment" in role_names or "fullfillment" in role_names
+
+    # Build base query
+    query = (
+        select(Order)
+        .where(Order.order_status != OrderStatusEnum.COMPLETED)
+        .order_by(Order.created_at.desc())
+        .limit(limit)
+        .options(
+            selectinload(Order.order_products).selectinload(OrderProduct.product),
+            selectinload(Order.order_status_history),
+        )
+    )
+
+    if is_root:
+        # Root: All not-completed orders
+        pass
+    elif is_shop_admin:
+        # Get user's shops
+        user_shops = session.exec(
+            select(Shop.id).where(Shop.owner_id == user_id)
+        ).all()
+
+        if not user_shops:
+            return api_response(200, "No shops found for user", [], 0)
+
+        # Get order IDs that contain products from user's shops
+        order_ids_with_shop = session.exec(
+            select(OrderProduct.order_id)
+            .where(OrderProduct.shop_id.in_(user_shops))
+            .distinct()
+        ).all()
+
+        if not order_ids_with_shop:
+            return api_response(200, "No orders found for user's shops", [], 0)
+
+        query = query.where(Order.id.in_(order_ids_with_shop))
+
+    elif is_fulfillment:
+        # Fulfillment: Only orders assigned to this user
+        query = query.where(Order.fullfillment_id == user_id)
+    else:
+        return api_response(403, "User does not have required role for this endpoint")
+
+    # Execute query and get scalar results (Order objects, not Row tuples)
+    orders = session.exec(query).scalars().all()
+
+    if not orders:
+        return api_response(200, "No not-completed orders found", [], 0)
+
+    # Enhance each order with shop information
+    enhanced_orders = []
+    for order in orders:
+        order_data = OrderReadNested.model_validate(order)
+
+        # Get unique shops from order products
+        shops = set()
+        for order_product in order.order_products:
+            if order_product.shop_id:
+                shops.add(order_product.shop_id)
+
+        # Get shop details
+        shop_details = []
+        for s_id in shops:
+            shop = session.get(Shop, s_id)
+            if shop:
+                shop_details.append(
+                    {"id": shop.id, "name": shop.name, "slug": shop.slug}
+                )
+
+        order_data.shops = shop_details
+        order_data.shop_count = len(shop_details)
+        enhanced_orders.append(order_data)
+
+    return api_response(200, "Not-completed orders retrieved", enhanced_orders, len(enhanced_orders))
