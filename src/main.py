@@ -58,7 +58,9 @@ from src.api.routers import (
     # setting
     settings,
     # tax
-    taxRoute
+    taxRoute,
+    # contactus
+    contactusRoute
 )
 
 
@@ -149,3 +151,5 @@ app.include_router(walletRoute.router)
 app.include_router(withdrawRoute.router)
 # setting
 app.include_router(settings.router)
+# contactus
+app.include_router(contactusRoute.router)
