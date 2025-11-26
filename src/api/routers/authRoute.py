@@ -114,6 +114,7 @@ def register_user(
             email_template_id=3,  # Use appropriate template ID for user registration
             replacements={
                 "name": user.name,
+                "customer_name": user.name,
                 "email": user.email,
             },
             session=session
