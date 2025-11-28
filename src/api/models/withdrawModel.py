@@ -122,6 +122,8 @@ class ShopEarningRead(TimeStampReadModel):
     order_tracking_number: Optional[str] = None
 
 class ShopBalanceSummary(SQLModel):
+    shop_id: Optional[int] = None
+    shop_name: Optional[str] = None
     total_earnings: Decimal
     total_admin_commission: Decimal
     net_balance: Decimal

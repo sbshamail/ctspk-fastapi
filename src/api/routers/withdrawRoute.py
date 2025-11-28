@@ -24,7 +24,7 @@ def get_shop_id_from_result(shop_result):
         return shop_result.id
     else:
         raise ValueError("Unable to extract shop ID from result")
-def calculate_shop_balance(session, shop_id: int) -> ShopBalanceSummary:
+def calculate_shop_balance(session, shop_id: int, include_shop_info: bool = False) -> ShopBalanceSummary:
     """Calculate shop's current balance and earnings"""
     # Get total earnings from completed orders for this specific shop
     total_earnings_stmt = select(
@@ -37,7 +37,7 @@ def calculate_shop_balance(session, shop_id: int) -> ShopBalanceSummary:
     total_result = session.exec(total_earnings_stmt).first()
     total_earnings = total_result[0] or Decimal("0.00")
     total_commission = total_result[1] or Decimal("0.00")
-    
+
     # Get pending withdrawals
     pending_withdrawals_stmt = select(
         func.coalesce(func.sum(ShopWithdrawRequest.amount), 0)
@@ -46,11 +46,19 @@ def calculate_shop_balance(session, shop_id: int) -> ShopBalanceSummary:
         ShopWithdrawRequest.status.in_([WithdrawStatus.PENDING, WithdrawStatus.APPROVED])
     )
     pending_withdrawals = session.exec(pending_withdrawals_stmt).scalar() or Decimal("0.00")
-    
+
     net_balance = total_earnings
     available_balance = net_balance - pending_withdrawals
-    
+
+    # Get shop info if requested
+    shop_name = None
+    if include_shop_info:
+        shop = session.get(Shop, shop_id)
+        shop_name = shop.name if shop else "Unknown"
+
     return ShopBalanceSummary(
+        shop_id=shop_id if include_shop_info else None,
+        shop_name=shop_name,
         total_earnings=total_earnings,
         total_admin_commission=total_commission,
         net_balance=net_balance,
@@ -107,15 +115,43 @@ def create_withdraw_request(
                        WithdrawRequestRead.model_validate(withdraw_request))
 
 @router.get("/shop-balance")
-def get_shop_balance(session: GetSession, user=requireSignin):
-    """Get shop balance summary for logged-in shop owner"""
-    shop = session.exec(
-        select(Shop).where(Shop.owner_id == user)
-    ).first()
+def get_all_shop_balances(session: GetSession, user: requireSignin):
+    """Get balance summary for all shops owned by logged-in user"""
+    # Get all shops owned by user
+    shops = session.exec(
+        select(Shop).where(Shop.owner_id == user.get("id"))
+    ).scalars().all()
+
+    if not shops:
+        return api_response(404, "No shops found for this user")
+
+    # Calculate balance for each shop
+    balances = []
+    for shop in shops:
+        balance = calculate_shop_balance(session, shop.id, include_shop_info=True)
+        balances.append(balance)
+
+    return api_response(
+        200,
+        f"Balance retrieved for {len(balances)} shop(s)",
+        balances,
+        len(balances)
+    )
+
+
+@router.get("/shop-balance/{shop_id}")
+def get_single_shop_balance(shop_id: int, session: GetSession, user: requireSignin):
+    """Get balance summary for a specific shop"""
+    # Get shop and verify ownership
+    shop = session.get(Shop, shop_id)
     raiseExceptions((shop, 404, "Shop not found"))
-    shop_id = get_shop_id_from_result(shop)
-    # FIX: Access shop ID correctly
-    balance = calculate_shop_balance(session, shop_id)
+
+    # Verify user owns this shop
+    if shop.owner_id != user.get("id"):
+        return api_response(403, "You don't have access to this shop")
+
+    balance = calculate_shop_balance(session, shop_id, include_shop_info=True)
+
     return api_response(200, "Balance retrieved successfully", balance)
 
 @router.get("/my-requests")

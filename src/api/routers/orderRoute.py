@@ -1401,7 +1401,11 @@ def update(id: int, request: OrderUpdate, session: GetSession, user: requireSign
 
     session.commit()
     session.refresh(order)
+
+    # Create shop earnings if order is completed
     create_shop_earning(session, order)
+    session.commit()  # Commit shop earnings
+
     return api_response(
         200, "Order Updated Successfully", OrderReadNested.model_validate(order)
     )
@@ -1469,7 +1473,10 @@ def update_status(
     session.add(order)
     session.commit()
     session.refresh(order)
+
+    # Create shop earnings if order is completed
     create_shop_earning(session, order)
+    session.commit()  # Commit shop earnings
 
     # Send order status update email
     try:
@@ -2173,47 +2180,18 @@ def return_products_to_stock(session: GetSession, order: Order) -> bool:
 def reverse_shop_earnings(session: GetSession, order: Order):
     """Reverse shop earnings if order was completed before cancellation"""
     Print(f"💰 Reversing shop earnings for order {order.id}")
-    
+
     # Find and delete shop earnings for this order
     shop_earnings = session.exec(
         select(ShopEarning).where(ShopEarning.order_id == order.id)
-    ).all()
-    
+    ).scalars().all()
+
     for earning in shop_earnings:
         session.delete(earning)
         Print(f"    ✅ Reversed shop earning for shop {earning.shop_id}")
-    
+
     return len(shop_earnings) > 0
 
-
-
-# Update the admin cancel route (already using requirePermission which should be fine)
-@router.get("/{order_id}/cancellation-eligibility")
-def check_cancellation_eligibility(
-    order_id: int,
-    session: GetSession,
-    user: requireSignin = None
-):
-    """Check if the current user can cancel this order"""
-    
-    # Extract user data from the nested structure
-    user_data = user.get("user") if user else None
-    
-    Print(f"🔐 User data: {user_data}")
-    
-    order = session.get(Order, order_id)
-    if not order:
-        return api_response(404, "Order not found")
-    
-    Print(f"📦 Order: {order.tracking_number}, Customer ID: {order.customer_id}, Status: {order.order_status}")
-    
-    eligibility = get_order_cancellation_eligibility(order, user_data)  # Pass user_data instead of user
-    
-    return api_response(
-        200,
-        "Cancellation eligibility checked",
-        eligibility
-    )
 
 @router.post("/{order_id}/admin-cancel", response_model=OrderCancelResponse)
 def admin_cancel_order(
@@ -2326,13 +2304,31 @@ def get_order_cancellation_eligibility(order: Order, user_data: Optional[Dict]) 
 
 def create_shop_earning(session, order: Order):
     """Create shop earning records when order is completed - UPDATED for multi-shop orders"""
+    print(f"ordre:{order.order_status}")
+    print(f"ordre:{OrderStatusEnum.COMPLETED}")
+
+    # Only create earnings for completed orders
     if order.order_status != OrderStatusEnum.COMPLETED:
+        return
+
+    # Check if earnings already exist for this order (prevent duplicates)
+    existing_earnings = session.exec(
+        select(ShopEarning).where(ShopEarning.order_id == order.id)
+    ).first()
+
+    if existing_earnings:
+        print(f"⚠️ Shop earnings already exist for order {order.id}, skipping creation")
         return
 
     # Get all order products for this order
     order_products = session.exec(
         select(OrderProduct).where(OrderProduct.order_id == order.id)
-    ).all()
+    ).scalars().all()
+    print(f"order_products:{order_products}")
+
+    if not order_products:
+        print(f"⚠️ No order products found for order {order.id}")
+        return
 
     for order_product in order_products:
         if not order_product.shop_id:
@@ -2348,13 +2344,13 @@ def create_shop_earning(session, order: Order):
                 delivery_fee_per_product = Decimal(str(order.delivery_fee)) * (
                     Decimal(str(order_product.subtotal)) / Decimal(str(total_subtotal))
                 )
-
+        print(f"delivery_fee_per_product:{delivery_fee_per_product}")
         shop_earning = (
             Decimal(str(order_product.subtotal))
             - order_product.admin_commission
             - delivery_fee_per_product
         )
-
+        print(f"shop_earning:{shop_earning}")
         # Create shop earning record for this shop and product
         earning = ShopEarning(
             shop_id=order_product.shop_id,
@@ -2364,7 +2360,7 @@ def create_shop_earning(session, order: Order):
             admin_commission=order_product.admin_commission,
             shop_earning=shop_earning,
         )
-
+        print(f"earning:{earning}")
         session.add(earning)
 
 
