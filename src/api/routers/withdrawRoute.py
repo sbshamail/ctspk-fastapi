@@ -227,17 +227,17 @@ def list_withdraw_requests(
         query = query.where(ShopWithdrawRequest.shop_id == shop_id)
     
     query = query.order_by(ShopWithdrawRequest.created_at.desc())
-    
-    requests = session.exec(query.offset(skip).limit(limit)).all()
+
+    requests = session.exec(query.offset(skip).limit(limit)).scalars().all()
     total = session.exec(select(func.count(ShopWithdrawRequest.id))).scalar()
-    
+
     # Include shop name in response
     requests_data = []
     for req in requests:
         req_data = WithdrawRequestRead.model_validate(req)
         req_data.shop_name = req.shop.name if req.shop else "Unknown"
         requests_data.append(req_data)
-    
+
     return api_response(200, "Requests retrieved", requests_data, total)
 
 @router.put("/approve/{request_id}")
