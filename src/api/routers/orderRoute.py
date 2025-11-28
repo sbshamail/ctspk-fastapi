@@ -2402,6 +2402,7 @@ def get_my_order_statistics(
     # Additional counts for shop_admin and root
     cancelled_count = 0
     returned_count = 0
+    order_ids_with_shop = None  # Initialize for shop_admin use
 
     if is_root:
         # Root: All orders, no filters
