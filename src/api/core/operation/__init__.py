@@ -136,6 +136,10 @@ def listRecords(
         limit = int(query_params.get("limit", 10))
         sort = query_params.get("sort")
 
+        # Get customFilters from query_params if not provided as function parameter
+        if customFilters is None:
+            customFilters = query_params.get("customFilters")
+
         filters = {
             "searchTerm": searchTerm,
             "columnFilters": columnFilters,

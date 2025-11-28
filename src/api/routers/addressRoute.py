@@ -116,12 +116,13 @@ def delete_address(
 def list_addresses(query_params: ListQueryParams, user: requireSignin):
     query_params = vars(query_params)
     searchFields = ["title", "type"]  # fields to search on
-    
+
     # ✅ Add customer_id filter to only show user's addresses
-    if not hasattr(query_params, 'filters'):
-        query_params['filters'] = {}
-    query_params['filters']['customer_id'] = user.get("id")
-    
+    user_id = user.get("id")
+    query_params['customFilters'] = [['customer_id', user_id]]
+    print(f"🔍 Filtering addresses by customer_id: {user_id}")
+    print(f"🔍 customFilters: {query_params['customFilters']}")
+
     return listRecords(
         query_params=query_params,
         searchFields=searchFields,

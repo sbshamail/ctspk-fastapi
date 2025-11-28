@@ -347,18 +347,25 @@ def applyFilters(
             )
 
     if customFilters:
+        print(f"🔧 applyFilters: customFilters = {customFilters}")
         filters = []
         for col, value in customFilters:
+            print(f"🔧 Processing customFilter: col={col}, value={value}, type={type(value)}")
             attr, statement = resolve_column(Model, col, statement)
             # optional handling formats
             col_type = _get_column_type(attr)
+            print(f"🔧 Column type for {col}: {col_type}")
             value = _coerce_value_for_column(col_type, value, col)
+            print(f"🔧 After coercion: value={value}, type={type(value)}")
 
             if isinstance(value, str):
+                print(f"🔧 Using ILIKE for {col}")
                 filters.append(attr.ilike(f"%{value}%"))
             else:
+                print(f"🔧 Using == for {col}")
                 filters.append(attr == value)
 
+        print(f"🔧 Total filters: {len(filters)}")
         statement = statement.where(and_(*filters))
 
     # Number range
