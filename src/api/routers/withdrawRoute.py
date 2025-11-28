@@ -248,23 +248,27 @@ def approve_withdraw_request(
 ):
     """Admin: Approve a withdrawal request"""
     withdraw_request = session.get(ShopWithdrawRequest, request_id)
+    print(f"withdraw_request:{withdraw_request}")
     raiseExceptions((withdraw_request, 404, "Withdrawal request not found"))
     
     if withdraw_request.status != WithdrawStatus.PENDING:
         return api_response(400, "Request is not in pending status")
     
     # Verify shop has sufficient balance
-    balance = calculate_shop_balance(session, withdraw_request.shop_id)
-    if withdraw_request.amount > balance.available_balance:
+    balance = calculate_shop_balance(session, withdraw_request.shop_id, True)
+    print(f"balance:{balance}")
+    print(f"user:{user.get('id')}")
+
+    if withdraw_request.amount > balance.net_balance:
         return api_response(400, "Shop has insufficient balance")
-    
+
     withdraw_request.status = WithdrawStatus.APPROVED
-    withdraw_request.processed_by = user.id
+    withdraw_request.processed_by = user.get("id")
     withdraw_request.processed_at = datetime.now()
-    
+
     session.commit()
-    
-    return api_response(200, "Withdrawal request approved", 
+
+    return api_response(200, "Withdrawal request approved",
                        WithdrawRequestRead.model_validate(withdraw_request))
 
 @router.put("/reject/{request_id}")
@@ -283,7 +287,7 @@ def reject_withdraw_request(
     
     withdraw_request.status = WithdrawStatus.REJECTED
     withdraw_request.rejection_reason = rejection_reason
-    withdraw_request.processed_by = user.id
+    withdraw_request.processed_by = user.get("id")
     withdraw_request.processed_at = datetime.now()
     
     session.commit()
@@ -310,8 +314,8 @@ def process_withdraw_request(
             ShopEarning.shop_id == withdraw_request.shop_id,
             ShopEarning.is_settled == False
         ).order_by(ShopEarning.created_at.asc())  # Settle oldest earnings first
-    ).all()
-    
+    ).scalars().all()
+
     # Simple settlement: mark oldest earnings first until amount is covered
     amount_settled = Decimal("0.00")
     for earning in earnings_to_settle:
@@ -320,12 +324,12 @@ def process_withdraw_request(
             earning.settled_at = datetime.now()
             amount_settled += earning.shop_earning
             session.add(earning)
-    
+
     withdraw_request.status = WithdrawStatus.PROCESSED
-    
+
     session.commit()
-    
-    return api_response(200, "Withdrawal processed successfully", 
+
+    return api_response(200, "Withdrawal processed successfully",
                        WithdrawRequestRead.model_validate(withdraw_request))
 
 @router.get("/shop-earnings")
@@ -350,12 +354,12 @@ def get_shop_earnings(
         query = query.where(ShopEarning.is_settled == settled)
     
     query = query.order_by(ShopEarning.created_at.desc())
-    
-    earnings = session.exec(query.offset(skip).limit(limit)).all()
+
+    earnings = session.exec(query.offset(skip).limit(limit)).scalars().all()
     total = session.exec(select(func.count(ShopEarning.id)).where(
         ShopEarning.shop_id == shop_id
     )).scalar()
-    
+
     earnings_data = []
     for earning in earnings:
         earning_data = ShopEarningRead.model_validate(earning)
