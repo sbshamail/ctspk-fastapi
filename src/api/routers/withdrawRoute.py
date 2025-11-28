@@ -70,33 +70,34 @@ def calculate_shop_balance(session, shop_id: int, include_shop_info: bool = Fals
 def create_withdraw_request(
     request: WithdrawRequestCreate,
     session: GetSession,
-    user:requireSignin
+    user: requireSignin
 ):
-    """Shop owner creates a withdrawal request"""
-    # Get shop owned by user
-    print(f"user: {user['id']}")
-    shop = session.exec(
-        select(Shop).where(Shop.owner_id == user["id"])
-    ).first()
-    print(f"shop: {shop}")
-    raiseExceptions((shop, 404, "Shop not found"))
-    shop_id = get_shop_id_from_result(shop)
-    # Calculate available balance - FIX: Access shop ID correctly
-    balance = calculate_shop_balance(session, shop_id)
+    """Shop owner creates a withdrawal request for a specific shop"""
+    # Get shop by ID and verify ownership
+    shop = session.get(Shop, request.shop_id)
+    raiseExceptions((shop, 404, f"Shop with ID {request.shop_id} not found"))
+
+    # Verify user owns this shop
+    if shop.owner_id != user.get("id"):
+        return api_response(403, "You don't have permission to create withdrawal request for this shop")
+
+    # Calculate available balance for this shop
+    balance = calculate_shop_balance(session, request.shop_id,True)
+    print(f"balance:{balance}")
     
     if request.amount > balance.available_balance:
-        return api_response(400, "Insufficient balance for withdrawal")
-    
+        return api_response(400, f"Insufficient balance. Available: ${balance.available_balance}")
+
     if request.amount <= 0:
         return api_response(400, "Withdrawal amount must be greater than 0")
-    
+
     # Calculate admin commission (5% of withdrawal amount)
-    admin_commission = request.amount * Decimal("0.05")
-    net_amount = request.amount - admin_commission
-    
+    #admin_commission = request.amount * Decimal("0.05")
+    net_amount = request.amount #- admin_commission
+    admin_commission=balance.total_admin_commission
     # Create withdrawal request
     withdraw_request = ShopWithdrawRequest(
-        shop_id=shop_id,
+        shop_id=request.shop_id,
         amount=request.amount,
         admin_commission=admin_commission,
         net_amount=net_amount,
@@ -106,12 +107,12 @@ def create_withdraw_request(
         account_holder_name=request.account_holder_name,
         ifsc_code=request.ifsc_code
     )
-    
+
     session.add(withdraw_request)
     session.commit()
     session.refresh(withdraw_request)
-    
-    return api_response(201, "Withdrawal request created successfully", 
+
+    return api_response(201, "Withdrawal request created successfully",
                        WithdrawRequestRead.model_validate(withdraw_request))
 
 @router.get("/shop-balance")
@@ -157,29 +158,55 @@ def get_single_shop_balance(shop_id: int, session: GetSession, user: requireSign
 @router.get("/my-requests")
 def get_my_withdraw_requests(
     session: GetSession,
+    user: requireSignin,
+    shop_id: Optional[int] = Query(None, description="Filter by specific shop ID"),
     skip: int = 0,
-    limit: int = Query(50, ge=1, le=200),
-    user=requireSignin
+    limit: int = Query(50, ge=1, le=200)
 ):
-    """Get withdrawal requests for logged-in shop owner"""
-    print(f"user:{user}")
-    shop = session.exec(
-        select(Shop).where(Shop.owner_id == user)
-    ).first()
-    raiseExceptions((shop, 404, "Shop not found"))
-    
-    # FIX: Access shop ID correctly
-    shop_id = get_shop_id_from_result(shop)
-    query = select(ShopWithdrawRequest).where(
-        ShopWithdrawRequest.shop_id == shop_id
-    ).order_by(ShopWithdrawRequest.created_at.desc())
-    
-    requests = session.exec(query.offset(skip).limit(limit)).all()
-    total = session.exec(select(func.count(ShopWithdrawRequest.id)).where(
-        ShopWithdrawRequest.shop_id == shop_id
-    )).scalar()
-    
-    requests_data = [WithdrawRequestRead.model_validate(req) for req in requests]
+    """Get withdrawal requests for all shops owned by logged-in user (or filter by shop_id)"""
+    # Get all shops owned by user
+    user_shops = session.exec(
+        select(Shop).where(Shop.owner_id == user.get("id"))
+    ).scalars().all()
+
+    if not user_shops:
+        return api_response(404, "No shops found for this user")
+
+    # Get list of user's shop IDs
+    user_shop_ids = [shop.id for shop in user_shops]
+
+    # If shop_id filter is provided, verify user owns it
+    if shop_id:
+        if shop_id not in user_shop_ids:
+            return api_response(403, "You don't have access to this shop")
+        # Filter by specific shop
+        query = select(ShopWithdrawRequest).where(
+            ShopWithdrawRequest.shop_id == shop_id
+        )
+        count_query = select(func.count(ShopWithdrawRequest.id)).where(
+            ShopWithdrawRequest.shop_id == shop_id
+        )
+    else:
+        # Get requests for all user's shops
+        query = select(ShopWithdrawRequest).where(
+            ShopWithdrawRequest.shop_id.in_(user_shop_ids)
+        )
+        count_query = select(func.count(ShopWithdrawRequest.id)).where(
+            ShopWithdrawRequest.shop_id.in_(user_shop_ids)
+        )
+
+    query = query.order_by(ShopWithdrawRequest.created_at.desc())
+
+    requests = session.exec(query.offset(skip).limit(limit)).scalars().all()
+    total = session.exec(count_query).scalar()
+
+    # Include shop name in response
+    requests_data = []
+    for req in requests:
+        req_data = WithdrawRequestRead.model_validate(req)
+        req_data.shop_name = req.shop.name if req.shop else "Unknown"
+        requests_data.append(req_data)
+
     return api_response(200, "Requests retrieved", requests_data, total)
 
 @router.get("/list")

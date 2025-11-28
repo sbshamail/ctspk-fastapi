@@ -76,6 +76,7 @@ class ShopEarning(TimeStampedModel, table=True):
 
 # CRUD Schemas
 class WithdrawRequestCreate(SQLModel):
+    shop_id: int  # Required: Shop ID for withdrawal
     amount: Decimal
     payment_method: PaymentMethod
     bank_name: Optional[str] = None
