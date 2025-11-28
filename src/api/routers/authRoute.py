@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request, Response
 from src.api.models.shop_model.userShopModel import UserShop
 from src.api.core.utility import Print
 from src.api.core.middleware import handle_async_wrapper
+from src.api.core.avatar_helper import get_user_avatar
 from src.config import ACCESS_TOKEN_EXPIRE_MINUTES
 from src.api.core.security import (
     create_access_token,
@@ -28,6 +29,16 @@ from src.api.core.email_helper import send_email
 
 
 router = APIRouter(tags=["Auth"])
+
+
+def serialize_user_with_avatar(user: User) -> UserRead:
+    """
+    Serialize user and add avatar field
+    """
+    user_read = UserRead.model_validate(user)
+    # Add avatar field using helper function
+    user_read.avatar = get_user_avatar(user.image, user.name)
+    return user_read
 
 
 @router.post("/init", response_model=UserRead)
@@ -158,7 +169,7 @@ def register_user(
         minutes=ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
-    user_read = UserRead.model_validate(user)
+    user_read = serialize_user_with_avatar(user)
 
     # Set refresh token cookie
     response.set_cookie(
@@ -232,7 +243,7 @@ def login_user(
         minutes=ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
-    user_read = UserRead.model_validate(user)
+    user_read = serialize_user_with_avatar(user)
     # cookie will test in postman and frontend only with tag credential:true
     response.set_cookie(
         key="refresh_token",

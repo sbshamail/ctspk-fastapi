@@ -1,7 +1,8 @@
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, Dict, Any
 import datetime
 from pydantic import BaseModel, EmailStr, model_validator,Field as PydanticField
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import SQLModel, Field, Relationship, Column
+from sqlalchemy import JSON
 
 from src.api.models.role_model.roleModel import RoleRead
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
@@ -37,6 +38,7 @@ class User(TimeStampedModel, table=True):
     is_active: bool = Field(default=True)
     password_reset_code: Optional[str] = Field(default=None, max_length=6)
     password_reset_code_expires: Optional[datetime.datetime] = None
+    image: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
     # relationships
     user_roles: list["UserRole"] = Relationship(back_populates="user")
     media: List["UserMedia"] = Relationship(back_populates="user")
@@ -131,10 +133,12 @@ class UserReadBase(TimeStampReadModel):
     email: EmailStr
     is_active: bool
     is_root: bool
+    image: Optional[Dict[str, Any]] = None
 
 class UserRead(UserReadBase):
     roles: List[RoleRead] = None
     shops: List[ShopReadForUser] = None
+    avatar: Optional[Dict[str, Any]] = None  # Computed avatar field
 
     class Config:
         from_attributes = True
@@ -147,6 +151,7 @@ class LoginRequest(SQLModel):
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     phone_no: Optional[str] = None
+    image: Optional[Dict[str, Any]] = None
 
 class UserUpdate(SQLModel):
     name: Optional[str] = None

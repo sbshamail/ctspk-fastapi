@@ -7,6 +7,17 @@ from sqlmodel import SQLModel, Field, Relationship
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 from enum import Enum as PyEnum
 
+
+# Fulfillment user info schema
+class FulfillmentUserInfo(SQLModel):
+    id: int
+    name: str
+    email: str
+    avatar: Optional[Dict[str, Any]] = None
+
+    class Config:
+        from_attributes = True
+
 if TYPE_CHECKING:
     from src.api.models import (
         User,
@@ -334,6 +345,7 @@ class OrderRead(TimeStampReadModel):
     payment_status: PaymentStatusEnum
     fullfillment_id: Optional[int] = None
     assign_date: Optional[datetime] = None
+    fullfillment_user_info: Optional[FulfillmentUserInfo] = None  # NEW: Fulfillment user info
     shops: Optional[List[Dict[str, Any]]] = None
     shop_count: Optional[int] = None
 

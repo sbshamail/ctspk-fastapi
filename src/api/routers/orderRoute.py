@@ -10,6 +10,7 @@ from src.api.core.operation import listop, updateOp
 from src.api.core.response import api_response, raiseExceptions
 from sqlalchemy.orm import selectinload, joinedload
 from src.api.core.email_helper import send_email
+from src.api.core.avatar_helper import get_user_avatar
 
 from src.api.models.order_model.orderModel import (
     Order,
@@ -25,7 +26,8 @@ from src.api.models.order_model.orderModel import (
     PaymentStatusEnum,
     OrderItemType,
     OrderProductCreate,
-    OrderFromCartCreate
+    OrderFromCartCreate,
+    FulfillmentUserInfo
 )
 from src.api.models.product_model.productsModel import Product, ProductRead, ProductType
 from src.api.models.product_model.variationOptionModel import VariationOption
@@ -64,6 +66,32 @@ router = APIRouter(prefix="/order", tags=["Order"])
 def generate_tracking_number():
     """Generate unique tracking number"""
     return f"TRK-{uuid.uuid4().hex[:12].upper()}"
+
+
+def add_fulfillment_user_info(order_data, order, session):
+    """
+    Add fulfillment user information to order data if fullfillment_id > 0
+
+    Args:
+        order_data: OrderRead or OrderReadNested instance
+        order: Order model instance
+        session: Database session
+    """
+    if order.fullfillment_id and order.fullfillment_id > 0:
+        from src.api.models.usersModel import User
+
+        fulfillment_user = session.get(User, order.fullfillment_id)
+        if fulfillment_user:
+            # Get avatar using helper function
+            avatar = get_user_avatar(fulfillment_user.image, fulfillment_user.name)
+
+            order_data.fullfillment_user_info = FulfillmentUserInfo(
+                id=fulfillment_user.id,
+                name=fulfillment_user.name,
+                email=fulfillment_user.email,
+                avatar=avatar
+            )
+    return order_data
 
 
 def get_product_snapshot(session, product_id: int) -> Dict[str, Any]:
@@ -1496,6 +1524,9 @@ def get(id: int, session: GetSession, user: requireSignin):
     order_data.shops = shop_details
     order_data.shop_count = len(shop_details)
 
+    # Add fulfillment user info if fullfillment_id > 0
+    order_data = add_fulfillment_user_info(order_data, order, session)
+
     return api_response(200, "Order Found", order_data)
 
 
@@ -1531,6 +1562,9 @@ def get_by_tracking(tracking_number: str, session: GetSession):
 
     order_data.shops = shop_details
     order_data.shop_count = len(shop_details)
+
+    # Add fulfillment user info if fullfillment_id > 0
+    order_data = add_fulfillment_user_info(order_data, order, session)
 
     return api_response(200, "Order Found", order_data)
 
@@ -1652,7 +1686,7 @@ def list_orders(
     if not result["data"]:
         return api_response(404, "No orders found")
 
-    # Enhance each order with shop information
+    # Enhance each order with shop information and fulfillment user info
     enhanced_orders = []
     for order in result["data"]:
         order_data = OrderReadNested.model_validate(order)
@@ -1674,6 +1708,10 @@ def list_orders(
 
         order_data.shops = shop_details
         order_data.shop_count = len(shop_details)
+
+        # Add fulfillment user info if fullfillment_id > 0
+        order_data = add_fulfillment_user_info(order_data, order, session)
+
         enhanced_orders.append(order_data)
 
     return api_response(200, "Orders found", enhanced_orders, result["total"])
@@ -1753,7 +1791,7 @@ def list_all_orders(
     if not result["data"]:
         return api_response(404, "No orders found")
 
-    # Enhance each order with shop information
+    # Enhance each order with shop information and fulfillment user info
     enhanced_orders = []
     for order in result["data"]:
         order_data = OrderReadNested.model_validate(order)
@@ -1775,6 +1813,10 @@ def list_all_orders(
 
         order_data.shops = shop_details
         order_data.shop_count = len(shop_details)
+
+        # Add fulfillment user info if fullfillment_id > 0
+        order_data = add_fulfillment_user_info(order_data, order, session)
+
         enhanced_orders.append(order_data)
 
     return api_response(200, "Orders found", enhanced_orders, result["total"])

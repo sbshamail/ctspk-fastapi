@@ -8,6 +8,7 @@ from fastapi import (
 from sqlalchemy import select,and_, update as sql_update
 from src.api.core.email_service import send_verification_email,send_password_reset_confirmation
 from src.api.core.operation import listop
+from src.api.core.avatar_helper import get_user_avatar
 import datetime
 from src.api.core.security import hash_password
 from src.api.core import updateOp, requireSignin
@@ -19,6 +20,16 @@ from src.api.models.role_model.userRoleModel import UserRole
 import random
 
 router = APIRouter(prefix="/user", tags=["user"])
+
+
+def serialize_user_with_avatar(user: User) -> UserRead:
+    """
+    Serialize user and add avatar field
+    """
+    user_read = UserRead.model_validate(user)
+    # Add avatar field using helper function
+    user_read.avatar = get_user_avatar(user.image, user.name)
+    return user_read
 
 @router.post("/create")
 def create_user(
@@ -69,7 +80,7 @@ def create_user(
     session.commit()
     session.refresh(new_user)
 
-    return api_response(201, "User created successfully", UserRead.model_validate(new_user))
+    return api_response(201, "User created successfully", serialize_user_with_avatar(new_user))
 @router.put("/update", response_model=UserRead)
 def update_user(
     user: requireSignin,
@@ -85,7 +96,7 @@ def update_user(
         update_user.password = hashed_password
     session.commit()
     session.refresh(db_user)
-    return api_response(200, "User Found", UserRead.model_validate(db_user))
+    return api_response(200, "User Updated", serialize_user_with_avatar(db_user))
 
 @router.put("/profile", response_model=UserRead)
 def update_profile(
@@ -96,15 +107,20 @@ def update_profile(
     user_id = user.get("id")
     db_user = session.get(User, user_id)
     raiseExceptions((db_user, 404, "User not found"))
-    
-    # Update only name and phone
+
+    # Update fields
     update_data = request.model_dump(exclude_unset=True)
     for field, value in update_data.items():
-        setattr(db_user, field, value)
-    
+        # Only update image if it's provided (not None) in the request
+        if field == "image":
+            if value is not None:
+                setattr(db_user, field, value)
+        else:
+            setattr(db_user, field, value)
+
     session.commit()
     session.refresh(db_user)
-    return api_response(200, "Profile updated successfully", UserRead.model_validate(db_user))
+    return api_response(200, "Profile updated successfully", serialize_user_with_avatar(db_user))
 
 @router.put("/updatebyadmin/{user_id}", response_model=UserRead)
 def update_user_by_admin(
@@ -147,7 +163,7 @@ def update_user_by_admin(
     session.add(db_user)
     session.commit()
     session.refresh(db_user)
-    return api_response(200, "User updated successfully", UserRead.model_validate(db_user))
+    return api_response(200, "User updated successfully", serialize_user_with_avatar(db_user))
 
 @router.get("/read", response_model=UserRead)
 def get_user(
@@ -157,8 +173,7 @@ def get_user(
     user_id = user.get("id")
     db_user = session.get(User, user_id)  # Like findById
     raiseExceptions((db_user, 400, "User not found"))
-    read = UserRead.model_validate(db_user)
-    return api_response(200, "User Found", read)
+    return api_response(200, "User Found", serialize_user_with_avatar(db_user))
 
 
 # ✅ DELETE
@@ -274,8 +289,8 @@ def list_users(
     
     if not result["data"]:
         return api_response(404, "No User found")
-    
-    data = [UserRead.model_validate(prod) for prod in result["data"]]
+
+    data = [serialize_user_with_avatar(prod) for prod in result["data"]]
 
     return api_response(
         200,

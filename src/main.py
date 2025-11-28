@@ -60,7 +60,9 @@ from src.api.routers import (
     # tax
     taxRoute,
     # contactus
-    contactusRoute
+    contactusRoute,
+    # notification
+    notificationRoute
 )
 
 
@@ -153,3 +155,5 @@ app.include_router(withdrawRoute.router)
 app.include_router(settings.router)
 # contactus
 app.include_router(contactusRoute.router)
+# notification
+app.include_router(notificationRoute.router)
