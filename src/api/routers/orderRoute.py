@@ -641,10 +641,12 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
                 email_template_id=5,  # Use appropriate template ID for order confirmation
                 replacements={
                     "customer_name": order.customer_name,
-                    "tracking_number": tracking_number,
+                    "order_number": tracking_number,
+                    "order_date":order.assign_date,
                     "order_id": order.id,
                     "amount": order.amount,
-                    "total": order.total,
+                    "delivery_date":order.delivery_time,
+                    "total_amount": order.total,
                     "delivery_fee": order.delivery_fee,
                 },
                 session=session
@@ -1160,10 +1162,12 @@ def create_order_from_cart(
             email_template_id=5,  # Use appropriate template ID for order confirmation
             replacements={
                 "customer_name": order.customer_name,
-                "tracking_number": tracking_number,
+                "order_number": tracking_number,
+                "order_date":order.assign_date,
                 "order_id": order.id,
                 "amount": order.amount,
-                "total": order.total,
+                "delivery_date":order.delivery_time,
+                "total_amount": order.total,
                 "delivery_fee": order.delivery_fee,
             },
             session=session
@@ -1484,6 +1488,7 @@ def update_status(
                 replacements={
                     "customer_name": order.customer_name,
                     "tracking_number": order.tracking_number,
+                    "order_number": order.tracking_number,
                     "order_id": order.id,
                     "order_status": request.order_status,
                     "payment_status": request.payment_status or order.payment_status,
@@ -1862,62 +1867,82 @@ def get_sales_report(
 ):
     """Get sales report with product-wise sales data"""
     try:
-        # Build base query for completed orders
-        query = select(Order).where(Order.order_status == OrderStatusEnum.COMPLETED)
+        # Build query to get order IDs for completed orders
+        order_query = select(Order.id).where(Order.order_status == OrderStatusEnum.COMPLETED)
 
         # Apply date filters
         if start_date:
             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-            query = query.where(Order.created_at >= start_dt)
+            order_query = order_query.where(Order.created_at >= start_dt)
 
         if end_date:
             end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
                 hour=23, minute=59, second=59
             )
-            query = query.where(Order.created_at <= end_dt)
+            order_query = order_query.where(Order.created_at <= end_dt)
 
-        orders = session.exec(query).all()
+        # Get order IDs - need to extract scalar values
+        order_ids_result = session.exec(order_query).all()
+
+        # Extract actual ID values from result
+        order_ids = [row if isinstance(row, int) else row[0] for row in order_ids_result]
+
+        if not order_ids:
+            return api_response(200, "Sales report generated", {
+                "period": {"start_date": start_date, "end_date": end_date},
+                "summary": {
+                    "total_orders": 0,
+                    "total_products_sold": 0,
+                    "total_revenue": 0,
+                },
+                "product_sales": [],
+            })
+
+        # Query order products directly
+        op_query = select(OrderProduct).where(OrderProduct.order_id.in_(order_ids))
+
+        # Apply shop filter if provided
+        if shop_id:
+            op_query = op_query.where(OrderProduct.shop_id == shop_id)
+
+        # Apply product filter if provided
+        if product_id:
+            op_query = op_query.where(OrderProduct.product_id == product_id)
+
+        # Use scalars() to get proper OrderProduct instances
+        order_products = session.exec(op_query).scalars().all()
 
         sales_data = {}
         total_revenue = 0
         total_products_sold = 0
 
-        for order in orders:
-            for order_product in order.order_products:
-                # Apply shop filter if provided
-                if shop_id and order_product.shop_id != shop_id:
-                    continue
+        for order_product in order_products:
+            prod_id = order_product.product_id
+            quantity = float(order_product.order_quantity)
+            revenue = order_product.subtotal
 
-                # Apply product filter if provided
-                if product_id and order_product.product_id != product_id:
-                    continue
+            if prod_id not in sales_data:
+                product = session.get(Product, prod_id)
+                shop = (
+                    session.get(Shop, order_product.shop_id)
+                    if order_product.shop_id
+                    else None
+                )
+                sales_data[prod_id] = {
+                    "product_id": prod_id,
+                    "product_name": product.name if product else "Unknown",
+                    "product_sku": product.sku if product else "Unknown",
+                    "shop_id": order_product.shop_id,
+                    "shop_name": shop.name if shop else "Unknown",
+                    "total_quantity_sold": 0,
+                    "total_revenue": 0,
+                    "average_price": 0,
+                }
 
-                product_id_val = order_product.product_id
-                quantity = float(order_product.order_quantity)
-                revenue = order_product.subtotal
-
-                if product_id_val not in sales_data:
-                    product = session.get(Product, product_id_val)
-                    shop = (
-                        session.get(Shop, order_product.shop_id)
-                        if order_product.shop_id
-                        else None
-                    )
-                    sales_data[product_id_val] = {
-                        "product_id": product_id_val,
-                        "product_name": product.name if product else "Unknown",
-                        "product_sku": product.sku if product else "Unknown",
-                        "shop_id": order_product.shop_id,
-                        "shop_name": shop.name if shop else "Unknown",
-                        "total_quantity_sold": 0,
-                        "total_revenue": 0,
-                        "average_price": 0,
-                    }
-
-                sales_data[product_id_val]["total_quantity_sold"] += quantity
-                sales_data[product_id_val]["total_revenue"] += revenue
-                total_products_sold += quantity
-                total_revenue += revenue
+            sales_data[prod_id]["total_quantity_sold"] += quantity
+            sales_data[prod_id]["total_revenue"] += revenue
+            total_products_sold += quantity
+            total_revenue += revenue
 
         # Calculate average prices
         for product_data in sales_data.values():
@@ -1929,7 +1954,7 @@ def get_sales_report(
         report = {
             "period": {"start_date": start_date, "end_date": end_date},
             "summary": {
-                "total_orders": len(orders),
+                "total_orders": len(order_ids),
                 "total_products_sold": total_products_sold,
                 "total_revenue": total_revenue,
             },
@@ -1939,6 +1964,9 @@ def get_sales_report(
         return api_response(200, "Sales report generated", report)
 
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Sales report error: {error_details}")
         return api_response(500, f"Error generating sales report: {str(e)}")
 
 

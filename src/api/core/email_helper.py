@@ -43,36 +43,80 @@ class EmailHelper:
             text = text.replace(placeholder, str(value))
         return text
     
-    def _parse_email_addresses(self, emails: Union[str, List[str]]) -> List[str]:
-        """Parse email addresses from string or list"""
+    def _parse_email_addresses(self, emails: Union[str, List[str], List[Dict[str, str]]]) -> List[str]:
+        """
+        Parse email addresses from string, list, or list of dicts
+
+        Accepts:
+        - String: "email@example.com" or "email1@example.com, email2@example.com"
+        - List of strings: ["email1@example.com", "email2@example.com"]
+        - List of dicts: [{"name": "John Doe", "email": "john@example.com"}]
+        """
         if isinstance(emails, str):
             # Split by common delimiters and clean up
             emails = [email.strip() for email in emails.replace(';', ',').split(',') if email.strip()]
+        elif isinstance(emails, list) and emails and isinstance(emails[0], dict):
+            # Extract email addresses from dict format
+            emails = [item.get('email', '') for item in emails if item.get('email')]
         return emails
+
+    def _format_email_addresses(self, emails: Union[str, List[str], List[Dict[str, str]]]) -> List[tuple]:
+        """
+        Format email addresses with names for display
+
+        Returns list of tuples: [(name, email), ...]
+        If no name provided, returns (email, email)
+        """
+        if isinstance(emails, str):
+            # Simple string format - no names
+            parsed = [email.strip() for email in emails.replace(';', ',').split(',') if email.strip()]
+            return [(email, email) for email in parsed]
+        elif isinstance(emails, list):
+            if emails and isinstance(emails[0], dict):
+                # Dict format with names
+                return [(item.get('name', item.get('email', '')), item.get('email', ''))
+                        for item in emails if item.get('email')]
+            else:
+                # List of strings - no names
+                return [(email, email) for email in emails]
+        return []
     
-    def _send_email_sync(self, to_email: Union[str, List[str]], 
-                        subject: str, 
-                        html_content: str, 
+    def _send_email_sync(self, to_email: Union[str, List[str], List[Dict[str, str]]],
+                        subject: str,
+                        html_content: str,
                         plain_text_content: str = None,
-                        cc: Optional[Union[str, List[str]]] = None,
-                        bcc: Optional[Union[str, List[str]]] = None) -> bool:
-        """Synchronous email sending function"""
+                        cc: Optional[Union[str, List[str], List[Dict[str, str]]]] = None,
+                        bcc: Optional[Union[str, List[str], List[Dict[str, str]]]] = None) -> bool:
+        """
+        Synchronous email sending function
+
+        Args:
+            to_email: Recipient(s) - string, list of strings, or list of dicts with name/email
+            subject: Email subject
+            html_content: HTML content
+            plain_text_content: Plain text content (optional)
+            cc: CC recipient(s) - string, list of strings, or list of dicts with name/email
+            bcc: BCC recipient(s) - string, list of strings, or list of dicts with name/email
+        """
         try:
             # Create message
             msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
             msg['From'] = formataddr((self.from_name, self.from_email))
-            
-            # Parse email addresses
+
+            # Parse and format email addresses
+            to_formatted = self._format_email_addresses(to_email)
             to_emails = self._parse_email_addresses(to_email)
-            msg['To'] = ', '.join(to_emails)
-            
+            msg['To'] = ', '.join([formataddr((name, email)) for name, email in to_formatted])
+
             if cc:
+                cc_formatted = self._format_email_addresses(cc)
                 cc_emails = self._parse_email_addresses(cc)
-                msg['CC'] = ', '.join(cc_emails)
+                msg['CC'] = ', '.join([formataddr((name, email)) for name, email in cc_formatted])
                 to_emails.extend(cc_emails)
-            
+
             if bcc:
+                # BCC emails are added to recipients but NOT to message headers
                 bcc_emails = self._parse_email_addresses(bcc)
                 to_emails.extend(bcc_emails)
             
@@ -106,22 +150,23 @@ class EmailHelper:
             print(f"Error sending email: {e}")
             return False
     
-    def send_email(self, 
-                   to_email: Union[str, List[str]],
+    def send_email(self,
+                   to_email: Union[str, List[str], List[Dict[str, str]]],
                    email_template_id: int,
                    replacements: Optional[Dict[str, Any]] = None,
-                   cc: Optional[Union[str, List[str]]] = None,
-                   bcc: Optional[Union[str, List[str]]] = None,
+                   cc: Optional[Union[str, List[str], List[Dict[str, str]]]] = None,
+                   bcc: Optional[Union[str, List[str], List[Dict[str, str]]]] = None,
                    session: Optional[Session] = None) -> None:
         """
         Send email using template in background
-        
+
         Args:
-            to_email: Recipient email(s) as string or list
+            to_email: Recipient email(s) - string, list of strings, or list of dicts with name/email
             email_template_id: ID of the email template from database
             replacements: Dictionary of replacements for template tags
-            cc: CC email(s) as string or list
-            bcc: BCC email(s) as string or list
+            cc: CC email(s) - string, list of strings, or list of dicts with name/email
+            bcc: BCC email(s) - string, list of strings, or list of dicts with name/email
+                  Format: [{"name": "John Doe", "email": "john@example.com"}]
             session: SQLModel session (will create if not provided)
         """
         
@@ -185,22 +230,44 @@ class EmailHelper:
 email_helper = EmailHelper()
 
 # Convenience function
-def send_email(to_email: Union[str, List[str]],
+def send_email(to_email: Union[str, List[str], List[Dict[str, str]]],
                email_template_id: int,
                replacements: Optional[Dict[str, Any]] = None,
-               cc: Optional[Union[str, List[str]]] = None,
-               bcc: Optional[Union[str, List[str]]] = None,
+               cc: Optional[Union[str, List[str], List[Dict[str, str]]]] = None,
+               bcc: Optional[Union[str, List[str], List[Dict[str, str]]]] = None,
                session: Optional[Session] = None) -> None:
     """
     Convenience function to send email in background
-    
+
     Example usage:
+        # Simple BCC (email only)
         send_email(
             to_email="user@example.com",
             email_template_id=1,
             replacements={"name": "John", "verification_link": "https://example.com/verify"},
             cc="manager@example.com",
             bcc=["admin@example.com", "log@example.com"]
+        )
+
+        # BCC with names and emails
+        send_email(
+            to_email="user@example.com",
+            email_template_id=1,
+            bcc=[
+                {"name": "Admin User", "email": "admin@example.com"},
+                {"name": "Log System", "email": "logs@example.com"}
+            ]
+        )
+
+        # Mixed formats
+        send_email(
+            to_email=[{"name": "John Doe", "email": "john@example.com"}],
+            email_template_id=1,
+            cc="manager@example.com",
+            bcc=[
+                {"name": "Admin", "email": "admin@example.com"},
+                {"name": "Support", "email": "support@example.com"}
+            ]
         )
     """
     email_helper.send_email(
