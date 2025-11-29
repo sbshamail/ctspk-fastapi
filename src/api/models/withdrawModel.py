@@ -121,6 +121,7 @@ class ShopEarningRead(TimeStampReadModel):
     is_settled: bool
     settled_at: Optional[datetime] = None
     order_tracking_number: Optional[str] = None
+    shop_name: Optional[str] = None  # Added for multi-shop support
 
 class ShopBalanceSummary(SQLModel):
     shop_id: Optional[int] = None
