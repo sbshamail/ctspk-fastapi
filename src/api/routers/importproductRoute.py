@@ -23,6 +23,7 @@ from src.api.models.product_model.variationOptionModel import VariationOption
 from src.api.models.shop_model.shopsModel import Shop
 from src.api.core.utility import uniqueSlugify
 from src.api.core.sku_generator import generate_unique_sku
+from src.api.core.transaction_logger import TransactionLogger
 
 router = APIRouter(prefix="/product", tags=["Product Import"])
 
@@ -404,12 +405,20 @@ class ProductImportService:
             self.session.add(product)
             self.session.commit()
             self.session.refresh(product)
-            
+
+            # Log product creation with TransactionLogger
+            logger = TransactionLogger(self.session)
+            logger.log_product_creation(
+                product=product,
+                user_id=added_by,
+                notes=f"Product created via import: {product_data['name']}"
+            )
+
             # Create purchase record for the initial quantity if it's a simple product
-            if (product_data['product_type'] == ProductType.SIMPLE and 
-                product_data.get('quantity', 0) > 0 and 
+            if (product_data['product_type'] == ProductType.SIMPLE and
+                product_data.get('quantity', 0) > 0 and
                 product_data.get('purchase_price', 0) > 0):
-                
+
                 purchase_notes = f"Initial stock added for new product: {product_data['name']} via import"
                 self.create_purchase_record(
                     product_id=product.id,
@@ -419,6 +428,17 @@ class ProductImportService:
                     added_by=added_by,
                     notes=purchase_notes,
                     product_name=product_data['name']
+                )
+
+                # Log stock addition with TransactionLogger
+                logger.log_stock_addition(
+                    product=product,
+                    quantity=product_data['quantity'],
+                    purchase_price=product_data['purchase_price'],
+                    user_id=added_by,
+                    notes=purchase_notes,
+                    previous_quantity=0,
+                    new_quantity=product_data['quantity']
                 )
             
             # Create variations for variable products
@@ -433,15 +453,18 @@ class ProductImportService:
     
     def create_variations(self, product_id: int, variations: List[VariationData], added_by: int, shop_id: int):
         """Create variation options for variable product with purchase tracking"""
+        logger = TransactionLogger(self.session)
+        product = self.session.get(Product, product_id)
+
         for variation in variations:
             try:
                 # Create title from attributes
                 attribute_names = []
                 for attr in variation.attributes:
                     attribute_names.append(f"{attr['attribute_name']}: {attr['value']}")
-                
+
                 title = " - ".join(attribute_names)
-                
+
                 variation_option = VariationOption(
                     title=title,
                     price=str(variation.price),
@@ -454,10 +477,10 @@ class ProductImportService:
                     bar_code=variation.bar_code,
                     is_active=variation.is_active
                 )
-                
+
                 self.session.add(variation_option)
                 self.session.flush()  # Flush to get variation ID
-                
+
                 # Create purchase record for variation stock
                 if variation.quantity > 0 and variation.purchase_price > 0:
                     purchase_notes = f"Initial stock added for variation: {title} via import"
@@ -470,10 +493,23 @@ class ProductImportService:
                         notes=purchase_notes,
                         product_name=title
                     )
-                
+
+                    # Log stock addition with TransactionLogger for variation
+                    if product:
+                        logger.log_stock_addition(
+                            product=product,
+                            quantity=variation.quantity,
+                            purchase_price=variation.purchase_price,
+                            user_id=added_by,
+                            notes=purchase_notes,
+                            variation_option_id=variation_option.id,
+                            previous_quantity=0,
+                            new_quantity=variation.quantity
+                        )
+
             except Exception as e:
                 raise ValueError(f"Error creating variation: {str(e)}")
-        
+
         self.session.commit()
 
 def get_user_shops(user: dict) -> List[Dict]:

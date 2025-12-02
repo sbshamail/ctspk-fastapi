@@ -4,6 +4,8 @@ from sqlalchemy import select, func
 from datetime import datetime, timedelta
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.operation import listRecords, updateOp
+from src.api.core.transaction_logger import TransactionLogger
+from src.api.core.notification_helper import NotificationHelper
 from src.api.core.dependencies import (
     GetSession,
     ListQueryParams,
@@ -16,6 +18,7 @@ from src.api.models.returnModel import (
     ReturnStatus, ReturnType, RefundStatus,
     WalletTransaction, UserWallet
 )
+from src.api.models.transactionLogModel import TransactionLogCreate, TransactionType
 
 router = APIRouter(prefix="/returns", tags=["Returns & Refunds"])
 
@@ -103,9 +106,18 @@ def create_return_request(
     session.commit()
     session.refresh(return_request)
 
-    # Notify admin (background task)
-    if background_tasks:
-        background_tasks.add_task(notify_admin_about_return, return_request.id)
+    # Send notifications
+    from src.api.models.order_model.orderModel import OrderProduct as OP
+    order_products = session.exec(select(OP).where(OP.order_id == order.id)).all()
+    shop_ids = list(set([op.shop_id for op in order_products if op.shop_id]))
+
+    NotificationHelper.notify_return_request_created(
+        session=session,
+        return_id=return_request.id,
+        order_tracking_number=order.tracking_number,
+        customer_id=order.customer_id,
+        shop_ids=shop_ids
+    )
 
     return api_response(201, "Return request created successfully", ReturnRequestRead.model_validate(return_request))
 
@@ -128,7 +140,88 @@ def approve_return_request(
     return_request.status = ReturnStatus.APPROVED
     return_request.refund_status = RefundStatus.PENDING
 
+    # Restock inventory and log transaction
+    from src.api.models.product_model.productsModel import Product
+    from src.api.models.product_model.variationOptionModel import VariationOption
+
+    logger = TransactionLogger(session)
+
+    for return_item in return_request.return_items:
+        try:
+            if return_item.variation_option_id:
+                # Handle variable product
+                variation = session.get(VariationOption, return_item.variation_option_id)
+                if variation:
+                    previous_qty = variation.quantity
+                    variation.quantity += return_item.quantity
+                    session.add(variation)
+
+                    # Update parent product quantity
+                    product = session.get(Product, return_item.product_id)
+                    if product:
+                        product.quantity += return_item.quantity
+                        session.add(product)
+
+                        # Log order return transaction
+                        logger.log_transaction(
+                            TransactionLogCreate(
+                                transaction_type=TransactionType.ORDER_RETURNED,
+                                product_id=return_item.product_id,
+                                variation_option_id=return_item.variation_option_id,
+                                order_id=return_request.order_id,
+                                shop_id=product.shop_id,
+                                user_id=user.get("id") if user else None,
+                                quantity_change=return_item.quantity,
+                                unit_price=return_item.unit_price,
+                                previous_quantity=previous_qty,
+                                new_quantity=variation.quantity,
+                                notes=f"Return request #{return_id} approved - stock restored"
+                            )
+                        )
+            else:
+                # Handle simple product
+                product = session.get(Product, return_item.product_id)
+                if product:
+                    previous_qty = product.quantity
+                    product.quantity += return_item.quantity
+                    product.in_stock = True
+                    session.add(product)
+
+                    # Log order return transaction
+                    logger.log_transaction(
+                        TransactionLogCreate(
+                            transaction_type=TransactionType.ORDER_RETURNED,
+                            product_id=return_item.product_id,
+                            order_id=return_request.order_id,
+                            shop_id=product.shop_id,
+                            user_id=user.get("id") if user else None,
+                            quantity_change=return_item.quantity,
+                            unit_price=return_item.unit_price,
+                            previous_quantity=previous_qty,
+                            new_quantity=product.quantity,
+                            notes=f"Return request #{return_id} approved - stock restored"
+                        )
+                    )
+        except Exception as e:
+            print(f"Error restocking product {return_item.product_id}: {str(e)}")
+
     session.commit()
+
+    # Send approval notifications
+    from src.api.models.order_model.orderModel import Order, OrderProduct as OP
+    order = session.get(Order, return_request.order_id)
+    if order:
+        order_products = session.exec(select(OP).where(OP.order_id == order.id)).all()
+        shop_ids = list(set([op.shop_id for op in order_products if op.shop_id]))
+
+        NotificationHelper.notify_return_request_approved(
+            session=session,
+            return_id=return_request.id,
+            order_tracking_number=order.tracking_number,
+            customer_id=return_request.user_id,
+            shop_ids=shop_ids,
+            refund_amount=float(return_request.refund_amount)
+        )
 
     # Process refund in background
     if background_tasks:
@@ -155,6 +248,18 @@ def reject_return_request(
     return_request.rejected_reason = rejected_reason
 
     session.commit()
+
+    # Send rejection notification
+    from src.api.models.order_model.orderModel import Order
+    order = session.get(Order, return_request.order_id)
+    if order:
+        NotificationHelper.notify_return_request_rejected(
+            session=session,
+            return_id=return_request.id,
+            order_tracking_number=order.tracking_number,
+            customer_id=return_request.user_id,
+            reason=rejected_reason
+        )
 
     return api_response(200, "Return request rejected", ReturnRequestRead.model_validate(return_request))
 

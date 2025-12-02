@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         Review,
         ReturnItem,
         ProductPurchase,
+        TransactionLog,
     )
 
 
@@ -119,7 +120,7 @@ class Product(TimeStampedModel, table=True):
     wishlists: Optional["Wishlist"] = Relationship(back_populates="product")
     reviews: Optional["Review"] = Relationship(back_populates="product")
     product_purchases: List["ProductPurchase"] = Relationship(back_populates="product")
-
+    transaction_logs: List["TransactionLog"] = Relationship(back_populates="product")
 
 class ProductAttributeValue(SQLModel):
     id: int

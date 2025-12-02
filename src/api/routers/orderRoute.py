@@ -47,6 +47,8 @@ from src.api.core.dependencies import (
 from datetime import datetime, timezone
 import uuid
 from decimal import Decimal
+from src.api.core.transaction_logger import TransactionLogger
+from src.api.core.notification_helper import NotificationHelper
 # Add this cancellation request model to your orderModel.py
 class OrderCancelRequest(SQLModel):
     reason: Optional[str] = Field(default=None, max_length=500)
@@ -1350,6 +1352,43 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
 
     try:
         session.commit()
+
+        # Log order placement transaction
+        logger = TransactionLogger(session)
+        logger.log_order_placed(
+            order=order,
+            user_id=request.customer_id or (user["id"] if user else None),
+            notes=f"Order {tracking_number} created"
+        )
+
+        # Log stock deduction for each product
+        for op in order_products:
+            product = session.get(Product, op.product_id)
+            if product:
+                logger.log_stock_deduction(
+                    product=product,
+                    quantity=int(float(op.order_quantity)),
+                    user_id=request.customer_id or (user["id"] if user else None),
+                    notes=f"Stock deducted for order {tracking_number}",
+                    order_id=order.id,
+                    variation_option_id=op.variation_option_id if op.item_type == OrderItemType.VARIABLE else None
+                )
+
+        # Send notifications
+        customer_id = request.customer_id or (user["id"] if user else None)
+        if customer_id:
+            # Get unique shop IDs from order products
+            shop_ids = list(set([op.shop_id for op in order_products if op.shop_id]))
+
+            NotificationHelper.notify_order_placed(
+                session=session,
+                order_id=order.id,
+                tracking_number=tracking_number,
+                customer_id=customer_id,
+                shop_ids=shop_ids,
+                total_amount=float(final_total)
+            )
+
         return api_response(
             201,
             "Order created successfully",
@@ -2070,28 +2109,59 @@ def cancel_order(
     try:
         # Start transaction
         Print(f"🔄 Starting cancellation process for order {order_id}")
-        
+
         # 1. Restore inventory for all order products
         products_restocked = return_products_to_stock(session, order)
-        
+
         # 2. Update order status
         order.order_status = OrderStatusEnum.CANCELLED
         order.payment_status = PaymentStatusEnum.REVERSAL
-        
+
         # 3. Update cancelled amount if needed
         if order.paid_total and order.paid_total > 0:
             order.cancelled_amount = Decimal(str(order.paid_total))
-        
+
         # 4. Update order status history
         update_order_status_history(session, order.id, "order_cancelled_date")
-        
+
         # 5. Update shop earnings if order was completed (reverse earnings)
         reverse_shop_earnings(session, order)
-        
+
         session.add(order)
         session.commit()
         session.refresh(order)
-        
+
+        # 6. Log order cancellation transaction
+        logger = TransactionLogger(session)
+        for order_product in order.order_products:
+            product = session.get(Product, order_product.product_id)
+            if product:
+                logger.log_order_cancelled(
+                    order_id=order.id,
+                    product_id=order_product.product_id,
+                    quantity=int(float(order_product.order_quantity)),
+                    unit_price=order_product.unit_price,
+                    sale_price=order_product.sale_price,
+                    user_id=user_id,
+                    shop_id=order_product.shop_id,
+                    notes=f"Order {order.tracking_number} cancelled - stock restored"
+                )
+
+        # 7. Send cancellation notifications
+        if order.customer_id:
+            # Get unique shop IDs from order products
+            shop_ids = list(set([op.shop_id for op in order.order_products if op.shop_id]))
+
+            cancelled_by = "admin" if is_admin else "customer"
+            NotificationHelper.notify_order_cancelled(
+                session=session,
+                order_id=order.id,
+                tracking_number=order.tracking_number,
+                customer_id=order.customer_id,
+                shop_ids=shop_ids,
+                cancelled_by=cancelled_by
+            )
+
         Print(f"✅ Order {order_id} cancelled successfully")
         
         return OrderCancelResponse(

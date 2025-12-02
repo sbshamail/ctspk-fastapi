@@ -1,0 +1,2 @@
+# Additional requirements for cron job functionality
+schedule==1.2.0

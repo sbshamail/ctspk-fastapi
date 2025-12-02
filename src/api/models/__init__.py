@@ -66,6 +66,7 @@ from .product_model.productPurchaseModel import ProductPurchase
 from .withdrawModel import *
 from .settingsModel import Settings
 from .taxModel import Tax
+from .transactionLogModel import TransactionLog
 # from .attributes_model import Attribute, AttributeValue, AttributeProduct
 
 # # tag
@@ -96,7 +97,14 @@ __all__ = [
     "ReturnItem",
     "ReturnRequest",
     "WalletTransaction",
-    "UserWallet"
+    "UserWallet",
+    #"TransactionLog",
+    #"Settings",
+    #"Tax",
+    #"WithdrawRequest",
+    #"WithdrawMethod",
+    #"WithdrawAccount",
+    #"ProductImportHistory"
     # # product
     # "Product",
     # "ProductPurchase",

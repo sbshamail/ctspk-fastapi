@@ -14,6 +14,7 @@ from src.api.models.withdrawModel import (
 )
 from src.api.models.shop_model.shopsModel import Shop
 from src.api.models.order_model.orderModel import Order, OrderStatusEnum, OrderProduct
+from src.api.core.notification_helper import NotificationHelper
 
 router = APIRouter(prefix="/withdraw", tags=["Withdraw Requests"])
 def get_shop_id_from_result(shop_result):
@@ -111,6 +112,14 @@ def create_withdraw_request(
     session.add(withdraw_request)
     session.commit()
     session.refresh(withdraw_request)
+
+    # Send notification
+    NotificationHelper.notify_withdrawal_requested(
+        session=session,
+        shop_id=request.shop_id,
+        amount=float(request.amount),
+        request_id=withdraw_request.id
+    )
 
     return api_response(201, "Withdrawal request created successfully",
                        WithdrawRequestRead.model_validate(withdraw_request))
@@ -268,6 +277,13 @@ def approve_withdraw_request(
 
     session.commit()
 
+    # Send notification
+    NotificationHelper.notify_withdrawal_approved(
+        session=session,
+        shop_id=withdraw_request.shop_id,
+        amount=float(withdraw_request.amount)
+    )
+
     return api_response(200, "Withdrawal request approved",
                        WithdrawRequestRead.model_validate(withdraw_request))
 
@@ -289,10 +305,18 @@ def reject_withdraw_request(
     withdraw_request.rejection_reason = rejection_reason
     withdraw_request.processed_by = user.get("id")
     withdraw_request.processed_at = datetime.now()
-    
+
     session.commit()
-    
-    return api_response(200, "Withdrawal request rejected", 
+
+    # Send notification
+    NotificationHelper.notify_withdrawal_rejected(
+        session=session,
+        shop_id=withdraw_request.shop_id,
+        amount=float(withdraw_request.amount),
+        reason=rejection_reason
+    )
+
+    return api_response(200, "Withdrawal request rejected",
                        WithdrawRequestRead.model_validate(withdraw_request))
 
 @router.put("/process/{request_id}")
@@ -328,6 +352,14 @@ def process_withdraw_request(
     withdraw_request.status = WithdrawStatus.PROCESSED
 
     session.commit()
+
+    # Send notification
+    NotificationHelper.notify_withdrawal_processed(
+        session=session,
+        shop_id=withdraw_request.shop_id,
+        amount=float(withdraw_request.amount),
+        net_amount=float(withdraw_request.net_amount)
+    )
 
     return api_response(200, "Withdrawal processed successfully",
                        WithdrawRequestRead.model_validate(withdraw_request))

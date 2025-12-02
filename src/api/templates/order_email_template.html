@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Order - {{order_tracking_number}}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+        }
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 30px;
+        }
+        .order-info {
+            background-color: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .order-info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .order-info-row:last-child {
+            border-bottom: none;
+        }
+        .order-info-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        .order-info-value {
+            color: #212529;
+        }
+        .products-section {
+            margin: 30px 0;
+        }
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #212529;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .product-item {
+            display: flex;
+            padding: 20px;
+            margin-bottom: 15px;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            background-color: #fff;
+            transition: box-shadow 0.3s ease;
+        }
+        .product-item:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .product-image {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-right: 20px;
+            border: 1px solid #e9ecef;
+        }
+        .product-details {
+            flex: 1;
+        }
+        .product-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #212529;
+            margin-bottom: 8px;
+        }
+        .product-meta {
+            font-size: 14px;
+            color: #6c757d;
+            margin-bottom: 4px;
+        }
+        .product-price {
+            font-size: 18px;
+            font-weight: 700;
+            color: #667eea;
+            margin-top: 8px;
+        }
+        .totals-section {
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            font-size: 15px;
+        }
+        .total-row.grand-total {
+            border-top: 2px solid #667eea;
+            margin-top: 10px;
+            padding-top: 15px;
+            font-size: 20px;
+            font-weight: 700;
+            color: #212529;
+        }
+        .customer-info {
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #fff;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+        }
+        .customer-info h3 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #212529;
+        }
+        .customer-info p {
+            margin: 8px 0;
+            color: #495057;
+        }
+        .action-button {
+            display: inline-block;
+            padding: 14px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            text-align: center;
+            margin: 20px 0;
+            transition: transform 0.2s ease;
+        }
+        .action-button:hover {
+            transform: translateY(-2px);
+        }
+        .footer {
+            background-color: #212529;
+            color: #adb5bd;
+            padding: 30px;
+            text-align: center;
+            font-size: 14px;
+        }
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        .alert {
+            padding: 15px;
+            background-color: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            margin: 20px 0;
+            color: #856404;
+        }
+        @media only screen and (max-width: 600px) {
+            .email-container {
+                width: 100% !important;
+            }
+            .content {
+                padding: 20px !important;
+            }
+            .product-item {
+                flex-direction: column;
+            }
+            .product-image {
+                width: 100%;
+                height: 200px;
+                margin-bottom: 15px;
+                margin-right: 0;
+            }
+            .order-info-row {
+                flex-direction: column;
+            }
+            .order-info-value {
+                margin-top: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🎉 New Order Received!</h1>
+            <p>Order #{{order_tracking_number}}</p>
+        </div>
+
+        <!-- Content -->
+        <div class="content">
+            <p style="font-size: 16px; margin-bottom: 20px;">
+                Hello <strong>{{shop_name}}</strong>,
+            </p>
+            <p style="margin-bottom: 20px;">
+                Great news! You have received a new order. Please review the order details below and prepare the items for shipment.
+            </p>
+
+            <!-- Order Information -->
+            <div class="order-info">
+                <div class="order-info-row">
+                    <span class="order-info-label">Order Number:</span>
+                    <span class="order-info-value"><strong>{{order_tracking_number}}</strong></span>
+                </div>
+                <div class="order-info-row">
+                    <span class="order-info-label">Order Date:</span>
+                    <span class="order-info-value">{{order_date}}</span>
+                </div>
+                <div class="order-info-row">
+                    <span class="order-info-label">Payment Status:</span>
+                    <span class="order-info-value">{{payment_status}}</span>
+                </div>
+                <div class="order-info-row">
+                    <span class="order-info-label">Order Status:</span>
+                    <span class="order-info-value">{{order_status}}</span>
+                </div>
+            </div>
+
+            <!-- Products Section -->
+            <div class="products-section">
+                <h2 class="section-title">📦 Your Products in this Order</h2>
+
+                {{products_html}}
+            </div>
+
+            <!-- Totals Section -->
+            <div class="totals-section">
+                <div class="total-row">
+                    <span>Subtotal:</span>
+                    <span><strong>${{shop_subtotal}}</strong></span>
+                </div>
+                <div class="total-row">
+                    <span>Tax:</span>
+                    <span><strong>${{shop_tax}}</strong></span>
+                </div>
+                <div class="total-row">
+                    <span>Discount:</span>
+                    <span><strong>-${{shop_discount}}</strong></span>
+                </div>
+                <div class="total-row grand-total">
+                    <span>Your Total:</span>
+                    <span>${{shop_total}}</span>
+                </div>
+            </div>
+
+            <!-- Customer Information -->
+            <div class="customer-info">
+                <h3>👤 Customer Information</h3>
+                <p><strong>Name:</strong> {{customer_name}}</p>
+                <p><strong>Contact:</strong> {{customer_contact}}</p>
+                <p><strong>Email:</strong> {{customer_email}}</p>
+
+                <h3 style="margin-top: 20px;">📍 Shipping Address</h3>
+                <p>{{shipping_address}}</p>
+            </div>
+
+            <!-- Alert Box -->
+            <div class="alert">
+                <strong>⚠️ Important:</strong> Please process this order within 24 hours to ensure timely delivery.
+            </div>
+
+            <!-- Action Button -->
+            <div style="text-align: center;">
+                <a href="{{dashboard_link}}" class="action-button">
+                    View Order Details →
+                </a>
+            </div>
+
+            <p style="margin-top: 30px; color: #6c757d; font-size: 14px;">
+                If you have any questions about this order, please contact our support team or reply to this email.
+            </p>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p style="margin-bottom: 10px;">
+                <strong>{{site_name}}</strong>
+            </p>
+            <p>
+                This email was sent to you because you received a new order at your shop.
+            </p>
+            <p style="margin-top: 15px;">
+                <a href="{{dashboard_link}}">Dashboard</a> |
+                <a href="{{support_link}}">Support</a> |
+                <a href="{{privacy_link}}">Privacy Policy</a>
+            </p>
+            <p style="margin-top: 15px; font-size: 12px;">
+                © {{current_year}} {{site_name}}. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

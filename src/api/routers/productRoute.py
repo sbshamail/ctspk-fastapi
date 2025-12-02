@@ -23,6 +23,7 @@ from src.api.models.product_model.productsModel import (
     ProductStatus,
     VariationData,
 )
+from pydantic import BaseModel, field_validator
 from src.api.core.dependencies import (
     GetSession,
     ListQueryParams,
@@ -31,8 +32,45 @@ from src.api.core.dependencies import (
 )
 from src.api.core.sku_generator import generate_unique_sku, generate_sku_for_variation
 from sqlalchemy.orm import aliased
+from src.api.core.transaction_logger import TransactionLogger
 
 router = APIRouter(prefix="/product", tags=["Product"])
+
+
+# Pydantic schemas for new routes
+class UpdateQtyPriceRequest(BaseModel):
+    quantity: Optional[int] = None
+    price: Optional[float] = None
+    sale_price: Optional[float] = None
+    purchase_price: Optional[float] = None
+    notes: str
+    variation_option_id: Optional[int] = None
+
+    @field_validator('quantity')
+    def validate_quantity(cls, v, info):
+        if v is not None and v < 0:
+            raise ValueError('Quantity cannot be negative')
+        return v
+
+    @field_validator('sale_price')
+    def validate_sale_price(cls, v, info):
+        # Get price from the data being validated
+        price = info.data.get('price')
+        if v is not None and v > 0 and price is not None and v >= price:
+            raise ValueError('Sale price must be less than price')
+        return v
+
+
+class RemoveQtyRequest(BaseModel):
+    quantity: int
+    notes: str
+    variation_option_id: Optional[int] = None
+
+    @field_validator('quantity')
+    def validate_quantity(cls, v):
+        if v <= 0:
+            raise ValueError('Quantity must be greater than 0')
+        return v
 
 
 def apply_number_range_filter(query, query_params_dict, Model):
@@ -313,7 +351,12 @@ def create(
     session.add(data)
     session.commit()
     session.refresh(data)
-
+    logger = TransactionLogger(session)
+    logger.log_product_creation(
+        product=data,
+        user_id=user["id"],
+        notes=f"Product created via API: {data.name}"
+    )
     # Create variations for variable products
     if request.product_type == ProductType.VARIABLE and request.variations:
         create_variations_for_product(session, data.id, request.variations, data.sku)
@@ -1813,3 +1856,320 @@ def get_new_arrivals(
     except Exception as e:
         print(f"Error fetching new arrivals: {str(e)}")
         return api_response(500, f"Error fetching new arrivals: {str(e)}")
+
+
+# PUT /product/updateqtyprice/{id} - Update quantity and/or price
+@router.put("/updateqtyprice/{id}")
+def update_qty_price(
+    id: int,
+    request: UpdateQtyPriceRequest,
+    session: GetSession,
+    user=requirePermission("product_create", "shop_admin"),
+):
+    """
+    Update product quantity and/or price with transaction logging
+
+    Rules:
+    - If quantity > 0: purchase_price is required, sale_price and price are optional
+    - If quantity is 0 or null: price is required
+    - If sale_price > 0: it must be < price or null
+    - notes is required in all conditions
+    - If quantity is set: update stock level (previous quantity + quantity = current stock)
+    - If price or sale_price is sent: update the price and sale_price
+    - For variable products: variation_option_id field is required
+    - Keep record in transactionlog if quantity is updated OR if only price/sale_price is sent
+    """
+    try:
+        # Get product
+        product = session.get(Product, id)
+        raiseExceptions((product, 404, "Product not found"))
+
+        # Check shop ownership
+        shop_ids = [s["id"] for s in user.get("shops", [])]
+        if product.shop_id not in shop_ids:
+            return api_response(403, "You are not authorized to update this product")
+
+        # Initialize transaction logger
+        logger = TransactionLogger(session)
+
+        # Validation: Check if it's a variable product
+        if product.product_type == ProductType.VARIABLE:
+            if not request.variation_option_id:
+                return api_response(400, "variation_option_id is required for variable products")
+
+            # Get variation option
+            variation = session.get(VariationOption, request.variation_option_id)
+            if not variation:
+                return api_response(404, "Variation option not found")
+
+            if variation.product_id != product.id:
+                return api_response(400, "Variation option does not belong to this product")
+
+            # Validate rules for variable products
+            if request.quantity is not None and request.quantity > 0:
+                # When adding stock, purchase_price is required
+                if request.purchase_price is None or request.purchase_price <= 0:
+                    return api_response(400, "purchase_price is required when quantity > 0")
+            elif (request.quantity is None or request.quantity == 0) and request.price is not None:
+                # When updating price only (no quantity), price is required
+                if request.price <= 0:
+                    return api_response(400, "price must be greater than 0")
+
+            # Store previous values
+            previous_quantity = variation.quantity
+            previous_price = float(variation.price) if variation.price else None
+            previous_sale_price = float(variation.sale_price) if variation.sale_price else None
+
+            # Update quantity if provided
+            if request.quantity is not None and request.quantity > 0:
+                variation.quantity += request.quantity
+                variation.purchase_price = request.purchase_price
+
+                # Log stock addition for variation
+                logger.log_stock_addition(
+                    product=product,
+                    quantity=request.quantity,
+                    purchase_price=request.purchase_price,
+                    user_id=user["id"],
+                    notes=request.notes,
+                    variation_option_id=request.variation_option_id,
+                    previous_quantity=previous_quantity,
+                    new_quantity=variation.quantity
+                )
+
+                # Update main product quantity
+                product.quantity += request.quantity
+
+            # Update prices if provided
+            price_updated = False
+            if request.price is not None:
+                variation.price = str(request.price)
+                price_updated = True
+
+            if request.sale_price is not None:
+                variation.sale_price = str(request.sale_price) if request.sale_price > 0 else None
+                price_updated = True
+
+            # Log price change if prices were updated and no quantity change
+            if price_updated and (request.quantity is None or request.quantity == 0):
+                logger.log_price_change(
+                    product=product,
+                    previous_price=previous_price,
+                    new_price=float(variation.price) if variation.price else None,
+                    previous_sale_price=previous_sale_price,
+                    new_sale_price=float(variation.sale_price) if variation.sale_price else None,
+                    user_id=user["id"],
+                    notes=request.notes,
+                    variation_option_id=request.variation_option_id
+                )
+
+            session.add(variation)
+            session.add(product)
+            session.commit()
+            session.refresh(product)
+            session.refresh(variation)
+
+            # Return enhanced product data
+            enhanced_product = get_product_with_enhanced_data(session, product.id)
+            return api_response(200, "Variation updated successfully", enhanced_product)
+
+        else:
+            # Simple product logic
+            # Validate rules for simple products
+            if request.quantity is not None and request.quantity > 0:
+                # When adding stock, purchase_price is required
+                if request.purchase_price is None or request.purchase_price <= 0:
+                    return api_response(400, "purchase_price is required when quantity > 0")
+            elif (request.quantity is None or request.quantity == 0) and request.price is not None:
+                # When updating price only (no quantity), price is required
+                if request.price <= 0:
+                    return api_response(400, "price must be greater than 0")
+
+            # Store previous values
+            previous_quantity = product.quantity
+            previous_price = product.price
+            previous_sale_price = product.sale_price
+
+            # Update quantity if provided
+            if request.quantity is not None and request.quantity > 0:
+                product.quantity += request.quantity
+                product.purchase_price = request.purchase_price
+
+                # Log stock addition
+                logger.log_stock_addition(
+                    product=product,
+                    quantity=request.quantity,
+                    purchase_price=request.purchase_price,
+                    user_id=user["id"],
+                    notes=request.notes,
+                    previous_quantity=previous_quantity,
+                    new_quantity=product.quantity
+                )
+
+            # Update prices if provided
+            price_updated = False
+            if request.price is not None:
+                product.price = request.price
+                price_updated = True
+
+            if request.sale_price is not None:
+                product.sale_price = request.sale_price if request.sale_price > 0 else None
+                price_updated = True
+
+            # Log price change if prices were updated and no quantity change
+            if price_updated and (request.quantity is None or request.quantity == 0):
+                logger.log_price_change(
+                    product=product,
+                    previous_price=previous_price,
+                    new_price=product.price,
+                    previous_sale_price=previous_sale_price,
+                    new_sale_price=product.sale_price,
+                    user_id=user["id"],
+                    notes=request.notes
+                )
+
+            # Update stock status
+            product.in_stock = product.quantity > 0
+
+            session.add(product)
+            session.commit()
+            session.refresh(product)
+
+            # Return enhanced product data
+            enhanced_product = get_product_with_enhanced_data(session, product.id)
+            return api_response(200, "Product updated successfully", enhanced_product)
+
+    except ValueError as ve:
+        return api_response(400, str(ve))
+    except Exception as e:
+        session.rollback()
+        print(f"Error updating product quantity/price: {str(e)}")
+        return api_response(500, f"Error updating product: {str(e)}")
+
+
+# PATCH /product/removeqty/{id} - Remove quantity from product
+@router.patch("/removeqty/{id}")
+def remove_qty(
+    id: int,
+    request: RemoveQtyRequest,
+    session: GetSession,
+    user=requirePermission("product_create", "shop_admin"),
+):
+    """
+    Remove quantity from product stock with transaction logging
+
+    Rules:
+    - quantity and notes are required
+    - quantity is subtracted from the stock
+    - Simple product is updated by product_id
+    - Variable product can be updated single or bulk via variation_option_id
+    - Keep record in transactionlog
+    """
+    try:
+        # Get product
+        product = session.get(Product, id)
+        raiseExceptions((product, 404, "Product not found"))
+
+        # Check shop ownership
+        shop_ids = [s["id"] for s in user.get("shops", [])]
+        if product.shop_id not in shop_ids:
+            return api_response(403, "You are not authorized to update this product")
+
+        # Initialize transaction logger
+        logger = TransactionLogger(session)
+
+        # Check if it's a variable product
+        if product.product_type == ProductType.VARIABLE:
+            if not request.variation_option_id:
+                return api_response(400, "variation_option_id is required for variable products")
+
+            # Get variation option
+            variation = session.get(VariationOption, request.variation_option_id)
+            if not variation:
+                return api_response(404, "Variation option not found")
+
+            if variation.product_id != product.id:
+                return api_response(400, "Variation option does not belong to this product")
+
+            # Check if there's enough stock
+            if variation.quantity < request.quantity:
+                return api_response(
+                    400,
+                    f"Insufficient stock. Available: {variation.quantity}, Requested: {request.quantity}"
+                )
+
+            # Store previous quantity
+            previous_quantity = variation.quantity
+
+            # Deduct quantity
+            variation.quantity -= request.quantity
+
+            # Log stock deduction for variation
+            logger.log_stock_deduction(
+                product=product,
+                quantity=request.quantity,
+                user_id=user["id"],
+                notes=request.notes,
+                variation_option_id=request.variation_option_id,
+                previous_quantity=previous_quantity,
+                new_quantity=variation.quantity
+            )
+
+            # Update main product quantity
+            product.quantity -= request.quantity
+
+            # Update stock status
+            product.in_stock = product.quantity > 0
+
+            session.add(variation)
+            session.add(product)
+            session.commit()
+            session.refresh(product)
+            session.refresh(variation)
+
+            # Return enhanced product data
+            enhanced_product = get_product_with_enhanced_data(session, product.id)
+            return api_response(200, "Variation quantity removed successfully", enhanced_product)
+
+        else:
+            # Simple product logic
+            # Check if there's enough stock
+            if product.quantity < request.quantity:
+                return api_response(
+                    400,
+                    f"Insufficient stock. Available: {product.quantity}, Requested: {request.quantity}"
+                )
+
+            # Store previous quantity
+            previous_quantity = product.quantity
+
+            # Deduct quantity
+            product.quantity -= request.quantity
+
+            # Log stock deduction
+            logger.log_stock_deduction(
+                product=product,
+                quantity=request.quantity,
+                user_id=user["id"],
+                notes=request.notes,
+                previous_quantity=previous_quantity,
+                new_quantity=product.quantity
+            )
+
+            # Update stock status
+            product.in_stock = product.quantity > 0
+
+            session.add(product)
+            session.commit()
+            session.refresh(product)
+
+            # Return enhanced product data
+            enhanced_product = get_product_with_enhanced_data(session, product.id)
+            return api_response(200, "Product quantity removed successfully", enhanced_product)
+
+    except ValueError as ve:
+        return api_response(400, str(ve))
+    except Exception as e:
+        session.rollback()
+        print(f"Error removing product quantity: {str(e)}")
+        return api_response(500, f"Error removing quantity: {str(e)}")

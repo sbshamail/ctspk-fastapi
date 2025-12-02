@@ -69,16 +69,27 @@ from src.api.routers import (
 # Define app lifespan — this runs once when the app starts and when it shuts down
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # # --- Runs once on startup ---
-    # print("🟢 Checking if tables exist...")
+    # --- Runs once on startup ---
+    print("🟢 Application starting up...")
 
-    # # Create all tables that are missing (safe – only creates non-existent ones)
-    # SQLModel.metadata.create_all(engine)
-    # print("✅ All tables verified / created.")
-    # # --- Runs once on shutdown ---
-    # print("🔴 App shutting down...")
+    # Start cron jobs
+    try:
+        from src.api.core.cron_startup import start_all_cron_jobs
+        start_all_cron_jobs()
+    except Exception as e:
+        print(f"⚠️  Warning: Could not start cron jobs: {e}")
 
     yield  # 👈 after this, FastAPI starts handling requests
+
+    # --- Runs once on shutdown ---
+    print("🔴 Application shutting down...")
+
+    # Stop cron jobs
+    try:
+        from src.api.core.cron_startup import stop_all_cron_jobs
+        stop_all_cron_jobs()
+    except Exception as e:
+        print(f"⚠️  Warning: Could not stop cron jobs: {e}")
 
 
 # Initialize the FastAPI app with the custom lifespan

@@ -22,6 +22,7 @@ from src.api.core import (
 )
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.middleware import handle_async_wrapper
+from src.api.core.notification_helper import NotificationHelper
 
 router = APIRouter(prefix="/shop", tags=["Shop"])
 
@@ -58,6 +59,13 @@ def create_shop(
 
     # 🔒 commit happens automatically on context exit, rollback on error
     session.refresh(data)
+
+    # Send notifications
+    NotificationHelper.notify_shop_created(
+        session=session,
+        shop_id=data.id,
+        shop_name=data.name
+    )
 
     read = ShopRead.model_validate(data)
     return api_response(200, "Shop Created Successfully", read)
@@ -113,11 +121,31 @@ def update_shop(
 ):
     db_shop = session.get(Shop, shop_id)  # Like findById
     raiseExceptions((db_shop, 404, "Shop not found"))
+
+    # Track previous status for notification
+    was_active = db_shop.is_active
+
     verify = updateOp(db_shop, request, session)
 
     session.commit()
     session.refresh(db_shop)
-    return api_response(200, "User Found", ShopRead.model_validate(db_shop))
+
+    # Send notifications based on status change
+    if db_shop.is_active and not was_active:
+        # Shop was approved
+        NotificationHelper.notify_shop_approved(
+            session=session,
+            shop_id=db_shop.id
+        )
+    elif not db_shop.is_active and was_active:
+        # Shop was disapproved
+        NotificationHelper.notify_shop_disapproved(
+            session=session,
+            shop_id=db_shop.id,
+            reason="Shop status changed by admin"
+        )
+
+    return api_response(200, "Shop Status Updated", ShopRead.model_validate(db_shop))
 
 
 # ✅ DELETE shop
