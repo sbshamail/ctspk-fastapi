@@ -164,8 +164,6 @@ def listRecords(
             sort=sort,
         )
 
-        if not result["data"]:
-            return api_response(400, "No Result found")
         # Convert each SQLModel Model instance into a ModelRead Pydantic model
         if not Schema:
             return result
@@ -173,7 +171,7 @@ def listRecords(
         list_data = [Schema.model_validate(prod) for prod in result["data"]]
         return api_response(
             200,
-            f"data found",
+            f"data found" if list_data else "No Result found",
             list_data,
             result["total"],
         )
