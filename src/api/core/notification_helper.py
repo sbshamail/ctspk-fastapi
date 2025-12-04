@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 from src.api.models.notificationModel import Notification
 from src.api.models.usersModel import User
 from src.api.models.shop_model.shopsModel import Shop
+from src.api.models.shop_model.userShopModel import UserShop
 from datetime import datetime
 
 
@@ -199,33 +200,107 @@ class NotificationHelper:
         shop_ids: List[int],
         total_amount: float
     ):
-        """Notify customer, shop owners, and admin when order is placed"""
+        """Notify customer, all shop users, and admin when order is placed"""
+
+        print(f"[NotificationHelper] Processing order {tracking_number} with {len(shop_ids)} shops: {shop_ids}")
 
         # Notify customer
         customer_message = f"Your order <b>{tracking_number}</b> has been placed successfully. Total: <b>${total_amount}</b>"
-        NotificationHelper.create_notification(session, customer_id, customer_message)
+        NotificationHelper.create_notification(session, customer_id, customer_message, commit=False)
+        print(f"[NotificationHelper] ✓ Notified customer {customer_id}")
 
-        # Notify shop owners
+        # Notify all users associated with the shops (not just owners)
+        # Track user-shop combinations to allow same user to get notifications for different shops
+        notified_user_shop_pairs = set()
+        customer_notified_for_shop = set()  # Track if customer was already notified for a shop
+        total_shop_notifications = 0
+
         for shop_id in shop_ids:
             shop = session.get(Shop, shop_id)
             if shop:
-                shop_message = f"New order <b>{tracking_number}</b> received for your shop <b>{shop.name}</b>."
-                NotificationHelper.create_notification(
-                    session, shop.owner_id, shop_message, commit=False
-                )
+                print(f"[NotificationHelper] Processing shop {shop_id}: {shop.name}")
+                shop_message = f"New order <b>{tracking_number}</b> received for shop <b>{shop.name}</b>."
+
+                # Collect all users for this shop: owner + staff
+                shop_user_ids = set()
+
+                # 1. Add shop owner from shops.owner_id
+                if shop.owner_id:
+                    shop_user_ids.add(shop.owner_id)
+                    print(f"[NotificationHelper]   Added shop owner: User {shop.owner_id}")
+
+                # 2. Add all staff/users from UserShop table
+                user_shops = session.exec(
+                    select(UserShop).where(UserShop.shop_id == shop_id)
+                ).all()
+
+                for user_shop in user_shops:
+                    shop_user_ids.add(user_shop.user_id)
+
+                print(f"[NotificationHelper]   Found {len(shop_user_ids)} total users for shop {shop_id} (owner + staff)")
+
+                # Send notifications to all shop users
+                for user_id in shop_user_ids:
+                    user_shop_pair = (user_id, shop_id)
+
+                    # Skip if this is the customer and they were already notified for this shop
+                    if user_id == customer_id:
+                        if shop_id in customer_notified_for_shop:
+                            print(f"[NotificationHelper]   ⊘ Skipped customer {user_id} for shop {shop_id} (already notified as customer)")
+                            continue
+                        customer_notified_for_shop.add(shop_id)
+
+                    # Send notification even if user was already notified for a DIFFERENT shop
+                    if user_shop_pair not in notified_user_shop_pairs:
+                        NotificationHelper.create_notification(
+                            session, user_id, shop_message, commit=False
+                        )
+                        notified_user_shop_pairs.add(user_shop_pair)
+                        total_shop_notifications += 1
+                        print(f"[NotificationHelper]   ✓ Notified shop user {user_id} for shop {shop_id}")
+                    else:
+                        print(f"[NotificationHelper]   ⊘ Skipped duplicate notification for user {user_id} and shop {shop_id}")
+            else:
+                print(f"[NotificationHelper] ✗ Shop {shop_id} not found")
+
+        print(f"[NotificationHelper] Total shop notifications: {total_shop_notifications}")
 
         # Notify all root/admin users
         admin_users = session.exec(
             select(User).where(User.is_root == True)
-        ).scalars().all()
+        ).all()
 
         admin_message = f"New order <b>{tracking_number}</b> has been placed. Total: <b>${total_amount}</b>"
+        admin_count = 0
+        notified_admin_ids = set([customer_id])  # Don't notify customer again as admin
+
         for admin in admin_users:
-            NotificationHelper.create_notification(
-                session, admin.id, admin_message, commit=False
+            # Don't send admin notification if they already got shop notifications
+            already_notified_as_shop_user = any(
+                user_id == admin.id for user_id, _ in notified_user_shop_pairs
             )
 
+            if admin.id not in notified_admin_ids:
+                if not already_notified_as_shop_user:
+                    # Admin hasn't received any shop notifications, send admin notification
+                    NotificationHelper.create_notification(
+                        session, admin.id, admin_message, commit=False
+                    )
+                    admin_count += 1
+                    print(f"[NotificationHelper] ✓ Notified admin {admin.id}")
+                else:
+                    print(f"[NotificationHelper] ⊘ Skipped admin {admin.id} (already notified as shop user)")
+                notified_admin_ids.add(admin.id)
+
+        print(f"[NotificationHelper] Total admin notifications: {admin_count}")
+
+        # Calculate total unique notifications
+        total_unique_users = len(set([customer_id] + [uid for uid, _ in notified_user_shop_pairs] + list(notified_admin_ids)))
+        total_notifications = 1 + total_shop_notifications + admin_count  # customer + shop users + admins
+        print(f"[NotificationHelper] Total notifications sent: {total_notifications} to {total_unique_users} unique users")
+
         session.commit()
+        print(f"[NotificationHelper] Committed all notifications for order {tracking_number}")
 
     @staticmethod
     def notify_order_status_changed(

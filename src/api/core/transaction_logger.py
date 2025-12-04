@@ -248,8 +248,11 @@ class TransactionLogger:
     def log_stock_deduction(self, product: Product = None, product_id: int = None, quantity: int = None,
                            unit_price: float = None, sale_price: Optional[float] = None,
                            user_id: int = None, shop_id: int = None, notes: Optional[str] = None,
-                           order_id: Optional[int] = None, variation_option_id: Optional[int] = None,
-                           previous_quantity: Optional[int] = None, new_quantity: Optional[int] = None) -> TransactionLog:
+                           order_id: Optional[int] = None, order_product_id: Optional[int] = None,
+                           variation_option_id: Optional[int] = None,
+                           previous_quantity: Optional[int] = None, new_quantity: Optional[int] = None,
+                           subtotal: Optional[float] = None, discount: Optional[float] = None,
+                           tax: Optional[float] = None, total: Optional[float] = None) -> TransactionLog:
         """Log stock deduction (for orders, returns, etc.)"""
         if product:
             product_id = product.id
@@ -267,6 +270,7 @@ class TransactionLogger:
             shop_id=shop_id,
             user_id=user_id,
             order_id=order_id,
+            order_product_id=order_product_id,
             quantity_change=-quantity,  # Negative for deduction
             purchase_price=None,  # No purchase price for deductions
             unit_price=unit_price,
@@ -274,7 +278,11 @@ class TransactionLogger:
             previous_quantity=previous_quantity,
             new_quantity=new_quantity,
             notes=notes,
-            variation_option_id=variation_option_id
+            variation_option_id=variation_option_id,
+            subtotal=subtotal,
+            discount=discount,
+            tax=tax,
+            total=total
         )
         return self.log_transaction(log_data, user_id)
     

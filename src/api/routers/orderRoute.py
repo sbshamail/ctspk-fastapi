@@ -636,6 +636,58 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         session.commit()
         session.refresh(order)
 
+        # Log order placement transaction
+        try:
+            logger = TransactionLogger(session)
+            logger.log_order_placed(
+                order=order,
+                user_id=user["id"] if user else None,
+                notes=f"Order {tracking_number} created from cart"
+            )
+
+            # Log stock deduction for each product
+            for op in order_products:
+                product = session.get(Product, op.product_id)
+                if product:
+                    logger.log_stock_deduction(
+                        product=product,
+                        quantity=int(float(op.order_quantity)),
+                        user_id=user["id"] if user else None,
+                        notes=f"Stock deducted for order {tracking_number}",
+                        order_id=order.id,
+                        order_product_id=op.id,
+                        variation_option_id=op.variation_option_id if op.item_type == OrderItemType.VARIABLE else None,
+                        unit_price=float(op.unit_price) if op.unit_price else None,
+                        sale_price=float(op.sale_price) if op.sale_price else None,
+                        subtotal=float(op.subtotal) if op.subtotal else None,
+                        discount=float(op.item_discount) if op.item_discount else None,
+                        tax=float(op.item_tax) if op.item_tax else None,
+                        total=float(op.subtotal) if op.subtotal else None
+                    )
+        except Exception as e:
+            Print(f"Failed to log order transaction: {e}")
+
+        # Send notifications to customer, shop owners, and admins
+        try:
+            # Get unique shop IDs from order products
+            shop_ids = list(set([op.shop_id for op in order_products if op.shop_id]))
+            Print(f"📢 Sending notifications for order {tracking_number} to {len(shop_ids)} shop(s): {shop_ids}")
+
+            if user:
+                NotificationHelper.notify_order_placed(
+                    session=session,
+                    order_id=order.id,
+                    tracking_number=tracking_number,
+                    customer_id=user["id"],
+                    shop_ids=shop_ids,
+                    total_amount=float(final_total)
+                )
+                Print(f"✅ Notifications sent successfully")
+        except Exception as e:
+            Print(f"❌ Failed to send order notifications: {e}")
+            import traceback
+            Print(f"Traceback: {traceback.format_exc()}")
+
         # Send order confirmation email
         try:
             send_email(
@@ -1130,9 +1182,60 @@ def create_order_from_cart(
         
         # Commit all changes (order creation + cart clearance)
         session.commit()
-        
+
         Print(f"✅ Successfully cleared {len(cart_items_to_delete)} items from cart")
-        
+
+        # Log order placement transaction
+        try:
+            logger = TransactionLogger(session)
+            logger.log_order_placed(
+                order=order,
+                user_id=user_id,
+                notes=f"Order {tracking_number} created from user cart"
+            )
+
+            # Log stock deduction for each product
+            for op in created_order_products:
+                product = session.get(Product, op.product_id)
+                if product:
+                    logger.log_stock_deduction(
+                        product=product,
+                        quantity=int(float(op.order_quantity)),
+                        user_id=user_id,
+                        notes=f"Stock deducted for order {tracking_number}",
+                        order_id=order.id,
+                        order_product_id=op.id,
+                        variation_option_id=op.variation_option_id if op.item_type == OrderItemType.VARIABLE else None,
+                        unit_price=float(op.unit_price) if op.unit_price else None,
+                        sale_price=float(op.sale_price) if op.sale_price else None,
+                        subtotal=float(op.subtotal) if op.subtotal else None,
+                        discount=float(op.item_discount) if op.item_discount else None,
+                        tax=float(op.item_tax) if op.item_tax else None,
+                        total=float(op.subtotal) if op.subtotal else None
+                    )
+        except Exception as e:
+            Print(f"❌ Failed to log order transaction: {e}")
+
+        # Send notifications to customer, shop owners, and admins
+        try:
+            # Get unique shop IDs from created order products
+            shop_ids = list(set([op.shop_id for op in created_order_products if op.shop_id]))
+            Print(f"📢 Sending notifications for order {tracking_number} to {len(shop_ids)} shop(s): {shop_ids}")
+
+            NotificationHelper.notify_order_placed(
+                session=session,
+                order_id=order.id,
+                tracking_number=tracking_number,
+                customer_id=user_id,
+                shop_ids=shop_ids,
+                total_amount=float(final_total)
+            )
+            Print(f"✅ Notifications sent successfully")
+        except Exception as e:
+            Print(f"❌ Failed to send order notifications: {e}")
+            import traceback
+            Print(f"Traceback: {traceback.format_exc()}")
+
     except Exception as e:
         # Rollback if cart clearance fails
         session.rollback()
@@ -1140,7 +1243,7 @@ def create_order_from_cart(
         import traceback
         Print(f"📋 Traceback: {traceback.format_exc()}")
         return api_response(500, f"Order created but failed to clear cart: {str(e)}")
-    
+
     # ✅ 13. Prepare response data
     products_data = []
     for product in products:
@@ -1371,7 +1474,14 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
                     user_id=request.customer_id or (user["id"] if user else None),
                     notes=f"Stock deducted for order {tracking_number}",
                     order_id=order.id,
-                    variation_option_id=op.variation_option_id if op.item_type == OrderItemType.VARIABLE else None
+                    order_product_id=op.id,
+                    variation_option_id=op.variation_option_id if op.item_type == OrderItemType.VARIABLE else None,
+                    unit_price=float(op.unit_price) if op.unit_price else None,
+                    sale_price=float(op.sale_price) if op.sale_price else None,
+                    subtotal=float(op.subtotal) if op.subtotal else None,
+                    discount=float(op.item_discount) if op.item_discount else None,
+                    tax=float(op.item_tax) if op.item_tax else None,
+                    total=float(op.subtotal) if op.subtotal else None
                 )
 
         # Send notifications

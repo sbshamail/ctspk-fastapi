@@ -100,6 +100,11 @@ app.add_middleware(
     allow_origins=[
         "https://admin-ctspk.vercel.app",
         "https://ctspk-frontend.vercel.app",
+        "https://front.ctspk.com",
+        "https://ctspk.com",
+        "https://seller.ctspk.com/",
+        "https://seller.ghertak.com/",
+        "https://front.ghertak.com/",
         "http://localhost:3000",
     ],  # or "*"
     allow_credentials=True,
