@@ -200,14 +200,17 @@ class NotificationHelper:
         shop_ids: List[int],
         total_amount: float
     ):
-        """Notify customer, all shop users, and admin when order is placed"""
+        """Notify customer (if logged in), all shop users, and admin when order is placed"""
 
         print(f"[NotificationHelper] Processing order {tracking_number} with {len(shop_ids)} shops: {shop_ids}")
 
-        # Notify customer
-        customer_message = f"Your order <b>{tracking_number}</b> has been placed successfully. Total: <b>${total_amount}</b>"
-        NotificationHelper.create_notification(session, customer_id, customer_message, commit=False)
-        print(f"[NotificationHelper] ✓ Notified customer {customer_id}")
+        # Notify customer (only if logged in)
+        if customer_id:
+            customer_message = f"Your order <b>{tracking_number}</b> has been placed successfully. Total: <b>${total_amount}</b>"
+            NotificationHelper.create_notification(session, customer_id, customer_message, commit=False)
+            print(f"[NotificationHelper] ✓ Notified customer {customer_id}")
+        else:
+            print(f"[NotificationHelper] ⊘ Skipped customer notification (guest user)")
 
         # Notify all users associated with the shops (not just owners)
         # Track user-shop combinations to allow same user to get notifications for different shops
@@ -244,7 +247,7 @@ class NotificationHelper:
                     user_shop_pair = (user_id, shop_id)
 
                     # Skip if this is the customer and they were already notified for this shop
-                    if user_id == customer_id:
+                    if customer_id and user_id == customer_id:
                         if shop_id in customer_notified_for_shop:
                             print(f"[NotificationHelper]   ⊘ Skipped customer {user_id} for shop {shop_id} (already notified as customer)")
                             continue
@@ -272,7 +275,8 @@ class NotificationHelper:
 
         admin_message = f"New order <b>{tracking_number}</b> has been placed. Total: <b>${total_amount}</b>"
         admin_count = 0
-        notified_admin_ids = set([customer_id])  # Don't notify customer again as admin
+        # Don't notify customer again as admin (only if customer_id exists)
+        notified_admin_ids = set([customer_id]) if customer_id else set()
 
         for admin in admin_users:
             # Don't send admin notification if they already got shop notifications

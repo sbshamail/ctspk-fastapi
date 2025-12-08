@@ -38,6 +38,7 @@ from src.api.models.withdrawModel import ShopEarning
 from src.api.models.taxModel import Tax
 from src.api.models.shipping_model.shippingModel import Shipping
 from src.api.models.couponModel import Coupon, CouponType
+from src.api.models.addressModel import Address, AddressDetail, Location
 from src.api.core.dependencies import (
     GetSession,
     requirePermission,
@@ -68,6 +69,121 @@ router = APIRouter(prefix="/order", tags=["Order"])
 def generate_tracking_number():
     """Generate unique tracking number"""
     return f"TRK-{uuid.uuid4().hex[:12].upper()}"
+
+
+def save_default_addresses_from_order(
+    session,
+    customer_id: Optional[int],
+    billing_address: Optional[Dict[str, Any]],
+    shipping_address: Optional[Dict[str, Any]],
+    is_authenticated: bool = False
+):
+    """
+    Save default billing and shipping addresses from order to user's address table.
+
+    Logic:
+    - Only process if user is authenticated (signed in)
+    - Only process if customer_id exists (not a guest order)
+    - Check if billing_address has is_default=true/1, save it and update other billing defaults to false
+    - Check if shipping_address has is_default=true/1, save it and update other shipping defaults to false
+    - Ensures only one default address per type (billing/shipping)
+
+    Args:
+        session: Database session
+        customer_id: User ID (can be None for guest orders)
+        billing_address: Billing address dict with optional is_default field
+        shipping_address: Shipping address dict with optional is_default field
+        is_authenticated: Whether user is authenticated/signed in
+    """
+    if not is_authenticated or not customer_id:
+        # Guest order or not authenticated, skip address saving
+        return
+
+    # Process billing address
+    if billing_address and billing_address.get('is_default') in [True, 1, '1', 'true', 'True']:
+        # First, set all existing billing addresses for this user to is_default=False
+        existing_billing = session.exec(
+            select(Address).where(
+                Address.customer_id == customer_id,
+                Address.type == 'billing'
+            )
+        ).all()
+
+        for addr in existing_billing:
+            addr.is_default = False
+            session.add(addr)
+
+        # Create new default billing address
+        try:
+            billing_detail = AddressDetail(
+                street=billing_address.get('street', ''),
+                city=billing_address.get('city', ''),
+                state=billing_address.get('state'),
+                postal_code=billing_address.get('postal_code'),
+                country=billing_address.get('country')
+            )
+
+            location = None
+            if billing_address.get('location'):
+                location = Location(
+                    lat=billing_address['location'].get('lat'),
+                    lng=billing_address['location'].get('lng')
+                )
+
+            new_billing = Address(
+                title=billing_address.get('title', 'Billing Address'),
+                type='billing',
+                is_default=True,
+                address=billing_detail,
+                location=location,
+                customer_id=customer_id
+            )
+            session.add(new_billing)
+        except Exception as e:
+            print(f"Error saving billing address: {e}")
+
+    # Process shipping address
+    if shipping_address and shipping_address.get('is_default') in [True, 1, '1', 'true', 'True']:
+        # First, set all existing shipping addresses for this user to is_default=False
+        existing_shipping = session.exec(
+            select(Address).where(
+                Address.customer_id == customer_id,
+                Address.type == 'shipping'
+            )
+        ).all()
+
+        for addr in existing_shipping:
+            addr.is_default = False
+            session.add(addr)
+
+        # Create new default shipping address
+        try:
+            shipping_detail = AddressDetail(
+                street=shipping_address.get('street', ''),
+                city=shipping_address.get('city', ''),
+                state=shipping_address.get('state'),
+                postal_code=shipping_address.get('postal_code'),
+                country=shipping_address.get('country')
+            )
+
+            location = None
+            if shipping_address.get('location'):
+                location = Location(
+                    lat=shipping_address['location'].get('lat'),
+                    lng=shipping_address['location'].get('lng')
+                )
+
+            new_shipping = Address(
+                title=shipping_address.get('title', 'Shipping Address'),
+                type='shipping',
+                is_default=True,
+                address=shipping_detail,
+                location=location,
+                customer_id=customer_id
+            )
+            session.add(new_shipping)
+        except Exception as e:
+            print(f"Error saving shipping address: {e}")
 
 
 def add_fulfillment_user_info(order_data, order, session):
@@ -632,6 +748,15 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         for cart in carts:
             session.delete(cart)
 
+    # Save default addresses to user's address table if is_default is set
+    save_default_addresses_from_order(
+        session=session,
+        customer_id=user["id"] if user else None,
+        billing_address=shipping_address,  # billing_address = shipping_address for cartcreate
+        shipping_address=shipping_address,
+        is_authenticated=user is not None
+    )
+
     try:
         session.commit()
         session.refresh(order)
@@ -1179,7 +1304,16 @@ def create_order_from_cart(
         # Delete all cart items
         for cart_item in cart_items_to_delete:
             session.delete(cart_item)
-        
+
+        # Save default addresses to user's address table if is_default is set
+        save_default_addresses_from_order(
+            session=session,
+            customer_id=user_id,
+            billing_address=request.billing_address,
+            shipping_address=request.shipping_address,
+            is_authenticated=True  # This endpoint requires authentication (requireSignin)
+        )
+
         # Commit all changes (order creation + cart clearance)
         session.commit()
 
@@ -1453,6 +1587,16 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
     order_status = OrderStatus(order_id=order.id, order_pending_date=datetime.now())
     session.add(order_status)
 
+    # Save default addresses to user's address table if is_default is set
+    customer_id = request.customer_id or (user["id"] if user else None)
+    save_default_addresses_from_order(
+        session=session,
+        customer_id=customer_id,
+        billing_address=request.billing_address,
+        shipping_address=request.shipping_address,
+        is_authenticated=user is not None
+    )
+
     try:
         session.commit()
 
@@ -1484,20 +1628,19 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
                     total=float(op.subtotal) if op.subtotal else None
                 )
 
-        # Send notifications
+        # Send notifications to shop owners and admins (always), and customer (if logged in)
         customer_id = request.customer_id or (user["id"] if user else None)
-        if customer_id:
-            # Get unique shop IDs from order products
-            shop_ids = list(set([op.shop_id for op in order_products if op.shop_id]))
+        # Get unique shop IDs from order products
+        shop_ids = list(set([op.shop_id for op in order_products if op.shop_id]))
 
-            NotificationHelper.notify_order_placed(
-                session=session,
-                order_id=order.id,
-                tracking_number=tracking_number,
-                customer_id=customer_id,
-                shop_ids=shop_ids,
-                total_amount=float(final_total)
-            )
+        NotificationHelper.notify_order_placed(
+            session=session,
+            order_id=order.id,
+            tracking_number=tracking_number,
+            customer_id=customer_id,  # Can be None for guest users
+            shop_ids=shop_ids,
+            total_amount=float(final_total)
+        )
 
         return api_response(
             201,
