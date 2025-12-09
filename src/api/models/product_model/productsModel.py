@@ -365,7 +365,7 @@ class ProductRead(TimeStampReadModel):
     
     # CHANGED: Make total_quantity a regular field instead of computed
     total_quantity: int = 0
-    
+
     # CHANGED: Make variations_count a regular field instead of computed
     variations_count: int = 0
 
