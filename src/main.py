@@ -62,7 +62,7 @@ from src.api.routers import (
     # contactus
     contactusRoute,
     # notification
-    notificationRoute
+    notificationRoute,
 )
 
 
@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
     # Start cron jobs
     try:
         from src.api.core.cron_startup import start_all_cron_jobs
+
         start_all_cron_jobs()
     except Exception as e:
         print(f"⚠️  Warning: Could not start cron jobs: {e}")
@@ -87,6 +88,7 @@ async def lifespan(app: FastAPI):
     # Stop cron jobs
     try:
         from src.api.core.cron_startup import stop_all_cron_jobs
+
         stop_all_cron_jobs()
     except Exception as e:
         print(f"⚠️  Warning: Could not stop cron jobs: {e}")
@@ -102,7 +104,7 @@ app.add_middleware(
         "https://ctspk-frontend.vercel.app",
         "https://front.ctspk.com",
         "https://ctspk.com",
-        "https://seller.ctspk.com/",
+        "https://seller.ctspk.com",
         "https://seller.ghertak.com/",
         "https://front.ghertak.com/",
         "http://localhost:3000",
