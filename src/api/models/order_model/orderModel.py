@@ -236,7 +236,7 @@ class OrderFromCartCreate(SQLModel):
 
 class OrderCreate(SQLModel):
     customer_id: Optional[int] = None
-    customer_contact: str
+    customer_contact: Optional[str] = None
     customer_name: Optional[str] = None
     amount: float
     sales_tax: Optional[float] = None
@@ -320,7 +320,7 @@ class OrderRead(TimeStampReadModel):
     id: int
     tracking_number: str
     customer_id: Optional[int] = None
-    customer_contact: str
+    customer_contact: Optional[str] = None
     customer_name: Optional[str] = None
     amount: float
     sales_tax: Optional[float] = None

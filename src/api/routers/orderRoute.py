@@ -1993,31 +1993,43 @@ def list_orders(
     # Enhance each order with shop information and fulfillment user info
     enhanced_orders = []
     for order in result["data"]:
-        order_data = OrderReadNested.model_validate(order)
+        try:
+            # Convert null values to empty strings or appropriate defaults
+            if hasattr(order, 'customer_contact') and order.customer_contact is None:
+                order.customer_contact = ""
+            if hasattr(order, 'customer_name') and order.customer_name is None:
+                order.customer_name = ""
+            if hasattr(order, 'tracking_number') and order.tracking_number is None:
+                order.tracking_number = ""  # Or generate one if business logic allows
+            order_data = OrderReadNested.model_validate(order)
 
-        # Get unique shops from order products
-        shops = set()
-        for order_product in order.order_products:
-            if order_product.shop_id:
-                shops.add(order_product.shop_id)
+            # Get unique shops from order products
+            shops = set()
+            for order_product in order.order_products:
+                if order_product.shop_id:
+                    shops.add(order_product.shop_id)
 
-        # Get shop details
-        shop_details = []
-        for s_id in shops:
-            shop = session.get(Shop, s_id)
-            if shop:
-                shop_details.append(
-                    {"id": shop.id, "name": shop.name, "slug": shop.slug}
-                )
+            # Get shop details
+            shop_details = []
+            for s_id in shops:
+                shop = session.get(Shop, s_id)
+                if shop:
+                    shop_details.append(
+                        {"id": shop.id, "name": shop.name, "slug": shop.slug}
+                    )
 
-        order_data.shops = shop_details
-        order_data.shop_count = len(shop_details)
+            order_data.shops = shop_details
+            order_data.shop_count = len(shop_details)
 
-        # Add fulfillment user info if fullfillment_id > 0
-        order_data = add_fulfillment_user_info(order_data, order, session)
+            # Add fulfillment user info if fullfillment_id > 0
+            order_data = add_fulfillment_user_info(order_data, order, session)
 
-        enhanced_orders.append(order_data)
-
+            enhanced_orders.append(order_data)
+        except Exception as e:
+            # Log the problematic order but continue processing others
+            Print(f"Error processing order {order.id if order else 'unknown'}: {str(e)}")
+            continue  # Skip this order
+    
     return api_response(200, "Orders found", enhanced_orders, result["total"])
 
 
