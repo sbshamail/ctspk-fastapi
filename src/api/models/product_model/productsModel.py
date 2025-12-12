@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, List
 from datetime import datetime
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, computed_field,field_validator
 from sqlmodel import JSON, Column, SQLModel, Field, Relationship
 from enum import Enum
 
@@ -260,67 +260,6 @@ class VariationOptionReadForProduct(SQLModel):
     bar_code: Optional[str] = None
     is_active: bool
 
-
-# class ProductRead(TimeStampReadModel):
-#     id: int
-#     name: str
-#     description: Optional[str] = None
-#     slug: str
-#     price: float
-#     sale_price: Optional[float] = None
-#     max_price: Optional[float] = None
-#     min_price: Optional[float] = None
-#     purchase_price: Optional[float] = None
-#     weight: Optional[float] = None
-#     image: Optional[Dict[str, Any]] = None
-#     gallery: Optional[List[Dict[str, Any]]] = None
-#     is_active: bool
-#     is_feature: Optional[bool] = None
-#     quantity: int
-#     status: ProductStatus
-#     product_type: ProductType
-#     category: CategoryReadProduct
-#     shop: ShopReadForProduct
-#     manufacturer_id: Optional[int] = None
-#     unit: Optional[str] = None
-#     dimension_unit: Optional[str] = None
-#     sku: Optional[str] = None
-#     height: Optional[float] = None
-#     width: Optional[float] = None
-#     length: Optional[float] = None
-#     warranty: Optional[str] = None
-#     meta_title: Optional[str] = None
-#     meta_description: Optional[str] = None
-#     return_policy: Optional[str] = None
-#     shipping_info: Optional[str] = None
-#     tags: Optional[List[str]] = None
-#     bar_code: Optional[str] = None
-#     attributes: Optional[list["ProductAttribute"]] = None
-#     variation_options: Optional[list[VariationOptionReadForProduct]] = None
-
-#     # ADDED: Purchase and sales tracking
-#     total_purchased_quantity: int = 0
-#     total_sold_quantity: int = 0
-#     current_stock_value: Optional[float] = None
-
-#     @computed_field
-#     @property
-#     def variations_count(self) -> int:
-#         """Count how many variation options the product has"""
-#         return len(self.variation_options or [])
-
-#     @computed_field
-#     @property
-#     def total_quantity(self) -> int:
-#         """Sum product quantity + total from variation options"""
-#         base_qty = self.quantity or 0
-#         if not self.variation_options:
-#             return base_qty
-#         # Each variation_option should have a 'quantity' field
-#         variation_total = sum(
-#             v.get("quantity", 0) for v in self.variation_options if isinstance(v, dict)
-#         )
-#         return base_qty + variation_total
 class ProductRead(TimeStampReadModel):
     id: int
     name: str
@@ -368,6 +307,105 @@ class ProductRead(TimeStampReadModel):
 
     # CHANGED: Make variations_count a regular field instead of computed
     variations_count: int = 0
+
+    # ADDED: Field validators for string-to-number conversion
+    @field_validator('price', 'sale_price', 'max_price', 'min_price', 'purchase_price', 
+                      'total_quantity', 
+                     'total_purchased_quantity', 'total_sold_quantity', mode='before')
+    @classmethod
+    def parse_numeric_fields(cls, v):
+        """Parse string values to floats/ints for numeric fields"""
+        if v is None:
+            return v
+        
+        # If it's already a number, return as is
+        if isinstance(v, (int, float)):
+            return v
+        
+        # If it's a string, try to convert
+        if isinstance(v, str):
+            # Remove any whitespace or currency symbols
+            v_clean = v.strip().replace('$', '').replace(',', '').strip()
+            
+            # Try to convert to float
+            try:
+                # Check if it's an integer (no decimal point)
+                if '.' not in v_clean:
+                    return int(v_clean)
+                else:
+                    return float(v_clean)
+            except (ValueError, TypeError):
+                # If conversion fails, return None for optional fields
+                # For required fields, this will raise a validation error
+                return None
+        
+        return v
+
+    @field_validator('quantity', mode='before')
+    @classmethod
+    def parse_quantity(cls, v):
+        """Parse quantity field specifically"""
+        if v is None:
+            return 0
+        
+        if isinstance(v, (int, float)):
+            return int(v)
+        
+        if isinstance(v, str):
+            try:
+                return int(float(v.strip().replace(',', '')))
+            except (ValueError, TypeError):
+                return 0
+        
+        return 0
+
+# class ProductRead(TimeStampReadModel):
+#     id: int
+#     name: str
+#     description: Optional[str] = None
+#     slug: str
+#     price: float
+#     sale_price: Optional[float] = None
+#     max_price: Optional[float] = None
+#     min_price: Optional[float] = None
+#     purchase_price: Optional[float] = None
+#     weight: Optional[float] = None
+#     image: Optional[Dict[str, Any]] = None
+#     gallery: Optional[List[Dict[str, Any]]] = None
+#     is_active: bool
+#     is_feature: Optional[bool] = None
+#     quantity: int
+#     status: ProductStatus
+#     product_type: ProductType
+#     category: CategoryReadProduct
+#     shop: ShopReadForProduct
+#     manufacturer_id: Optional[int] = None
+#     unit: Optional[str] = None
+#     dimension_unit: Optional[str] = None
+#     sku: Optional[str] = None
+#     height: Optional[float] = None
+#     width: Optional[float] = None
+#     length: Optional[float] = None
+#     warranty: Optional[str] = None
+#     meta_title: Optional[str] = None
+#     meta_description: Optional[str] = None
+#     return_policy: Optional[str] = None
+#     shipping_info: Optional[str] = None
+#     tags: Optional[List[str]] = None
+#     bar_code: Optional[str] = None
+#     attributes: Optional[list["ProductAttribute"]] = None
+#     variation_options: Optional[list[VariationOptionReadForProduct]] = None
+
+#     # ADDED: Purchase and sales tracking
+#     total_purchased_quantity: int = 0
+#     total_sold_quantity: int = 0
+#     current_stock_value: Optional[float] = None
+    
+#     # CHANGED: Make total_quantity a regular field instead of computed
+#     total_quantity: int = 0
+
+#     # CHANGED: Make variations_count a regular field instead of computed
+#     variations_count: int = 0
 
     # REMOVED: Computed fields since they're now regular fields
     # @computed_field
