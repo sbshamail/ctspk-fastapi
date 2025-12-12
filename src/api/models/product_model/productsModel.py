@@ -310,7 +310,7 @@ class ProductRead(TimeStampReadModel):
 
     # ADDED: Field validators for string-to-number conversion
     @field_validator('price', 'sale_price', 'max_price', 'min_price', 'purchase_price', 
-                      'total_quantity', 
+                     'weight', 'height', 'width', 'length', 'total_quantity', 
                      'total_purchased_quantity', 'total_sold_quantity', mode='before')
     @classmethod
     def parse_numeric_fields(cls, v):
