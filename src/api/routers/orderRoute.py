@@ -509,13 +509,16 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
     if not product_ids:
         return api_response(400, "Each cart item must include a valid product ID")
 
+    # Get unique product IDs to handle duplicates in cart_items
+    unique_product_ids = set(product_ids)
+
     # ✅ 2. Validate products exist in db
     products = (
         session.exec(select(Product).where(Product.id.in_(product_ids))).scalars().all()
     )
-    if len(products) != len(product_ids):
+    if len(products) != len(unique_product_ids):
         found = {p.id for p in products}
-        missing = [pid for pid in product_ids if pid not in found]
+        missing = [pid for pid in unique_product_ids if pid not in found]
         return api_response(404, f"Product(s) not found: {missing}")
 
     # ✅ 3. Validate carts if user is authenticated
@@ -530,9 +533,9 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
             .scalars()
             .all()
         )
-        if len(carts) != len(product_ids):
+        if len(carts) != len(unique_product_ids):
             found_ids = {c.product_id for c in carts}
-            missing = [pid for pid in product_ids if pid not in found_ids]
+            missing = [pid for pid in unique_product_ids if pid not in found_ids]
             return api_response(
                 404, f"Cart item(s) not found for product(s): {missing}"
             )

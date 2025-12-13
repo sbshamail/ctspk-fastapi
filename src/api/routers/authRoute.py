@@ -18,6 +18,7 @@ from src.api.core.security import (
 from src.api.models.role_model.roleModel import Role
 from src.api.models.role_model.userRoleModel import UserRole
 from src.api.models.usersModel import RegisterUser, User, UserRead, LoginRequest
+from src.api.models.couponModel import Coupon, CouponType
 from src.api.core import (
     GetSession,
     api_response,
@@ -132,16 +133,46 @@ def register_user(
         .first()
     )
 
-    # Send welcome email notification
+    # Send welcome email notification with free shipping coupon if available
     try:
+        # Query for active free shipping coupon
+        current_time = datetime.now(timezone.utc)
+        free_shipping_coupon = session.exec(
+            select(Coupon)
+            .where(Coupon.type == CouponType.FREE_SHIPPING)
+            .where(Coupon.active_from <= current_time)
+            .where(Coupon.expire_at >= current_time)
+            .where(Coupon.deleted_at == None)
+        ).first()
+
+        # Prepare email replacements
+        replacements = {
+            "name": user.name,
+            "customer_name": user.name,
+            "email": user.email,
+        }
+
+        # Add coupon details if available
+        if free_shipping_coupon:
+            replacements.update({
+                "coupon_code": free_shipping_coupon.code,
+                "coupon_valid_from": free_shipping_coupon.active_from.strftime("%B %d, %Y"),
+                "coupon_valid_to": free_shipping_coupon.expire_at.strftime("%B %d, %Y"),
+                "coupon_minimum_amount": f"{free_shipping_coupon.minimum_cart_amount:.2f}",
+            })
+        else:
+            # Provide empty values if no coupon available
+            replacements.update({
+                "coupon_code": "",
+                "coupon_valid_from": "",
+                "coupon_valid_to": "",
+                "coupon_minimum_amount": "",
+            })
+
         send_email(
             to_email=user.email,
             email_template_id=3,  # Use appropriate template ID for user registration
-            replacements={
-                "name": user.name,
-                "customer_name": user.name,
-                "email": user.email,
-            },
+            replacements=replacements,
             session=session
         )
     except Exception as e:
