@@ -106,7 +106,9 @@ app.add_middleware(
         "https://ctspk.com",
         "https://seller.ctspk.com",
         "https://seller.ghertak.com",
+        "http://seller.ghertak.com",
         "https://front.ghertak.com",
+        "http://front.ghertak.com",
         "http://localhost:3000",
     ],  # or "*"
     allow_credentials=True,
