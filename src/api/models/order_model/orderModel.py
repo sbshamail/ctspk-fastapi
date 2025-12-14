@@ -225,7 +225,7 @@ class OrderCartCreate(SQLModel):
 class OrderFromCartCreate(SQLModel):
     shipping_address: Dict[str, Any]
     billing_address: Optional[Dict[str, Any]] = None
-    payment_method: Optional[str] = None
+    payment_gateway: Optional[str] = None
     shipping_id: Optional[int] = None
     tax_id: Optional[int] = None
     coupon_id: Optional[int] = None
@@ -250,6 +250,7 @@ class OrderCreate(SQLModel):
     logistics_provider: Optional[int] = None
     delivery_fee: Optional[float] = None
     delivery_time: Optional[str] = None
+    payment_gateway: Optional[str] = None
     # NEW: Added required fields
     tax_id: Optional[int] = None
     shipping_id: Optional[int] = None

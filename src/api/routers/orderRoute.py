@@ -2,7 +2,8 @@
 import ast
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Query
-from sqlalchemy import select,func
+from sqlalchemy import select, func
+from sqlalchemy import update as sql_update
 from sqlmodel import SQLModel, Field,Relationship
 from src.api.models.cart_model.cartModel import Cart
 from src.api.core.utility import Print, uniqueSlugify
@@ -101,17 +102,19 @@ def save_default_addresses_from_order(
 
     # Process billing address
     if billing_address and billing_address.get('is_default') in [True, 1, '1', 'true', 'True']:
-        # First, set all existing billing addresses for this user to is_default=False
-        existing_billing = session.exec(
-            select(Address).where(
-                Address.customer_id == customer_id,
-                Address.type == 'billing'
+        # First, set all existing billing addresses for this user to is_default=False using UPDATE
+        try:
+            stmt = (
+                sql_update(Address)
+                .where(
+                    Address.customer_id == customer_id,
+                    Address.type == 'billing'
+                )
+                .values(is_default=False)
             )
-        ).all()
-
-        for addr in existing_billing:
-            addr.is_default = False
-            session.add(addr)
+            session.exec(stmt)
+        except Exception as e:
+            print(f"Error updating existing billing addresses: {e}")
 
         # Create new default billing address
         try:
@@ -134,8 +137,8 @@ def save_default_addresses_from_order(
                 title=billing_address.get('title', 'Billing Address'),
                 type='billing',
                 is_default=True,
-                address=billing_detail,
-                location=location,
+                address=billing_detail.model_dump(),  # Convert to dict for JSON serialization
+                location=location.model_dump() if location else None,  # Convert to dict for JSON serialization
                 customer_id=customer_id
             )
             session.add(new_billing)
@@ -144,17 +147,19 @@ def save_default_addresses_from_order(
 
     # Process shipping address
     if shipping_address and shipping_address.get('is_default') in [True, 1, '1', 'true', 'True']:
-        # First, set all existing shipping addresses for this user to is_default=False
-        existing_shipping = session.exec(
-            select(Address).where(
-                Address.customer_id == customer_id,
-                Address.type == 'shipping'
+        # First, set all existing shipping addresses for this user to is_default=False using UPDATE
+        try:
+            stmt = (
+                sql_update(Address)
+                .where(
+                    Address.customer_id == customer_id,
+                    Address.type == 'shipping'
+                )
+                .values(is_default=False)
             )
-        ).all()
-
-        for addr in existing_shipping:
-            addr.is_default = False
-            session.add(addr)
+            session.exec(stmt)
+        except Exception as e:
+            print(f"Error updating existing shipping addresses: {e}")
 
         # Create new default shipping address
         try:
@@ -177,8 +182,8 @@ def save_default_addresses_from_order(
                 title=shipping_address.get('title', 'Shipping Address'),
                 type='shipping',
                 is_default=True,
-                address=shipping_detail,
-                location=location,
+                address=shipping_detail.model_dump(),  # Convert to dict for JSON serialization
+                location=location.model_dump() if location else None,  # Convert to dict for JSON serialization
                 customer_id=customer_id
             )
             session.add(new_shipping)
@@ -629,6 +634,8 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         coupon_discount=coupon_discount,  # NEW: Coupon discount
         shipping_address=shipping_address,
         billing_address=shipping_address,  # same for now
+        delivery_time=request.delivery_time,
+        payment_gateway=request.payment_gateway,
         # NEW: Add tax_id, shipping_id, coupon_id
         tax_id=request.tax_id,
         shipping_id=request.shipping_id,
@@ -824,10 +831,11 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
                 replacements={
                     "customer_name": order.customer_name,
                     "order_number": tracking_number,
-                    "order_date":order.assign_date,
+                    "order_date":order.created_at,
                     "order_id": order.id,
                     "amount": order.amount,
                     "delivery_date":order.delivery_time,
+                    "payment_gateway":order.payment_gateway,
                     "total_amount": order.total,
                     "delivery_fee": order.delivery_fee,
                 },
@@ -1200,6 +1208,8 @@ def create_order_from_cart(
         shipping_address=shipping_address,
         billing_address=shipping_address,  # Same as shipping for now
         # Add tax_id, shipping_id, coupon_id
+        delivery_time=request.delivery_time,
+        payment_gateway=request.payment_gateway,
         tax_id=request.tax_id,
         shipping_id=request.shipping_id,
         coupon_id=request.coupon_id,
@@ -1405,10 +1415,11 @@ def create_order_from_cart(
             replacements={
                 "customer_name": order.customer_name,
                 "order_number": tracking_number,
-                "order_date":order.assign_date,
+                "order_date":order.created_at,
                 "order_id": order.id,
                 "amount": order.amount,
                 "delivery_date":order.delivery_time,
+                "payment_gateway":order.payment_gateway,
                 "total_amount": order.total,
                 "delivery_fee": order.delivery_fee,
             },
