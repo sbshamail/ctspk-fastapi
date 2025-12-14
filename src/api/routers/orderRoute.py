@@ -2533,7 +2533,7 @@ def reverse_shop_earnings(session: GetSession, order: Order):
     # Find and delete shop earnings for this order
     shop_earnings = session.exec(
         select(ShopEarning).where(ShopEarning.order_id == order.id)
-    ).scalars().all()
+    ).all()
 
     for earning in shop_earnings:
         session.delete(earning)

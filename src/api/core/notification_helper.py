@@ -100,7 +100,7 @@ class NotificationHelper:
         # Notify all root users
         root_users = session.exec(
             select(User).where(User.is_root == True)
-        ).scalars().all()
+        ).all()
 
         root_message = f"New shop <b>{shop_name}</b> has been created and requires approval."
         for root_user in root_users:
@@ -362,7 +362,7 @@ class NotificationHelper:
         # Notify admins
         admin_users = session.exec(
             select(User).where(User.is_root == True)
-        ).scalars().all()
+        ).all()
 
         for admin in admin_users:
             admin_message = f"Order <b>{tracking_number}</b> has been cancelled by {cancelled_by}."
@@ -398,7 +398,7 @@ class NotificationHelper:
         # Notify admins
         admin_users = session.exec(
             select(User).where(User.is_root == True)
-        ).scalars().all()
+        ).all()
 
         for admin in admin_users:
             admin_message = f"New return request for order <b>{order_tracking_number}</b> requires review."
@@ -475,7 +475,7 @@ class NotificationHelper:
         # Notify admins
         admin_users = session.exec(
             select(User).where(User.is_root == True)
-        ).scalars().all()
+        ).all()
 
         for admin in admin_users:
             admin_message = f"Order <b>{tracking_number}</b> has been returned/refunded."
@@ -526,7 +526,7 @@ class NotificationHelper:
         # Notify admins
         admin_users = session.exec(
             select(User).where(User.is_root == True)
-        ).scalars().all()
+        ).all()
 
         for admin in admin_users:
             admin_message = f"New withdrawal request from shop <b>{shop.name}</b> for <b>${amount}</b>."
