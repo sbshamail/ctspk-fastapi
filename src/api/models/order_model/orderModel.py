@@ -153,6 +153,14 @@ class OrderProduct(TimeStampedModel, table=True):
     # ADDED: Product snapshot at time of order
     variation_snapshot: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
 
+    # ADDED: Review ID when review is added for this order item
+    review_id: Optional[int] = Field(default=None, foreign_key="reviews.id")
+
+    # ADDED: Return tracking fields
+    return_request_id: Optional[int] = Field(default=None, foreign_key="return_requests.id")
+    is_returned: bool = Field(default=False)
+    returned_quantity: Optional[int] = Field(default=0)
+
     deleted_at: Optional[datetime] = None
     unit_price: float = Field()  # Original price
     sale_price: Optional[float] = Field(default=None)  # NEW: Sale price at time of order
@@ -315,6 +323,11 @@ class OrderProductRead(TimeStampReadModel):
     shop_id: Optional[int] = None
     shop_name: Optional[str] = None
     shop_slug: Optional[str] = None
+    review_id: Optional[int] = None
+    # Return tracking fields
+    return_request_id: Optional[int] = None
+    is_returned: bool = False
+    returned_quantity: Optional[int] = 0
 
 
 class OrderRead(TimeStampReadModel):

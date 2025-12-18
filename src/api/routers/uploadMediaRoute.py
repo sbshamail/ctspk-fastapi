@@ -58,134 +58,49 @@ async def upload_images(
     thumbnail: bool = False,
 ):
     saved_records = []
-    existing_files = []
     errors = []
 
-    # Process each file sequentially to avoid race conditions
+    # Process each file
     for file in files:
         try:
             # Sanitize the filename - replace spaces with hyphens
             original_filename = file.filename
             sanitized_filename = sanitize_filename(original_filename)
-            
-            # Check if file already exists in database (with proper case handling)
-            existing_media = session.scalar(
-                select(UserMedia).where(
-                    UserMedia.filename.ilike(sanitized_filename),  # Use ilike for case-insensitive check
-                    UserMedia.user_id == user["id"],
-                )
+
+            # Read file content
+            content = await file.read()
+
+            # Create UploadFile object for the uploadImage function
+            from io import BytesIO
+
+            temp_upload_file = UploadFile(
+                filename=sanitized_filename,
+                file=BytesIO(content),
+                size=len(content)
             )
-            
-            if existing_media:
-                # File already exists - return existing file info
-                existing_files.append(UserMediaRead.model_validate(existing_media))
-                continue
-            
-            # Check if file already exists on disk
-            target_folder = os.path.join(MEDIA_DIR, str(user["id"]))
-            os.makedirs(target_folder, exist_ok=True)
-            file_path = os.path.join(target_folder, sanitized_filename)
-            
-            if os.path.exists(file_path):
-                # File exists on disk but not in DB - add to database
-                file_stats = os.stat(file_path)
-                size_mb = round(file_stats.st_size / (1024 * 1024), 2)
-                
-                # Create media record for existing file
+
+            # Upload the file using uploadImage function (generates unique filename)
+            saved_files = await uploadImage([temp_upload_file], user, thumbnail)
+
+            for file_info in saved_files:
+                # Insert into database
                 media = UserMedia(
                     user_id=user["id"],
-                    filename=sanitized_filename,
-                    extension=os.path.splitext(sanitized_filename)[1],
-                    original=f"{DOMAIN}/media/{user['email']}/{sanitized_filename}",
-                    size_mb=size_mb,
-                    thumbnail=None,  # You might want to generate thumbnail if needed
+                    filename=file_info["filename"],
+                    extension=file_info["extension"],
+                    original=f"{DOMAIN}{file_info['original']}",
+                    size_mb=file_info["size_mb"],
+                    thumbnail=f"{DOMAIN}{file_info['thumbnail']}" if file_info.get("thumbnail") else None,
                     media_type="image",
                 )
-                
-                try:
-                    session.add(media)
-                    session.commit()
-                    session.refresh(media)
-                    existing_files.append(UserMediaRead.model_validate(media))
-                    continue
-                except IntegrityError:
-                    # Handle race condition - another request might have added the same file
-                    session.rollback()
-                    existing_media = session.scalar(
-                        select(UserMedia).where(
-                            UserMedia.filename.ilike(sanitized_filename),
-                            UserMedia.user_id == user["id"],
-                        )
-                    )
-                    if existing_media:
-                        existing_files.append(UserMediaRead.model_validate(existing_media))
-                    continue
-            
-            # Create a new UploadFile object with sanitized filename for uploadImage function
-            content = await file.read()
-            
-            # Create temporary file for uploadImage processing
-            temp_files = []
-            try:
-                # Create a temporary file with sanitized name
-                temp_file_path = os.path.join(target_folder, f"temp_{sanitized_filename}")
-                with open(temp_file_path, "wb") as f:
-                    f.write(content)
-                
-                # Create UploadFile object for the uploadImage function
-                from fastapi import UploadFile
-                from io import BytesIO
-                
-                temp_upload_file = UploadFile(
-                    filename=sanitized_filename,
-                    file=BytesIO(content),
-                    size=len(content)
-                )
-                
-                # Upload the file using your existing uploadImage function
-                saved_files = await uploadImage([temp_upload_file], user, thumbnail)
-                
-                for file_info in saved_files:
-                    # Ensure we're using the sanitized filename
-                    file_info["filename"] = sanitize_filename(file_info["filename"])
-                    
-                    # Insert into database with error handling
-                    media = UserMedia(
-                        user_id=user["id"],
-                        filename=file_info["filename"],
-                        extension=file_info["extension"],
-                        original=file_info["original"],
-                        size_mb=file_info["size_mb"],
-                        thumbnail=file_info.get("thumbnail"),
-                        media_type="image",
-                    )
-                    
-                    try:
-                        session.add(media)
-                        session.flush()  # This will raise IntegrityError if duplicate
-                        saved_records.append(media)
-                    except IntegrityError:
-                        session.rollback()
-                        # File was added by another process, fetch the existing one
-                        existing_media = session.scalar(
-                            select(UserMedia).where(
-                                UserMedia.filename.ilike(file_info["filename"]),
-                                UserMedia.user_id == user["id"],
-                            )
-                        )
-                        if existing_media:
-                            existing_files.append(UserMediaRead.model_validate(existing_media))
-                        else:
-                            # This shouldn't happen, but just in case
-                            errors.append(f"Failed to upload {sanitized_filename}: duplicate constraint")
-                
-            finally:
-                # Clean up temporary file
-                if os.path.exists(temp_file_path):
-                    os.remove(temp_file_path)
-                # Close the UploadFile
-                await temp_upload_file.close()
-                
+
+                session.add(media)
+                session.flush()
+                saved_records.append(media)
+
+            # Close the UploadFile
+            await temp_upload_file.close()
+
         except Exception as e:
             errors.append(f"Error processing {file.filename}: {str(e)}")
             continue
@@ -198,22 +113,16 @@ async def upload_images(
         errors.append(f"Final commit failed: {str(e)}")
 
     # Prepare response
-    response_data = ''
-    
-    if errors:
-        response_data = errors
+    response_data = []
 
     # Generate appropriate message
     message_parts = []
     if saved_records:
         message_parts.append(f"Uploaded {len(saved_records)} new files")
-        response_data=[UserMediaRead.model_validate(m) for m in saved_records]
-    if existing_files:
-        message_parts.append(f"{len(existing_files)} files already exist")
-        response_data=existing_files
+        response_data = [UserMediaRead.model_validate(m) for m in saved_records]
     if errors:
         message_parts.append(f"{len(errors)} errors occurred")
-    
+
     message = ", ".join(message_parts) if message_parts else "No files processed"
 
     status_code = 200 if not errors else 207  # 207 Multi-Status if there are errors
@@ -285,13 +194,14 @@ class FilenameList(BaseModel):
 
 @router.post("/get-multiple")
 async def get_multiple_images(user: requireSignin, data: FilenameList):
-    user_dir = os.path.join(MEDIA_DIR, str(user["id"]))
+    user_id = str(user["id"])
+    user_dir = os.path.join(MEDIA_DIR, user_id)
     results = []
 
     for filename in data.filenames:
         # Sanitize the filename for consistency
         sanitized_filename = sanitize_filename(filename)
-        
+
         file_path = os.path.join(user_dir, sanitized_filename)
         if os.path.isfile(file_path):
             name, ext = os.path.splitext(sanitized_filename)
@@ -303,8 +213,8 @@ async def get_multiple_images(user: requireSignin, data: FilenameList):
                     "original_filename": filename,  # Keep original name for reference
                     "extension": ext.lower(),
                     "size_kb": size_kb,
-                    "original": f"{DOMAIN}/media/{user['email']}/{sanitized_filename}",
-                    "thumbnail": f"{DOMAIN}/media/{user['email']}/{name}.webp",
+                    "original": f"{DOMAIN}/media/{user_id}/{sanitized_filename}",
+                    "thumbnail": f"{DOMAIN}/media/{user_id}/{name}_thumb.webp",
                 }
             )
         else:
@@ -322,7 +232,7 @@ async def get_multiple_images(user: requireSignin, data: FilenameList):
 def delete_media_items(
     session: GetSession,
     user_id: int,
-    user_email: str,
+    user_folder: str,
     ids: Optional[List[int]] = None,
     filenames: Optional[List[str]] = None,
 ) -> List[UserMedia]:
@@ -332,8 +242,8 @@ def delete_media_items(
 
     Args:
         session: SQLModel session
-        user_email: str (used to build disk path)
         user_id: int (owner restriction)
+        user_folder: str (user ID as folder name)
         ids: list of media IDs to delete
         filenames: list of filenames to delete (case-insensitive)
     Returns:
@@ -358,21 +268,21 @@ def delete_media_items(
 
     for media in media_records:
         # --- Delete original file ---
-        file_path = os.path.join(MEDIA_DIR, user_email, media.filename)
+        file_path = os.path.join(MEDIA_DIR, user_folder, media.filename)
         if os.path.exists(file_path):
             os.remove(file_path)
 
         # --- Delete thumbnail ---
         if media.thumbnail:
             thumb_path = os.path.join(
-                MEDIA_DIR, user_email, os.path.basename(media.thumbnail)
+                MEDIA_DIR, user_folder, os.path.basename(media.thumbnail)
             )
             if os.path.exists(thumb_path):
                 os.remove(thumb_path)
         else:
             base, _ = os.path.splitext(media.filename)
             thumb_name = f"{base}_thumb.webp"
-            thumb_path = os.path.join(MEDIA_DIR, user_email, thumb_name)
+            thumb_path = os.path.join(MEDIA_DIR, user_folder, thumb_name)
             if os.path.exists(thumb_path):
                 os.remove(thumb_path)
 
@@ -394,7 +304,7 @@ async def delete_by_ids(
     deleted = delete_media_items(
         session=session,
         user_id=user["id"],
-        user_email=str(user["id"]),
+        user_folder=str(user["id"]),
         ids=ids,
     )
 
@@ -406,10 +316,6 @@ async def delete_by_ids(
         "Media deleted successfully",
         [UserMediaRead.model_validate(m) for m in deleted],
     )
-
-
-from fastapi import Query
-from typing import List
 
 
 @router.delete("/delete-by-filenames")
@@ -424,7 +330,7 @@ async def delete_by_filenames(
     deleted = delete_media_items(
         session=session,
         user_id=user["id"],
-        user_email=str(user["id"]),
+        user_folder=str(user["id"]),
         filenames=filenames,
     )
     if not deleted:

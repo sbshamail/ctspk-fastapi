@@ -1,8 +1,9 @@
 # src/api/models/reviewModel.py
-from typing import Optional, Dict, Any,TYPE_CHECKING
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from datetime import datetime
 from sqlalchemy import Column, JSON, ForeignKey
 from sqlmodel import SQLModel, Field, Relationship
+from pydantic import field_validator
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 if TYPE_CHECKING:
@@ -25,7 +26,7 @@ class Review(TimeStampedModel, table=True):
     )
     comment: Optional[str] = Field(default=None)
     rating: int = Field(ge=1, le=5)  # Rating between 1-5
-    photos: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
+    photos: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
     deleted_at: Optional[datetime] = None
 
     # Relationships (optional - for eager loading if needed)
@@ -41,13 +42,31 @@ class Review(TimeStampedModel, table=True):
 # --------------------------------------------------------------------
 class ReviewCreate(SQLModel):
     order_id: int
-    user_id: int
     shop_id: int
     product_id: int
     variation_option_id: Optional[int] = None
     comment: Optional[str] = None
     rating: int = Field(ge=1, le=5)
-    photos: Optional[Dict[str, Any]] = None
+    photos: Optional[List[Dict[str, Any]]] = None
+
+    @field_validator('photos', mode='before')
+    @classmethod
+    def empty_photos_to_none(cls, v):
+        """Treat empty array or empty dict as None"""
+        if v is None:
+            return None
+        if isinstance(v, list) and len(v) == 0:
+            return None
+        return v
+
+
+class UserReadForReview(SQLModel):
+    id: int
+    name: str
+    avatar: Optional[Dict[str, Any]] = None
+
+    class Config:
+        from_attributes = True
 
 
 class ReviewRead(TimeStampReadModel):
@@ -59,11 +78,22 @@ class ReviewRead(TimeStampReadModel):
     variation_option_id: Optional[int] = None
     comment: Optional[str] = None
     rating: int
-    photos: Optional[Dict[str, Any]] = None
+    photos: Optional[List[Dict[str, Any]]] = None
+    user: Optional[UserReadForReview] = None
 
 
 class ReviewUpdate(SQLModel):
     variation_option_id: Optional[int] = None
     comment: Optional[str] = None
     rating: Optional[int] = Field(default=None, ge=1, le=5)
-    photos: Optional[Dict[str, Any]] = None
+    photos: Optional[List[Dict[str, Any]]] = None
+
+    @field_validator('photos', mode='before')
+    @classmethod
+    def empty_photos_to_none(cls, v):
+        """Treat empty array or empty dict as None"""
+        if v is None:
+            return None
+        if isinstance(v, list) and len(v) == 0:
+            return None
+        return v

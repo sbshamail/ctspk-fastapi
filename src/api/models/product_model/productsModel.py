@@ -103,6 +103,10 @@ class Product(TimeStampedModel, table=True):
     # ADDED: Track total sold quantity
     total_sold_quantity: int = Field(default=0)
 
+    # ADDED: Rating and review count
+    rating: float = Field(default=0.0)
+    review_count: int = Field(default=0)
+
     # foreign key
     category_id: int = Field(foreign_key="categories.id", index=True)
     shop_id: Optional[int] = Field(foreign_key="shops.id", index=True)
@@ -301,7 +305,11 @@ class ProductRead(TimeStampReadModel):
     total_purchased_quantity: int = 0
     total_sold_quantity: int = 0
     current_stock_value: Optional[float] = None
-    
+
+    # ADDED: Rating and review count
+    rating: float = 0.0
+    review_count: int = 0
+
     # CHANGED: Make total_quantity a regular field instead of computed
     total_quantity: int = 0
 

@@ -21,18 +21,19 @@ router = APIRouter(prefix="/wallet", tags=["Wallet"])
 @router.get("/balance")
 def get_my_wallet(
     session: GetSession,
-    user=requireSignin
+    user:requireSignin
 ):
-    user_wallet = session.exec(
-        select(UserWallet).where(UserWallet.user_id == user)
-    ).first()
-    
+    user_id = user.get("id")
+    user_wallet = session.execute(
+        select(UserWallet).where(UserWallet.user_id == user_id)
+    ).scalars().first()
+
     if not user_wallet:
-        user_wallet = UserWallet(user_id=user, balance=0.0)
+        user_wallet = UserWallet(user_id=user_id, balance=0.0)
         session.add(user_wallet)
         session.commit()
         session.refresh(user_wallet)
-    
+
     return api_response(200, "Wallet balance retrieved", UserWalletRead.model_validate(user_wallet))
 
 
@@ -41,14 +42,16 @@ def get_my_wallet(
 def get_my_transactions(
     query_params: ListQueryParams,
     session: GetSession,
-    user=requireSignin
+    user:requireSignin
 ):
+    from src.api.core.operation import listRecords
+
     query_params = vars(query_params)
-    
-    if "filters" not in query_params:
-        query_params["filters"] = {}
-    query_params["filters"]["user_id"] = user.id
-    
+    user_id = user.get("id")
+
+    # Use columnFilters format for listRecords
+    query_params["columnFilters"] = f'[["user_id", {user_id}]]'
+
     return listRecords(
         query_params=query_params,
         searchFields=["description"],
@@ -62,14 +65,16 @@ def get_my_transactions(
 def transfer_to_bank(
     request: TransferToBankRequest,
     session: GetSession,
-    user=requireSignin,
+    user:requireSignin,
     background_tasks: BackgroundTasks = None,
 ):
+    user_id = user.get("id")
+
     # Get user wallet
-    user_wallet = session.exec(
-        select(UserWallet).where(UserWallet.user_id == user.id)
-    ).first()
-    
+    user_wallet = session.execute(
+        select(UserWallet).where(UserWallet.user_id == user_id)
+    ).scalars().first()
+
     if not user_wallet or user_wallet.balance <= 0:
         return api_response(400, "Insufficient wallet balance")
 
@@ -78,15 +83,15 @@ def transfer_to_bank(
         return api_response(400, "Invalid transfer amount")
 
     # Get eligible refund transactions (15 days old)
-    eligible_transactions = session.exec(
+    eligible_transactions = session.execute(
         select(WalletTransaction).where(
-            WalletTransaction.user_id == user.id,
+            WalletTransaction.user_id == user_id,
             WalletTransaction.transaction_type == "credit",
             WalletTransaction.is_refund == True,
             WalletTransaction.transfer_eligible_at <= datetime.utcnow(),
             WalletTransaction.transferred_to_bank == False
         )
-    ).all()
+    ).scalars().all()
 
     total_eligible = sum(t.amount for t in eligible_transactions)
     
@@ -121,7 +126,7 @@ def transfer_to_bank(
                 
                 # Create new transaction for remaining amount
                 new_transaction = WalletTransaction(
-                    user_id=user.id,
+                    user_id=user_id,
                     amount=remaining_amount,
                     transaction_type="credit",
                     balance_after=user_wallet.balance + remaining_amount,
@@ -135,7 +140,7 @@ def transfer_to_bank(
 
         # Create debit transaction record
         debit_transaction = WalletTransaction(
-            user_id=user.id,
+            user_id=user_id,
             amount=request.amount,
             transaction_type="debit",
             balance_after=user_wallet.balance,
@@ -148,7 +153,7 @@ def transfer_to_bank(
 
         # Process bank transfer in background
         if background_tasks:
-            background_tasks.add_task(process_bank_transfer, user.id, request.amount, request.bank_account_id)
+            background_tasks.add_task(process_bank_transfer, user_id, request.amount, request.bank_account_id)
 
         return api_response(200, f"${request.amount} transfer initiated successfully")
 
@@ -161,21 +166,23 @@ def transfer_to_bank(
 @router.get("/eligible-transfer-amount")
 def get_eligible_transfer_amount(
     session: GetSession,
-    user=requireSignin
+    user:requireSignin
 ):
+    user_id = user.get("id")
+
     # Calculate amount that is eligible for transfer (15 days old)
-    eligible_transactions = session.exec(
+    eligible_transactions = session.execute(
         select(WalletTransaction).where(
-            WalletTransaction.user_id == user.id,
+            WalletTransaction.user_id == user_id,
             WalletTransaction.transaction_type == "credit",
             WalletTransaction.is_refund == True,
             WalletTransaction.transfer_eligible_at <= datetime.utcnow(),
             WalletTransaction.transferred_to_bank == False
         )
-    ).all()
+    ).scalars().all()
 
     total_eligible = sum(t.amount for t in eligible_transactions)
-    
+
     return api_response(200, "Eligible transfer amount", {
         "eligible_amount": total_eligible,
         "transaction_count": len(eligible_transactions)
@@ -195,9 +202,10 @@ def process_bank_transfer(user_id: int, amount: float, bank_account_id: int):
 # ✅ SCHEDULED TASK: CHECK TRANSFER ELIGIBILITY
 def check_transfer_eligibility():
     """Scheduled task to update transfer eligibility"""
-    from src.api.core.database import get_db_session
-    
-    with get_db_session() as session:
+    from src.lib.db_con import engine
+    from sqlmodel import Session
+
+    with Session(engine) as session:
         # Find refund transactions that just became eligible
         newly_eligible = session.exec(
             select(WalletTransaction).where(

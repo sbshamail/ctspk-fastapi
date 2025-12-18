@@ -172,6 +172,25 @@ def list_shops(
         Model=Shop,
         Schema=ShopRead,
     )
+# ✅ LIST shops for signed-in user
+@router.get("/my-shops", response_model=list[ShopRead])
+def my_shops(
+    session: GetSession, query_params: ListQueryParams, user: requireSignin
+):
+    query_params = vars(query_params)
+    searchFields = ["name", "slug", "description"]
+
+    # Filter shops by owner_id matching signed-in user
+    # columnFilters expects string format: [["column", "value"]]
+    user_id = user.get("id")
+    query_params["columnFilters"] = f'[["owner_id", {user_id}]]'
+
+    return listRecords(
+        query_params=query_params,
+        searchFields=searchFields,
+        Model=Shop,
+        Schema=ShopRead,
+    )
 # ✅ PATCH shop status (toggle/verify)
 @router.patch("/{id}/status")
 def patch_shop_status(
