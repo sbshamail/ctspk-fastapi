@@ -1724,6 +1724,97 @@ def update_status(
     order = session.get(Order, id)
     raiseExceptions((order, 404, "Order not found"))
 
+    # ✅ ORDER STATUS SEQUENCE VALIDATION
+    # Sequence: pending -> processing -> packed -> at_distribution_center -> at_local_facility -> out_for_delivery -> completed
+    ORDER_STATUS_SEQUENCE = [
+        OrderStatusEnum.PENDING,              # 1
+        OrderStatusEnum.PROCESSING,           # 2
+        OrderStatusEnum.PACKED,               # 3
+        OrderStatusEnum.AT_DISTRIBUTION_CENTER,  # 4
+        OrderStatusEnum.AT_LOCAL_FACILITY,    # 5
+        OrderStatusEnum.OUT_FOR_DELIVERY,     # 6
+        OrderStatusEnum.COMPLETED,            # 7
+    ]
+
+    # Special statuses that can be set at any time (not part of normal flow)
+    SPECIAL_STATUSES = [
+        OrderStatusEnum.CANCELLED,
+        OrderStatusEnum.REFUNDED,
+        OrderStatusEnum.FAILED,
+    ]
+
+    if request.order_status:
+        current_status = order.order_status
+        new_status = request.order_status
+
+        # Convert string to enum if needed
+        if isinstance(current_status, str):
+            try:
+                current_status = OrderStatusEnum(current_status)
+            except ValueError:
+                current_status = None
+
+        # Allow special statuses (cancelled, refunded, failed) at any time
+        if new_status not in SPECIAL_STATUSES:
+            # Check if current status is a special status - cannot transition from special statuses
+            if current_status in SPECIAL_STATUSES:
+                return api_response(
+                    400,
+                    f"Cannot change status from '{current_status.value}' to '{new_status.value}'. Order is already {current_status.value.replace('order-', '')}.",
+                    {
+                        "current_status": current_status.value if current_status else None,
+                        "requested_status": new_status.value,
+                        "valid_sequence": [s.value for s in ORDER_STATUS_SEQUENCE]
+                    }
+                )
+
+            # Get indices in sequence
+            try:
+                current_index = ORDER_STATUS_SEQUENCE.index(current_status) if current_status in ORDER_STATUS_SEQUENCE else -1
+                new_index = ORDER_STATUS_SEQUENCE.index(new_status)
+            except ValueError:
+                return api_response(
+                    400,
+                    f"Invalid status transition",
+                    {
+                        "current_status": current_status.value if current_status else None,
+                        "requested_status": new_status.value
+                    }
+                )
+
+            # Validate sequence - new status must be exactly one step ahead
+            if new_index != current_index + 1:
+                if new_index <= current_index:
+                    # Trying to go backwards or stay same
+                    return api_response(
+                        400,
+                        f"Cannot change status from '{current_status.value}' to '{new_status.value}'. Status cannot go backwards.",
+                        {
+                            "current_status": current_status.value if current_status else None,
+                            "current_step": current_index + 1,
+                            "requested_status": new_status.value,
+                            "requested_step": new_index + 1,
+                            "next_valid_status": ORDER_STATUS_SEQUENCE[current_index + 1].value if current_index + 1 < len(ORDER_STATUS_SEQUENCE) else None,
+                            "valid_sequence": [s.value for s in ORDER_STATUS_SEQUENCE]
+                        }
+                    )
+                else:
+                    # Trying to skip steps
+                    expected_next = ORDER_STATUS_SEQUENCE[current_index + 1]
+                    return api_response(
+                        400,
+                        f"Cannot skip status. Current: '{current_status.value}' -> Next must be: '{expected_next.value}', but got: '{new_status.value}'",
+                        {
+                            "current_status": current_status.value if current_status else None,
+                            "current_step": current_index + 1,
+                            "requested_status": new_status.value,
+                            "requested_step": new_index + 1,
+                            "next_valid_status": expected_next.value,
+                            "skipped_statuses": [ORDER_STATUS_SEQUENCE[i].value for i in range(current_index + 1, new_index)],
+                            "valid_sequence": [s.value for s in ORDER_STATUS_SEQUENCE]
+                        }
+                    )
+
     # Handle inventory restoration for cancelled/refunded orders
     if request.order_status in [
         OrderStatusEnum.CANCELLED,
