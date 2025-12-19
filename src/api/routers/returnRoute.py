@@ -458,7 +458,7 @@ def process_refund(return_id: int):
 
             session.commit()
 
-            print(f"✅ Refund processed for return #{return_id}: ${return_request.refund_amount}")
+            print(f"✅ Refund processed for return #{return_id}: Rs.{return_request.refund_amount}")
             return {
                 "success": True,
                 "message": "Refund processed successfully",

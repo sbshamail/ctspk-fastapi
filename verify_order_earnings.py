@@ -29,10 +29,10 @@ def verify_order_earnings(order_id: int):
         print(f"Tracking Number: {order.tracking_number}")
         print(f"Order Status: {order.order_status}")
         print(f"Payment Status: {order.payment_status}")
-        print(f"Total Amount: ${order.total_amount}")
-        print(f"Delivery Fee: ${order.delivery_fee}")
-        print(f"Discount: ${order.discount_amount}")
-        print(f"Final Amount: ${order.final_amount}")
+        print(f"Total Amount: Rs.{order.total_amount}")
+        print(f"Delivery Fee: Rs.{order.delivery_fee}")
+        print(f"Discount: Rs.{order.discount_amount}")
+        print(f"Final Amount: Rs.{order.final_amount}")
         print()
 
         # 2. Get Order Products
@@ -60,9 +60,9 @@ def verify_order_earnings(order_id: int):
             print(f"    Product ID: {op.product_id}")
             print(f"    Shop ID: {op.shop_id} ({shop_name})")
             print(f"    Quantity: {op.quantity}")
-            print(f"    Price: ${op.price}")
-            print(f"    Subtotal: ${op.subtotal}")
-            print(f"    Admin Commission: ${op.admin_commission} ({op.admin_commission_percent}%)")
+            print(f"    Price: Rs.{op.price}")
+            print(f"    Subtotal: Rs.{op.subtotal}")
+            print(f"    Admin Commission: Rs.{op.admin_commission} ({op.admin_commission_percent}%)")
 
             # Calculate proportional delivery fee
             delivery_fee_per_product = Decimal("0.00")
@@ -78,8 +78,8 @@ def verify_order_earnings(order_id: int):
                 - delivery_fee_per_product
             )
 
-            print(f"    Proportional Delivery Fee: ${delivery_fee_per_product:.2f}")
-            print(f"    Expected Shop Earning: ${expected_earning:.2f}")
+            print(f"    Proportional Delivery Fee: Rs.{delivery_fee_per_product:.2f}")
+            print(f"    Expected Shop Earning: Rs.{expected_earning:.2f}")
 
             expected_earnings.append({
                 'order_product_id': op.id,
@@ -115,9 +115,9 @@ def verify_order_earnings(order_id: int):
                 print(f"[{i}] Earning ID: {se.id}")
                 print(f"    Shop: {se.shop_id} ({shop_name})")
                 print(f"    Order Product ID: {se.order_product_id}")
-                print(f"    Order Amount: ${se.order_amount}")
-                print(f"    Admin Commission: ${se.admin_commission}")
-                print(f"    Shop Earning: ${se.shop_earning}")
+                print(f"    Order Amount: Rs.{se.order_amount}")
+                print(f"    Admin Commission: Rs.{se.admin_commission}")
+                print(f"    Shop Earning: Rs.{se.shop_earning}")
                 print(f"    Is Settled: {se.is_settled}")
                 print(f"    Created At: {se.created_at}")
                 print()
@@ -144,17 +144,17 @@ def verify_order_earnings(order_id: int):
             )
 
             print(f"Order Product {expected['order_product_id']} | Shop: {expected['shop_name']}")
-            print(f"  Expected Earning: ${expected['expected_earning']:.2f}")
+            print(f"  Expected Earning: Rs.{expected['expected_earning']:.2f}")
 
             if actual:
-                print(f"  Actual Earning:   ${actual.shop_earning:.2f}")
+                print(f"  Actual Earning:   Rs.{actual.shop_earning:.2f}")
 
-                # Compare with tolerance of $0.01
+                # Compare with tolerance of Rs.0.01
                 diff = abs(expected['expected_earning'] - actual.shop_earning)
                 if diff < Decimal("0.01"):
-                    print(f"  ✅ CORRECT (diff: ${diff:.4f})")
+                    print(f"  ✅ CORRECT (diff: Rs.{diff:.4f})")
                 else:
-                    print(f"  ⚠️ MISMATCH! Difference: ${diff:.2f}")
+                    print(f"  ⚠️ MISMATCH! Difference: Rs.{diff:.2f}")
                     all_correct = False
                     mismatch_count += 1
             else:
@@ -174,8 +174,8 @@ def verify_order_earnings(order_id: int):
             print(f"   Total earning records: {len(shop_earnings)}")
             total_earnings = sum(se.shop_earning for se in shop_earnings)
             total_commission = sum(se.admin_commission for se in shop_earnings)
-            print(f"   Total shop earnings: ${total_earnings:.2f}")
-            print(f"   Total admin commission: ${total_commission:.2f}")
+            print(f"   Total shop earnings: Rs.{total_earnings:.2f}")
+            print(f"   Total admin commission: Rs.{total_commission:.2f}")
         else:
             print(f"⚠️ ISSUES FOUND:")
             if missing_count > 0:

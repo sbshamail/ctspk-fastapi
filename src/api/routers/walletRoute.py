@@ -96,7 +96,7 @@ def transfer_to_bank(
     total_eligible = sum(t.amount for t in eligible_transactions)
     
     if request.amount > total_eligible:
-        return api_response(400, f"Only ${total_eligible} is eligible for transfer (15-day holding period)")
+        return api_response(400, f"Only Rs.{total_eligible} is eligible for transfer (15-day holding period)")
 
     # Process transfer
     try:
@@ -155,7 +155,7 @@ def transfer_to_bank(
         if background_tasks:
             background_tasks.add_task(process_bank_transfer, user_id, request.amount, request.bank_account_id)
 
-        return api_response(200, f"${request.amount} transfer initiated successfully")
+        return api_response(200, f"Rs.{request.amount} transfer initiated successfully")
 
     except Exception as e:
         session.rollback()
@@ -192,7 +192,7 @@ def get_eligible_transfer_amount(
 def process_bank_transfer(user_id: int, amount: float, bank_account_id: int):
     """Background task to process actual bank transfer"""
     # Integrate with your payment gateway/bank API here
-    print(f"Processing bank transfer of ${amount} to account #{bank_account_id} for user {user_id}")
+    print(f"Processing bank transfer of Rs.{amount} to account #{bank_account_id} for user {user_id}")
     
     # Example integration:
     # bank_api.transfer(amount, bank_account_id)

@@ -74,10 +74,10 @@ class OrderEmailService:
                     <div class="product-meta">Quantity: {product.order_quantity}</div>
                     {variation_info}
                     <div class="product-meta">
-                        Unit Price: ${unit_price:.2f}
-                        {f' <span style="color: #dc3545;">(Sale: ${sale_price:.2f})</span>' if sale_price else ''}
+                        Unit Price: Rs.{unit_price:.2f}
+                        {f' <span style="color: #dc3545;">(Sale: Rs.{sale_price:.2f})</span>' if sale_price else ''}
                     </div>
-                    <div class="product-price">Total: ${item_total:.2f}</div>
+                    <div class="product-price">Total: Rs.{item_total:.2f}</div>
                 </div>
             </div>
             """

@@ -28,7 +28,7 @@ def test_notification_logic():
     print(f"Order: {tracking_number}")
     print(f"Customer: User {customer_id}")
     print(f"Shops: {shop_ids}")
-    print(f"Total: ${total_amount}")
+    print(f"Total: Rs.{total_amount}")
     print()
 
     # Track notifications
@@ -40,7 +40,7 @@ def test_notification_logic():
     notifications_to_send.append({
         'user_id': customer_id,
         'type': 'customer',
-        'message': f'Your order <b>{tracking_number}</b> has been placed successfully. Total: <b>${total_amount}</b>'
+        'message': f'Your order <b>{tracking_number}</b> has been placed successfully. Total: <b>Rs.{total_amount}</b>'
     })
     print(f"[Customer] User {customer_id}: Order confirmation")
     print()
@@ -125,7 +125,7 @@ def test_notification_logic():
         select(User).where(User.is_root == True)
     ).all()
 
-    admin_message = f'New order <b>{tracking_number}</b> has been placed. Total: <b>${total_amount}</b>'
+    admin_message = f'New order <b>{tracking_number}</b> has been placed. Total: <b>Rs.{total_amount}</b>'
     notified_admin_ids = set([customer_id])
 
     for admin in admin_users:
@@ -183,7 +183,7 @@ def test_notification_logic():
             print(f"   Message: New order for shop {notif['shop_name']}")
         elif notif['type'] == 'admin':
             print(f"{i}. User {notif['user_id']} ({user_name}) - ADMIN")
-            print(f"   Message: New order placed, total ${total_amount}")
+            print(f"   Message: New order placed, total Rs.{total_amount}")
         print()
 
     # Compare with actual

@@ -83,7 +83,7 @@ class TransactionLogger:
                 price_diff = log_data.new_price - log_data.previous_price
                 if price_diff != 0:
                     direction = "increased" if price_diff > 0 else "decreased"
-                    notes_parts.append(f", price {direction} from ${log_data.previous_price:.2f} to ${log_data.new_price:.2f}")
+                    notes_parts.append(f", price {direction} from Rs.{log_data.previous_price:.2f} to Rs.{log_data.new_price:.2f}")
         
         elif log_data.transaction_type in [TransactionType.STOCK_ADDITION, TransactionType.STOCK_DEDUCTION]:
             action = "added to" if log_data.transaction_type == TransactionType.STOCK_ADDITION else "deducted from"
@@ -96,7 +96,7 @@ class TransactionLogger:
                 notes_parts.append(f": {abs_qty} units")
                 
                 if log_data.purchase_price is not None and log_data.transaction_type == TransactionType.STOCK_ADDITION:
-                    notes_parts.append(f" at purchase price ${log_data.purchase_price:.2f}")
+                    notes_parts.append(f" at purchase price Rs.{log_data.purchase_price:.2f}")
         
         elif log_data.transaction_type == TransactionType.ORDER_PLACED:
             notes_parts.append("Order placed")
@@ -124,7 +124,7 @@ class TransactionLogger:
             if log_data.previous_price is not None and log_data.new_price is not None:
                 price_diff = log_data.new_price - log_data.previous_price
                 direction = "increased" if price_diff > 0 else "decreased"
-                notes_parts.append(f": {direction} from ${log_data.previous_price:.2f} to ${log_data.new_price:.2f}")
+                notes_parts.append(f": {direction} from Rs.{log_data.previous_price:.2f} to Rs.{log_data.new_price:.2f}")
         
         # Add quantity change details if available
         if (log_data.previous_quantity is not None and 

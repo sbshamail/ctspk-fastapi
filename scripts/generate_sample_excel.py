@@ -43,7 +43,7 @@ def generate_sample_excel():
                 'unit': 'pcs',
                 'tags': 'kitchen,eco-friendly,stainless-steel',
                 'warranty': 'Lifetime warranty',
-                'shipping_info': 'Free shipping on orders over $50',
+                'shipping_info': 'Free shipping on orders over Rs.50',
                 'meta_title': 'Stainless Steel Water Bottle - Eco Friendly',
                 'meta_description': 'Keep your drinks cold with our premium stainless steel water bottle'
             }

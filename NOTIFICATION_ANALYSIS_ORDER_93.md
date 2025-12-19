@@ -5,7 +5,7 @@
 **Order ID:** 93
 **Tracking Number:** TRK-5FC0A781350B
 **Customer ID:** 11 (M.Ghalib Raza - rurazza@gmail.com)
-**Total Amount:** $9,295.00
+**Total Amount:** Rs.9,295.00
 **Created At:** 2025-12-04 14:21:41
 
 ---
@@ -39,9 +39,9 @@ The order contains products from **2 different shops**:
 
 | Notification ID | User ID | User Name | User Type | Message |
 |-----------------|---------|-----------|-----------|---------|
-| 10 | 11 | M.Ghalib Raza | Customer | Your order **TRK-5FC0A781350B** has been placed successfully. Total: **$9295.0** |
+| 10 | 11 | M.Ghalib Raza | Customer | Your order **TRK-5FC0A781350B** has been placed successfully. Total: **Rs.9295.0** |
 | 11 | 10 | user staff | Shop Staff | New order **TRK-5FC0A781350B** received for shop **Hatim Super Market**. |
-| 12 | 8 | admin | Admin (is_root=True) | New order **TRK-5FC0A781350B** has been placed. Total: **$9295.0** |
+| 12 | 8 | admin | Admin (is_root=True) | New order **TRK-5FC0A781350B** has been placed. Total: **Rs.9295.0** |
 
 ---
 
@@ -189,7 +189,7 @@ WHERE shop_id = :shop_id;
 ```sql
 -- 1. Customer notification (User 11)
 INSERT INTO notifications (user_id, message, sent_at, is_read)
-VALUES (11, 'Your order TRK-5FC0A781350B has been placed successfully. Total: $9295.0', NOW(), false);
+VALUES (11, 'Your order TRK-5FC0A781350B has been placed successfully. Total: Rs.9295.0', NOW(), false);
 
 -- 2. Shop 1 - Owner notification (User 9)
 INSERT INTO notifications (user_id, message, sent_at, is_read)
@@ -206,7 +206,7 @@ VALUES (9, 'New order TRK-5FC0A781350B received for shop D.Watson Cash & Carry.'
 -- 5. Admin notification (User 8)
 -- Note: User 9 already got shop notifications, so skip admin notification for them
 INSERT INTO notifications (user_id, message, sent_at, is_read)
-VALUES (8, 'New order TRK-5FC0A781350B has been placed. Total: $9295.0', NOW(), false);
+VALUES (8, 'New order TRK-5FC0A781350B has been placed. Total: Rs.9295.0', NOW(), false);
 ```
 
 **Total Expected Notifications:** 5

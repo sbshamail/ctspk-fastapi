@@ -87,7 +87,7 @@ def create_withdraw_request(
     print(f"balance:{balance}")
     
     if request.amount > balance.available_balance:
-        return api_response(400, f"Insufficient balance. Available: ${balance.available_balance}")
+        return api_response(400, f"Insufficient balance. Available: Rs.{balance.available_balance}")
 
     if request.amount <= 0:
         return api_response(400, "Withdrawal amount must be greater than 0")

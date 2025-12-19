@@ -206,7 +206,7 @@ class NotificationHelper:
 
         # Notify customer (only if logged in)
         if customer_id:
-            customer_message = f"Your order <b>{tracking_number}</b> has been placed successfully. Total: <b>${total_amount}</b>"
+            customer_message = f"Your order <b>{tracking_number}</b> has been placed successfully. Total: <b>Rs.{total_amount}</b>"
             NotificationHelper.create_notification(session, customer_id, customer_message, commit=False)
             print(f"[NotificationHelper] ✓ Notified customer {customer_id}")
         else:
@@ -273,7 +273,7 @@ class NotificationHelper:
             select(User).where(User.is_root == True)
         ).all()
 
-        admin_message = f"New order <b>{tracking_number}</b> has been placed. Total: <b>${total_amount}</b>"
+        admin_message = f"New order <b>{tracking_number}</b> has been placed. Total: <b>Rs.{total_amount}</b>"
         admin_count = 0
         # Don't notify customer again as admin (only if customer_id exists)
         notified_admin_ids = set([customer_id]) if customer_id else set()
@@ -420,7 +420,7 @@ class NotificationHelper:
         """Notify relevant parties when return request is approved"""
 
         # Notify customer
-        customer_message = f"Your return request for order <b>{order_tracking_number}</b> has been approved. Refund amount: <b>${refund_amount}</b>"
+        customer_message = f"Your return request for order <b>{order_tracking_number}</b> has been approved. Refund amount: <b>Rs.{refund_amount}</b>"
         NotificationHelper.create_notification(session, customer_id, customer_message)
 
         # Notify shop owners
@@ -520,7 +520,7 @@ class NotificationHelper:
             return
 
         # Notify shop owner
-        owner_message = f"Your withdrawal request for <b>${amount}</b> has been submitted and is pending approval."
+        owner_message = f"Your withdrawal request for <b>Rs.{amount}</b> has been submitted and is pending approval."
         NotificationHelper.create_notification(session, shop.owner_id, owner_message)
 
         # Notify admins
@@ -529,7 +529,7 @@ class NotificationHelper:
         ).all()
 
         for admin in admin_users:
-            admin_message = f"New withdrawal request from shop <b>{shop.name}</b> for <b>${amount}</b>."
+            admin_message = f"New withdrawal request from shop <b>{shop.name}</b> for <b>Rs.{amount}</b>."
             NotificationHelper.create_notification(
                 session, admin.id, admin_message, commit=False
             )
@@ -543,7 +543,7 @@ class NotificationHelper:
         if not shop:
             return
 
-        message = f"<b>Great News!</b> Your withdrawal request for <b>${amount}</b> has been approved."
+        message = f"<b>Great News!</b> Your withdrawal request for <b>Rs.{amount}</b> has been approved."
         NotificationHelper.create_notification(session, shop.owner_id, message)
 
     @staticmethod
@@ -558,7 +558,7 @@ class NotificationHelper:
         if not shop:
             return
 
-        message = f"Your withdrawal request for <b>${amount}</b> has been rejected."
+        message = f"Your withdrawal request for <b>Rs.{amount}</b> has been rejected."
         if reason:
             message += f" Reason: {reason}"
         NotificationHelper.create_notification(session, shop.owner_id, message)
@@ -570,7 +570,7 @@ class NotificationHelper:
         if not shop:
             return
 
-        message = f"<b>Payment Completed!</b> Your withdrawal of <b>${net_amount}</b> has been processed and transferred to your account."
+        message = f"<b>Payment Completed!</b> Your withdrawal of <b>Rs.{net_amount}</b> has been processed and transferred to your account."
         NotificationHelper.create_notification(session, shop.owner_id, message)
 
 

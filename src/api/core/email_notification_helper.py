@@ -133,7 +133,7 @@ class EmailNotificationHelper:
         replacements = {
             "user_name": user.name or "Customer",
             "item_count": item_count,
-            "total_amount": f"${total_amount:.2f}" if total_amount else "N/A",
+            "total_amount": f"Rs.{total_amount:.2f}" if total_amount else "N/A",
             "cart_url": "/cart",
             "checkout_url": "/checkout"
         }

@@ -76,12 +76,12 @@ for user_id in shop_user_ids:
 
 | # | User ID | User Name | Type | Message |
 |---|---------|-----------|------|---------|
-| 1 | 11 | M.Ghalib Raza | Customer | Your order **TRK-5FC0A781350B** placed. Total: **$9,295** |
+| 1 | 11 | M.Ghalib Raza | Customer | Your order **TRK-5FC0A781350B** placed. Total: **Rs.9,295** |
 | 2 | 9 | hamail | Shop Owner | New order **TRK-5FC0A781350B** for shop **Hatim Super Market** |
 | 3 | 10 | user staff | Shop Staff | New order **TRK-5FC0A781350B** for shop **Hatim Super Market** |
 | 4 | 9 | hamail | Shop Owner | New order **TRK-5FC0A781350B** for shop **D.Watson Cash & Carry** |
 | 5 | 10 | user staff | Shop Staff | New order **TRK-5FC0A781350B** for shop **D.Watson Cash & Carry** |
-| 6 | 8 | admin | Admin | New order **TRK-5FC0A781350B** placed. Total: **$9,295** |
+| 6 | 8 | admin | Admin | New order **TRK-5FC0A781350B** placed. Total: **Rs.9,295** |
 
 **Total:** 6 notifications (was only 3 before)
 
