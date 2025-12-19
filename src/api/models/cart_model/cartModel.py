@@ -11,9 +11,9 @@ if TYPE_CHECKING:
 
 class Cart(TimeStampedModel, table=True):
     __tablename__: Literal["carts"] = "carts"
-    # ✅ Unique constraint: one product per user
+    # ✅ Unique constraint: one product + variation per user
     __table_args__ = (
-        UniqueConstraint("user_id", "product_id", name="uix_user_product"),
+        UniqueConstraint("user_id", "product_id", "variation_option_id", name="uix_user_product_variation"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)

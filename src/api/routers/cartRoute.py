@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from sqlmodel import col
@@ -105,21 +105,30 @@ def add_to_cart(
     """
     Add a single item to cart
     Request body: {"product_id": 0, "shop_id": 0, "quantity": 0, "variation_option_id": null or value}
+    If variation_option_id > 0, check product_id + variation_option_id combination
     """
     user_id = user.get("id")
 
-    # Check if cart item already exists for this user and product
-    stmt = select(Cart).where(
-        Cart.user_id == user_id,
-        Cart.product_id == request.product_id
-    )
+    # Check if cart item already exists for this user and product (+ variation if provided)
+    if request.variation_option_id is not None and request.variation_option_id > 0:
+        # Check for product + variation combination
+        stmt = select(Cart).where(
+            Cart.user_id == user_id,
+            Cart.product_id == request.product_id,
+            Cart.variation_option_id == request.variation_option_id
+        )
+    else:
+        # Check for product only (no variation or variation_option_id is 0/null)
+        stmt = select(Cart).where(
+            Cart.user_id == user_id,
+            Cart.product_id == request.product_id,
+            Cart.variation_option_id.is_(None)
+        )
     existing_cart = session.execute(stmt).scalar_one_or_none()
 
     if existing_cart:
         # Update quantity if item exists
         existing_cart.quantity += request.quantity
-        if request.variation_option_id is not None:
-            existing_cart.variation_option_id = request.variation_option_id
         session.add(existing_cart)
         session.commit()
         session.refresh(existing_cart)
@@ -140,7 +149,7 @@ def add_to_cart(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # Get variation option if exists
+    # Get only the variation option that was added (not all variations)
     variation_option = None
     if cart.variation_option_id:
         var_stmt = select(VariationOption).where(VariationOption.id == cart.variation_option_id)
@@ -226,13 +235,27 @@ def create_role(
     session: GetSession,
     user: requireSignin,
 ):
+    """
+    Create cart item
+    If variation_option_id > 0, check product_id + variation_option_id combination
+    """
     user_id = user.get("id")
-    
-    # Check if cart item already exists for this user and product
-    stmt = select(Cart).where(
-        Cart.user_id == user_id,
-        Cart.product_id == request.product_id
-    )
+
+    # Check if cart item already exists for this user and product (+ variation if provided)
+    if request.variation_option_id is not None and request.variation_option_id > 0:
+        # Check for product + variation combination
+        stmt = select(Cart).where(
+            Cart.user_id == user_id,
+            Cart.product_id == request.product_id,
+            Cart.variation_option_id == request.variation_option_id
+        )
+    else:
+        # Check for product only (no variation or variation_option_id is 0/null)
+        stmt = select(Cart).where(
+            Cart.user_id == user_id,
+            Cart.product_id == request.product_id,
+            Cart.variation_option_id.is_(None)
+        )
     existing_cart = session.execute(stmt).scalar_one_or_none()
 
     if existing_cart:
@@ -248,7 +271,7 @@ def create_role(
         # If variation_option_id is not provided, set it to None explicitly
         if cart_data.get('variation_option_id') is None:
             cart_data['variation_option_id'] = None
-            
+
         cart = Cart(**cart_data)
         cart.user_id = user_id
         session.add(cart)
@@ -357,12 +380,25 @@ def update_role(
     request: CartUpdate,
     session: GetSession,
     user: requireSignin,
+    variation_option_id: Optional[int] = Query(None, description="Variation option ID"),
 ):
-    # ✅ Find cart using product_id + user_id
-    stmt = select(Cart).where(
-        Cart.product_id == product_id,
-        Cart.user_id == user["id"]
-    )
+    """
+    Update cart item quantity
+    If variation_option_id > 0, find cart with product_id + variation_option_id
+    """
+    # ✅ Find cart using product_id + user_id (+ variation_option_id if provided)
+    if variation_option_id is not None and variation_option_id > 0:
+        stmt = select(Cart).where(
+            Cart.product_id == product_id,
+            Cart.user_id == user["id"],
+            Cart.variation_option_id == variation_option_id
+        )
+    else:
+        stmt = select(Cart).where(
+            Cart.product_id == product_id,
+            Cart.user_id == user["id"],
+            Cart.variation_option_id.is_(None)
+        )
     cart = session.execute(stmt).scalar_one_or_none()
 
     raiseExceptions((cart, 404, "Cart not found"))
@@ -383,18 +419,28 @@ def update_cart_quantity(
     request: CartQuantityUpdate,
     session: GetSession,
     user: requireSignin,
+    variation_option_id: Optional[int] = Query(None, description="Variation option ID to find cart item"),
 ):
     """
-    Update cart item quantity and/or variation_option_id
+    Update cart item quantity
+    Query param: variation_option_id to identify which cart item to update
     Request body: {"quantity": 5, "variation_option_id": null or 456}
     """
     user_id = user.get("id")
 
-    # Find cart using product_id + user_id
-    stmt = select(Cart).where(
-        Cart.product_id == product_id,
-        Cart.user_id == user_id
-    )
+    # Find cart using product_id + user_id (+ variation_option_id if provided)
+    if variation_option_id is not None and variation_option_id > 0:
+        stmt = select(Cart).where(
+            Cart.product_id == product_id,
+            Cart.user_id == user_id,
+            Cart.variation_option_id == variation_option_id
+        )
+    else:
+        stmt = select(Cart).where(
+            Cart.product_id == product_id,
+            Cart.user_id == user_id,
+            Cart.variation_option_id.is_(None)
+        )
     cart = session.execute(stmt).scalar_one_or_none()
 
     raiseExceptions((cart, 404, "Cart not found"))
@@ -402,8 +448,9 @@ def update_cart_quantity(
     # Update quantity
     cart.quantity = request.quantity
 
-    # Update variation_option_id (can be null or a value)
-    cart.variation_option_id = request.variation_option_id
+    # Update variation_option_id from request body (can be null or a value)
+    if request.variation_option_id is not None:
+        cart.variation_option_id = request.variation_option_id
 
     session.add(cart)
     session.commit()
@@ -445,25 +492,26 @@ def delete_role(
     product_id: int,
     session: GetSession,
     user: requireSignin,
-    request: Optional[CartDeleteRequest] = None,
+    variation_option_id: Optional[int] = Query(None, description="Variation option ID"),
 ):
     """
     Delete cart item by product_id
-    Optional body: {"variation_option_id": null or 456}
-    If variation_option_id is provided and > 0, delete cart with both product_id and variation_option_id
-    Otherwise, delete based on product_id only
+    Query param: variation_option_id (e.g., /delete/123?variation_option_id=456)
+    If variation_option_id > 0, delete cart with both product_id and variation_option_id
+    Otherwise, delete cart with product_id and variation_option_id = NULL
     """
     # Check if variation_option_id is provided and valid
-    if request and request.variation_option_id is not None and request.variation_option_id > 0:
+    if variation_option_id is not None and variation_option_id > 0:
         stmt = select(Cart).where(
             Cart.product_id == product_id,
             Cart.user_id == user["id"],
-            Cart.variation_option_id == request.variation_option_id
+            Cart.variation_option_id == variation_option_id
         )
     else:
         stmt = select(Cart).where(
             Cart.product_id == product_id,
-            Cart.user_id == user["id"]
+            Cart.user_id == user["id"],
+            Cart.variation_option_id.is_(None)
         )
     cart = session.execute(stmt).scalar_one_or_none()
 
@@ -479,25 +527,26 @@ def remove_cart_item(
     product_id: int,
     session: GetSession,
     user: requireSignin,
-    request: Optional[CartDeleteRequest] = None,
+    variation_option_id: Optional[int] = Query(None, description="Variation option ID"),
 ):
     """
     Remove cart item by product_id
-    Optional body: {"variation_option_id": null or 456}
-    If variation_option_id is provided and > 0, delete cart with both product_id and variation_option_id
-    Otherwise, delete based on product_id only
+    Query param: variation_option_id (e.g., /remove/123?variation_option_id=456)
+    If variation_option_id > 0, delete cart with both product_id and variation_option_id
+    Otherwise, delete cart with product_id and variation_option_id = NULL
     """
     # Check if variation_option_id is provided and valid
-    if request and request.variation_option_id is not None and request.variation_option_id > 0:
+    if variation_option_id is not None and variation_option_id > 0:
         stmt = select(Cart).where(
             Cart.product_id == product_id,
             Cart.user_id == user["id"],
-            Cart.variation_option_id == request.variation_option_id
+            Cart.variation_option_id == variation_option_id
         )
     else:
         stmt = select(Cart).where(
             Cart.product_id == product_id,
-            Cart.user_id == user["id"]
+            Cart.user_id == user["id"],
+            Cart.variation_option_id.is_(None)
         )
     cart = session.execute(stmt).scalar_one_or_none()
 

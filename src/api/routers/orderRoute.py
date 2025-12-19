@@ -1290,30 +1290,8 @@ def create_order_from_cart(
     try:
         # Delete all cart items for this user
         delete_stmt = select(Cart).where(Cart.user_id == user_id)
-        user_cart_items_result = session.exec(delete_stmt).all()
-        
-        # Extract Cart objects from Row objects
-        cart_items_to_delete = []
-        for item in user_cart_items_result:
-            cart_obj = None
-            
-            if hasattr(item, '_mapping'):
-                mapping = dict(item._mapping)
-                if 'Cart' in mapping:
-                    cart_obj = mapping['Cart']
-                elif Cart in mapping:
-                    cart_obj = mapping[Cart]
-                else:
-                    for key, value in mapping.items():
-                        if isinstance(value, Cart):
-                            cart_obj = value
-                            break
-            elif isinstance(item, Cart):
-                cart_obj = item
-            
-            if cart_obj:
-                cart_items_to_delete.append(cart_obj)
-        
+        cart_items_to_delete = session.execute(delete_stmt).scalars().all()
+
         # Delete all cart items
         for cart_item in cart_items_to_delete:
             session.delete(cart_item)
@@ -1815,6 +1793,23 @@ def update_status(
                         }
                     )
 
+    # Validate required images for specific statuses
+    if request.order_status == OrderStatusEnum.COMPLETED:
+        if not request.completed_image:
+            return api_response(
+                400,
+                "completed_image is required when setting status to COMPLETED",
+                {"required_field": "completed_image"}
+            )
+
+    # Save deliver_image when status is OUT_FOR_DELIVERY
+    if request.order_status == OrderStatusEnum.OUT_FOR_DELIVERY and request.deliver_image:
+        order.deliver_image = request.deliver_image
+
+    # Save completed_image when status is COMPLETED
+    if request.order_status == OrderStatusEnum.COMPLETED and request.completed_image:
+        order.completed_image = request.completed_image
+
     # Handle inventory restoration for cancelled/refunded orders
     if request.order_status in [
         OrderStatusEnum.CANCELLED,
@@ -1825,9 +1820,9 @@ def update_status(
     ]:
 
         # Restore inventory for all order products
-        order_products = session.exec(
+        order_products = session.execute(
             select(OrderProduct).where(OrderProduct.order_id == id)
-        ).all()
+        ).scalars().all()
 
         for order_product in order_products:
             product_data = OrderProductCreate(
@@ -1988,9 +1983,9 @@ def delete(
     raiseExceptions((order, 404, "Order not found"))
 
     # Restore inventory before deletion
-    order_products = session.exec(
+    order_products = session.execute(
         select(OrderProduct).where(OrderProduct.order_id == id)
-    ).all()
+    ).scalars().all()
 
     for order_product in order_products:
         product_data = OrderProductCreate(
@@ -2008,9 +2003,9 @@ def delete(
         session.delete(op)
 
     # Delete order status history
-    order_status = session.exec(
+    order_status = session.execute(
         select(OrderStatus).where(OrderStatus.order_id == id)
-    ).first()
+    ).scalar_one_or_none()
     if order_status:
         session.delete(order_status)
 

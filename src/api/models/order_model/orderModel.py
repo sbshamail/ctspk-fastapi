@@ -100,6 +100,9 @@ class Order(TimeStampedModel, table=True):
     # NEW: Added tax_id and shipping_id foreign keys
     tax_id: Optional[int] = Field(default=None, foreign_key="tax_classes.id")
     shipping_id: Optional[int] = Field(default=None, foreign_key="shipping_classes.id")
+    # Delivery proof images
+    deliver_image: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    completed_image: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
 
     # relationships
     customer: Optional["User"] = Relationship(
@@ -295,6 +298,8 @@ class OrderUpdate(SQLModel):
 class OrderStatusUpdate(SQLModel):
     order_status: Optional[OrderStatusEnum] = None
     payment_status: Optional[PaymentStatusEnum] = None
+    deliver_image: Optional[Dict[str, Any]] = None  # Required for OUT_FOR_DELIVERY (step 6)
+    completed_image: Optional[Dict[str, Any]] = None  # Required for COMPLETED (step 7)
 
 
 class ProductOrderRead(SQLModel):
@@ -362,6 +367,8 @@ class OrderRead(TimeStampReadModel):
     fullfillment_user_info: Optional[FulfillmentUserInfo] = None  # NEW: Fulfillment user info
     shops: Optional[List[Dict[str, Any]]] = None
     shop_count: Optional[int] = None
+    deliver_image: Optional[Dict[str, Any]] = None
+    completed_image: Optional[Dict[str, Any]] = None
 
 
 class OrderReadNested(OrderRead):

@@ -83,14 +83,14 @@ async def upload_images(
             saved_files = await uploadImage([temp_upload_file], user, thumbnail)
 
             for file_info in saved_files:
-                # Insert into database
+                # Insert into database (store path without DOMAIN - serializer adds it)
                 media = UserMedia(
                     user_id=user["id"],
                     filename=file_info["filename"],
                     extension=file_info["extension"],
-                    original=f"{DOMAIN}{file_info['original']}",
+                    original=file_info['original'],
                     size_mb=file_info["size_mb"],
-                    thumbnail=f"{DOMAIN}{file_info['thumbnail']}" if file_info.get("thumbnail") else None,
+                    thumbnail=file_info.get("thumbnail"),
                     media_type="image",
                 )
 
@@ -262,7 +262,7 @@ def delete_media_items(
         sanitized_filenames = [sanitize_filename(f) for f in filenames]
         stmt = stmt.where(UserMedia.filename.in_([f.lower() for f in sanitized_filenames]))
 
-    media_records = session.exec(stmt).all()
+    media_records = session.execute(stmt).scalars().all()
     if not media_records:
         return []
 
@@ -340,4 +340,44 @@ async def delete_by_filenames(
         200,
         "Deleted successfully",
         [UserMediaRead.model_validate(m) for m in deleted],
+    )
+
+
+@router.patch("/fix-double-domain")
+async def fix_double_domain(
+    session: GetSession,
+):
+    """
+    Fix existing media records that have double DOMAIN in original/thumbnail URLs.
+    Removes the DOMAIN prefix so URLs are stored as paths only (e.g., /media/1/file.webp)
+    """
+    # Get all media records
+    stmt = select(UserMedia)
+    media_records = session.execute(stmt).scalars().all()
+
+    fixed_count = 0
+
+    for media in media_records:
+        updated = False
+
+        # Fix original field - remove DOMAIN prefix if present
+        if media.original and media.original.startswith(DOMAIN):
+            media.original = media.original.replace(DOMAIN, "", 1)
+            updated = True
+
+        # Fix thumbnail field - remove DOMAIN prefix if present
+        if media.thumbnail and media.thumbnail.startswith(DOMAIN):
+            media.thumbnail = media.thumbnail.replace(DOMAIN, "", 1)
+            updated = True
+
+        if updated:
+            session.add(media)
+            fixed_count += 1
+
+    session.commit()
+
+    return api_response(
+        200,
+        f"Fixed {fixed_count} media records with double DOMAIN",
+        {"fixed_count": fixed_count, "total_records": len(media_records)}
     )

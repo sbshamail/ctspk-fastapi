@@ -312,14 +312,13 @@ def bulk_mark_as_read(
         return api_response(400, "No notification IDs provided")
 
     # Get all notifications
-    notifications = session.exec(
-        select(Notification).where(
-            and_(
-                Notification.id.in_(request.notification_ids),
-                Notification.user_id == user.get("id")
-            )
+    stmt = select(Notification).where(
+        and_(
+            Notification.id.in_(request.notification_ids),
+            Notification.user_id == user.get("id")
         )
-    ).all()
+    )
+    notifications = session.execute(stmt).scalars().all()
 
     if not notifications:
         return api_response(404, "No notifications found")
@@ -352,14 +351,13 @@ def mark_all_as_read(
 ):
     """Mark all user's notifications as read"""
     # Get all unread notifications for the user
-    notifications = session.exec(
-        select(Notification).where(
-            and_(
-                Notification.user_id == user.get("id"),
-                Notification.is_read == False
-            )
+    stmt = select(Notification).where(
+        and_(
+            Notification.user_id == user.get("id"),
+            Notification.is_read == False
         )
-    ).all()
+    )
+    notifications = session.execute(stmt).scalars().all()
 
     if not notifications:
         return api_response(200, "No unread notifications to mark as read")

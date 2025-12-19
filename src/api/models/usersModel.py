@@ -39,6 +39,8 @@ class User(TimeStampedModel, table=True):
     password_reset_code: Optional[str] = Field(default=None, max_length=6)
     password_reset_code_expires: Optional[datetime.datetime] = None
     image: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    contactinfo: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    # contactinfo structure: {"name":"","father_name":"","cnic":"","employment_no":"","phoneno":"","address":"","email":""}
     # relationships
     user_roles: list["UserRole"] = Relationship(back_populates="user")
     media: List["UserMedia"] = Relationship(back_populates="user")
@@ -134,6 +136,7 @@ class UserReadBase(TimeStampReadModel):
     is_active: bool
     is_root: bool
     image: Optional[Dict[str, Any]] = None
+    contactinfo: Optional[Dict[str, Any]] = None
 
 class UserRead(UserReadBase):
     roles: List[RoleRead] = None
@@ -152,6 +155,7 @@ class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     phone_no: Optional[str] = None
     image: Optional[Dict[str, Any]] = None
+    contactinfo: Optional[Dict[str, Any]] = None
 
 class UserUpdate(SQLModel):
     name: Optional[str] = None
@@ -164,6 +168,7 @@ class UpdateUserByAdmin(UserUpdate):
     # role_id: Optional[List] = None
     #role_ids: Optional[List[int]] = None
     is_active: Optional[bool] = None
+    contactinfo: Optional[Dict[str, Any]] = None
 
 class ChangePasswordRequest(SQLModel):
     current_password: str
