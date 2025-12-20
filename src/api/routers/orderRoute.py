@@ -1794,6 +1794,13 @@ def update_status(
                     )
 
     # Validate required images for specific statuses
+    if request.order_status == OrderStatusEnum.OUT_FOR_DELIVERY:
+        if not request.deliver_image:
+            return api_response(
+                400,
+                "delivery_image is required when setting status to Out For Delivery",
+                {"required_field": "deliver_image"}
+            )
     if request.order_status == OrderStatusEnum.COMPLETED:
         if not request.completed_image:
             return api_response(
