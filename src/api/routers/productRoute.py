@@ -494,6 +494,47 @@ def list(query_params: ListQueryParams, session: GetSession):
     )
 
 
+@router.get("/my-products")
+def my_products(
+    query_params: ListQueryParams,
+    session: GetSession,
+    user: requireSignin,
+    shop_id: Optional[int] = None,
+):
+    """
+    Get products for the authenticated user's shops.
+    Filters products by the user's associated shops.
+    Supports all standard list filters (searchTerm, columnFilters, etc.)
+    Optional shop_id parameter to filter by a specific shop.
+    """
+    # Get shop IDs from user
+    shop_ids = [s["id"] for s in user.get("shops", [])]
+
+    if not shop_ids:
+        return api_response(200, "No shops found for user", [], 0)
+
+    # If specific shop_id provided, validate it belongs to user
+    if shop_id:
+        if shop_id not in shop_ids:
+            return api_response(403, "Access denied to specified shop")
+        shop_ids = [shop_id]
+
+    query_params_dict = vars(query_params)
+    searchFields = ["name", "description", "category.name"]
+
+    # Create filter function for user's shops
+    def shop_filter(statement, Model):
+        return statement.where(Model.shop_id.in_(shop_ids))
+
+    return listRecords(
+        query_params=query_params_dict,
+        searchFields=searchFields,
+        Model=Product,
+        Schema=ProductRead,
+        otherFilters=shop_filter,
+    )
+
+
 @router.get("/products/related/{category_id}")
 def get_products_by_category(category_id: int, session: GetSession):
     try:
