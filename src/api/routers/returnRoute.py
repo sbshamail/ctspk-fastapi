@@ -539,16 +539,14 @@ def get_my_returns(
     user:requireSignin
 ):
     query_params = vars(query_params)
-    
-    if "filters" not in query_params:
-        query_params["filters"] = {}
-    query_params["filters"]["user_id"] = user.get("id")
-    
+    user_id = user.get("id")
+
     return listRecords(
         query_params=query_params,
         searchFields=["reason"],
         Model=ReturnRequest,
         Schema=ReturnRequestRead,
+        otherFilters=lambda stmt, m: stmt.where(m.user_id == user_id),
     )
 
 

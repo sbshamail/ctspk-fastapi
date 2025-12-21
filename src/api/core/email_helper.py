@@ -98,7 +98,9 @@ class EmailHelper:
             cc: CC recipient(s) - string, list of strings, or list of dicts with name/email
             bcc: BCC recipient(s) - string, list of strings, or list of dicts with name/email
         """
+        import traceback
         try:
+            print(f"[SMTP DEBUG] Creating email message...")
             # Create message
             msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
@@ -108,6 +110,7 @@ class EmailHelper:
             to_formatted = self._format_email_addresses(to_email)
             to_emails = self._parse_email_addresses(to_email)
             msg['To'] = ', '.join([formataddr((name, email)) for name, email in to_formatted])
+            print(f"[SMTP DEBUG] To: {msg['To']}")
 
             if cc:
                 cc_formatted = self._format_email_addresses(cc)
@@ -119,35 +122,59 @@ class EmailHelper:
                 # BCC emails are added to recipients but NOT to message headers
                 bcc_emails = self._parse_email_addresses(bcc)
                 to_emails.extend(bcc_emails)
-            
+
             # Create plain text version if not provided
             if not plain_text_content:
                 # Simple HTML to text conversion
                 import re
                 plain_text_content = re.sub('<[^<]+?>', '', html_content)
-            
+
             # Attach both plain text and HTML versions
             part1 = MIMEText(plain_text_content, 'plain')
             part2 = MIMEText(html_content, 'html')
-            
+
             msg.attach(part1)
             msg.attach(part2)
-            
+
             # Connect to SMTP server and send email
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+            print(f"[SMTP DEBUG] Connecting to {self.smtp_host}:{self.smtp_port}...")
+            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30) as server:
+                print(f"[SMTP DEBUG] Connected successfully")
+
                 if self.smtp_use_tls:
+                    print(f"[SMTP DEBUG] Starting TLS...")
                     server.starttls()
-                
+                    print(f"[SMTP DEBUG] TLS started")
+
                 if self.smtp_username and self.smtp_password:
+                    print(f"[SMTP DEBUG] Logging in as {self.smtp_username}...")
                     server.login(self.smtp_username, self.smtp_password)
-                
+                    print(f"[SMTP DEBUG] Login successful")
+                else:
+                    print(f"[SMTP ERROR] Missing SMTP credentials! Username: {self.smtp_username}, Password set: {bool(self.smtp_password)}")
+
+                print(f"[SMTP DEBUG] Sending message to {to_emails}...")
                 server.send_message(msg)
-            
-            print(f"Email sent successfully to {', '.join(to_emails)}")
+                print(f"[SMTP DEBUG] Message sent!")
+
+            print(f"[SMTP SUCCESS] Email sent successfully to {', '.join(to_emails)}")
             return True
-            
+
+        except smtplib.SMTPAuthenticationError as e:
+            print(f"[SMTP ERROR] Authentication failed: {e}")
+            print(f"[SMTP ERROR] Check your SMTP_USERNAME and SMTP_PASSWORD in .env")
+            return False
+        except smtplib.SMTPConnectError as e:
+            print(f"[SMTP ERROR] Connection failed: {e}")
+            print(f"[SMTP ERROR] Check your SMTP_HOST and SMTP_PORT in .env")
+            return False
+        except smtplib.SMTPException as e:
+            print(f"[SMTP ERROR] SMTP error: {e}")
+            print(f"[SMTP ERROR] Full traceback:\n{traceback.format_exc()}")
+            return False
         except Exception as e:
-            print(f"Error sending email: {e}")
+            print(f"[SMTP ERROR] Unexpected error: {e}")
+            print(f"[SMTP ERROR] Full traceback:\n{traceback.format_exc()}")
             return False
     
     def send_email(self,
@@ -172,54 +199,86 @@ class EmailHelper:
         
         def send_in_background():
             """Send email in background thread"""
+            import traceback
+            print(f"[EMAIL DEBUG] Background thread started for email to: {to_email}")
+            print(f"[EMAIL DEBUG] Template ID: {email_template_id}")
+            print(f"[EMAIL DEBUG] Replacements: {replacements}")
+
             try:
                 # Create session if not provided
                 close_session = False
                 if not session:
+                    print("[EMAIL DEBUG] Creating new database session...")
                     from src.lib.db_con import engine  # Import database engine
                     local_session = Session(engine)
                     close_session = True
+                    print("[EMAIL DEBUG] Database session created successfully")
                 else:
                     local_session = session
-                
+                    print("[EMAIL DEBUG] Using provided session")
+
                 # Get template from database
+                print(f"[EMAIL DEBUG] Fetching template ID {email_template_id} from database...")
                 template = self._get_template_from_db(local_session, email_template_id)
-                
+
                 if not template:
-                    print(f"Email template with ID {email_template_id} not found")
+                    print(f"[EMAIL ERROR] Email template with ID {email_template_id} not found in database!")
+                    if close_session:
+                        local_session.close()
                     return
-                
+
+                print(f"[EMAIL DEBUG] Template found: {template.name}, is_active: {template.is_active}")
+
                 if not template.is_active:
-                    print(f"Email template with ID {email_template_id} is not active")
+                    print(f"[EMAIL ERROR] Email template with ID {email_template_id} is not active!")
+                    if close_session:
+                        local_session.close()
                     return
-                
+
                 # Apply replacements to subject and content
                 subject = self._apply_replacements(template.subject, replacements or {})
-                
+                print(f"[EMAIL DEBUG] Subject after replacements: {subject}")
+
                 # Handle HTML content
                 html_content = ""
                 if template.html_content:
                     html_content = self._apply_replacements(template.html_content, replacements or {})
+                    print(f"[EMAIL DEBUG] Using html_content (length: {len(html_content)})")
                 elif template.content:
                     # If no HTML content, try to create from JSON content
                     content_data = template.content or {}
                     html_content = self._apply_replacements(str(content_data), replacements or {})
-                
+                    print(f"[EMAIL DEBUG] Using content field (length: {len(html_content)})")
+                else:
+                    print("[EMAIL ERROR] No html_content or content found in template!")
+
+                # Debug SMTP config
+                print(f"[EMAIL DEBUG] SMTP Host: {self.smtp_host}")
+                print(f"[EMAIL DEBUG] SMTP Port: {self.smtp_port}")
+                print(f"[EMAIL DEBUG] SMTP Username: {self.smtp_username}")
+                print(f"[EMAIL DEBUG] SMTP Password: {'***' if self.smtp_password else 'NOT SET!'}")
+                print(f"[EMAIL DEBUG] From Email: {self.from_email}")
+                print(f"[EMAIL DEBUG] From Name: {self.from_name}")
+
                 # Send email
-                self._send_email_sync(
+                print(f"[EMAIL DEBUG] Calling _send_email_sync...")
+                result = self._send_email_sync(
                     to_email=to_email,
                     subject=subject,
                     html_content=html_content,
                     cc=cc,
                     bcc=bcc
                 )
-                
+                print(f"[EMAIL DEBUG] _send_email_sync returned: {result}")
+
                 # Close session if we created it
                 if close_session:
                     local_session.close()
-                    
+                    print("[EMAIL DEBUG] Database session closed")
+
             except Exception as e:
-                print(f"Error in background email sending: {e}")
+                print(f"[EMAIL ERROR] Exception in background email sending: {e}")
+                print(f"[EMAIL ERROR] Full traceback:\n{traceback.format_exc()}")
         
         # Start background thread
         thread = threading.Thread(target=send_in_background)

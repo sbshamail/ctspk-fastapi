@@ -137,13 +137,13 @@ def register_user(
     try:
         # Query for active free shipping coupon
         current_time = datetime.now(timezone.utc)
-        free_shipping_coupon = session.exec(
+        free_shipping_coupon = session.execute(
             select(Coupon)
             .where(Coupon.type == CouponType.FREE_SHIPPING)
             .where(Coupon.active_from <= current_time)
             .where(Coupon.expire_at >= current_time)
             .where(Coupon.deleted_at == None)
-        ).first()
+        ).scalars().first()
 
         # Prepare email replacements
         replacements = {
@@ -159,6 +159,9 @@ def register_user(
                 "coupon_valid_from": free_shipping_coupon.active_from.strftime("%B %d, %Y"),
                 "coupon_valid_to": free_shipping_coupon.expire_at.strftime("%B %d, %Y"),
                 "coupon_minimum_amount": f"{free_shipping_coupon.minimum_cart_amount:.2f}",
+                "coupon_code_text":"Code:",
+                "date":"Date:",
+                "min_amount_text":"Minimum Cart Amount:"
             })
         else:
             # Provide empty values if no coupon available
@@ -167,13 +170,15 @@ def register_user(
                 "coupon_valid_from": "",
                 "coupon_valid_to": "",
                 "coupon_minimum_amount": "",
+                "coupon_code_text":"",
+                "date":"",
+                "min_amount_text":""
             })
 
         send_email(
             to_email=user.email,
             email_template_id=3,  # Use appropriate template ID for user registration
-            replacements=replacements,
-            session=session
+            replacements=replacements
         )
     except Exception as e:
         # Log email error but don't fail registration

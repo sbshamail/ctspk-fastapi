@@ -55,7 +55,6 @@ def create_access_token(
         expire = datetime.now(timezone.utc) + (
             expires or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         )
-
     payload = {
         "user": user_data,
         "exp": expire,
