@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from typing import Optional
+from fastapi import APIRouter, Query
 from sqlmodel import select
 
 from src.api.core.utility import uniqueSlugify
@@ -162,9 +163,17 @@ def delete_shop(id: int, session: GetSession, user=requirePermission("shop_admin
 # ✅ LIST shops (reusable listRecords)
 @router.get("/list", response_model=list[ShopRead])
 def list_shops(
-    session: GetSession, query_params: ListQueryParams, user=requirePermission("all")
+    session: GetSession,
+    query_params: ListQueryParams,
+    user=requirePermission("all"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
 ):
     query_params = vars(query_params)
+
+    # Add is_active to customFilters if provided
+    if is_active is not None:
+        query_params["customFilters"] = [["is_active", is_active]]
+
     searchFields = ["name", "slug", "description"]
     return listRecords(
         query_params=query_params,
@@ -175,7 +184,10 @@ def list_shops(
 # ✅ LIST shops for signed-in user
 @router.get("/my-shops", response_model=list[ShopRead])
 def my_shops(
-    session: GetSession, query_params: ListQueryParams, user: requireSignin
+    session: GetSession,
+    query_params: ListQueryParams,
+    user: requireSignin,
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
 ):
     query_params = vars(query_params)
     searchFields = ["name", "slug", "description"]
@@ -184,6 +196,10 @@ def my_shops(
     # columnFilters expects string format: [["column", "value"]]
     user_id = user.get("id")
     query_params["columnFilters"] = f'[["owner_id", {user_id}]]'
+
+    # Add is_active to customFilters if provided
+    if is_active is not None:
+        query_params["customFilters"] = [["is_active", is_active]]
 
     return listRecords(
         query_params=query_params,

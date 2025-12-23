@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from sqlalchemy import select, func, and_, or_, cast, Float, exists
 from typing import List, Dict, Optional
 from sqlmodel import select
@@ -481,10 +481,23 @@ def delete(
 
 
 @router.get("/list", response_model=list[ProductRead])
-def list(query_params: ListQueryParams, session: GetSession):
+def list(
+    query_params: ListQueryParams,
+    session: GetSession,
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    is_feature: Optional[bool] = Query(None, description="Filter by feature status"),
+):
     query_params = vars(query_params)
     searchFields = ["name", "description", "category.name"]
-    # return {"msg": "hello"}
+
+    # Add filters to customFilters if provided
+    custom_filters = []
+    if is_active is not None:
+        custom_filters.append(["is_active", is_active])
+    if is_feature is not None:
+        custom_filters.append(["is_feature", is_feature])
+    if custom_filters:
+        query_params["customFilters"] = custom_filters
 
     return listRecords(
         query_params=query_params,
@@ -536,61 +549,57 @@ def my_products(
 
 
 @router.get("/products/related/{category_id}")
-def get_products_by_category(category_id: int, session: GetSession):
-    try:
-        # Validate that category exists
-        category = session.get(Category, category_id)
-        if not category:
-            return api_response(
-                404,
-                f"Category with id {category_id} not found",
-                [],
-                0
+def get_products_by_category(
+    category_id: int,
+    session: GetSession,
+    query_params: ListQueryParams,
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    is_feature: Optional[bool] = Query(None, description="Filter by feature status"),
+):
+    # Validate that category exists
+    category = session.get(Category, category_id)
+    if not category:
+        return api_response(404, f"Category with id {category_id} not found", [], 0)
+
+    # Get all descendant category IDs in a single query (max 3 levels)
+    # Level 1: direct children, Level 2: grandchildren
+    descendants = session.exec(
+        select(Category.id).where(
+            or_(
+                Category.parent_id == category_id,  # Direct children
+                Category.parent_id.in_(
+                    select(Category.id).where(Category.parent_id == category_id)
+                )  # Grandchildren
             )
-
-        # Get all descendant category IDs (recursively)
-        def get_descendants(cat_id: int):
-            q = session.exec(select(Category).where(Category.parent_id == cat_id)).all()
-            ids = [cat.id for cat in q]
-            for c in q:
-                ids.extend(get_descendants(c.id))
-            return ids
-
-        # include self
-        category_ids = [category_id] + get_descendants(category_id)
-
-        # Fetch products belonging to any of those categories
-        stmt = select(Product).where(Product.category_id.in_(category_ids))
-        products = session.exec(stmt).all()
-
-        # Validate products list - remove duplicates by product id
-        seen_ids = set()
-        product_list = []
-        for p in products:
-            if p.id in seen_ids:
-                continue
-            seen_ids.add(p.id)
-            product_list.append(ProductRead.model_validate(p))
-
-        # Check if no products found
-        if not product_list:
-            return api_response(
-                404,
-                f"No products found for category '{category.name}' and its subcategories",
-                [],
-                0
-            )
-
-        return api_response(
-            200,
-            f"Found {len(product_list)} products for category '{category.name}'",
-            product_list,
-            len(product_list),
         )
-    except Exception as e:
-        return api_response(500, f"Error fetching related products: {str(e)}")
-    finally:
-        session.close()
+    ).all()
+
+    category_ids = [category_id] + [d for d in descendants]
+
+    # Convert query_params to dict
+    query_params = vars(query_params)
+    searchFields = ["name", "description", "category.name"]
+
+    # Add is_active and is_feature to customFilters if provided
+    custom_filters = []
+    if is_active is not None:
+        custom_filters.append(["is_active", is_active])
+    if is_feature is not None:
+        custom_filters.append(["is_feature", is_feature])
+    if custom_filters:
+        query_params["customFilters"] = custom_filters
+
+    # Filter by category_ids (category and its descendants)
+    def category_filter(statement, Model):
+        return statement.where(Model.category_id.in_(category_ids))
+
+    return listRecords(
+        query_params=query_params,
+        searchFields=searchFields,
+        Model=Product,
+        Schema=ProductRead,
+        otherFilters=category_filter,
+    )
 
 
 # ✅ PATCH Product status

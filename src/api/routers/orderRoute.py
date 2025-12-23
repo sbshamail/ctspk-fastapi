@@ -2281,10 +2281,25 @@ def get_sales_report(
     end_date: Optional[str] = None,
     shop_id: Optional[int] = None,  # Now filters by shop in order products
     product_id: Optional[int] = None,
-    user=requirePermission("order"),
+    user: requireSignin = None,
 ):
-    """Get sales report with product-wise sales data"""
+    """Get sales report with product-wise sales data (filtered by user's shops)"""
     try:
+        # Get user's permissions and shops
+        user_permissions = user.get("permissions", [])
+        user_shops = user.get("shops", [])
+        user_shop_ids = [shop["id"] for shop in user_shops]
+        is_admin = "system:*" in user_permissions
+
+        # Validate shop access
+        if shop_id:
+            if not is_admin and shop_id not in user_shop_ids:
+                return api_response(403, "You don't have access to this shop")
+
+        # If not admin and no specific shop_id, user must have at least one shop
+        if not is_admin and not user_shop_ids:
+            return api_response(403, "You don't have any shops assigned")
+
         # Build query to get order IDs for completed orders
         order_query = select(Order.id).where(Order.order_status == OrderStatusEnum.COMPLETED)
 
@@ -2319,9 +2334,14 @@ def get_sales_report(
         # Query order products directly
         op_query = select(OrderProduct).where(OrderProduct.order_id.in_(order_ids))
 
-        # Apply shop filter if provided
+        # Apply shop filter based on user access
         if shop_id:
+            # Specific shop requested (already validated above)
             op_query = op_query.where(OrderProduct.shop_id == shop_id)
+        elif not is_admin:
+            # Non-admin users: filter by their shops only
+            op_query = op_query.where(OrderProduct.shop_id.in_(user_shop_ids))
+        # Admin users without shop_id filter see all shops
 
         # Apply product filter if provided
         if product_id:
@@ -2333,11 +2353,15 @@ def get_sales_report(
         sales_data = {}
         total_revenue = 0
         total_products_sold = 0
+        user_order_ids = set()  # Track unique orders containing user's shop products
 
         for order_product in order_products:
             prod_id = order_product.product_id
             quantity = float(order_product.order_quantity)
             revenue = order_product.subtotal
+
+            # Track unique order IDs for user's shop products
+            user_order_ids.add(order_product.order_id)
 
             if prod_id not in sales_data:
                 product = session.get(Product, prod_id)
@@ -2372,7 +2396,7 @@ def get_sales_report(
         report = {
             "period": {"start_date": start_date, "end_date": end_date},
             "summary": {
-                "total_orders": len(order_ids),
+                "total_orders": len(user_order_ids),  # Only orders with user's shop products
                 "total_products_sold": total_products_sold,
                 "total_revenue": total_revenue,
             },
@@ -2823,12 +2847,12 @@ def get_my_order_statistics(
     """
     user_id = user.get("id")
     role_names = user.get("roles", [])
-    print(f"role_names:{role_names}")
+    print(f"role_names:{user}")
     # Determine role priority: root > shop_admin > fulfillment
     is_root = user.get("is_root", False) or "root" in role_names
-    is_shop_admin = "shop_admin" in role_names
+    is_shop_admin = "shop_admin" in role_names or "Seller Roles" in role_names
     is_fulfillment = "fulfillment" in role_names or "Fulfillment" in role_names
-
+    #print(f"is_shop_admin:{is_shop_admin}")
     # Build base query
     completed_query = select(func.count(Order.id)).where(
         Order.order_status == OrderStatusEnum.COMPLETED
@@ -2936,7 +2960,7 @@ def get_my_completed_orders(
 
     # Determine role priority: root > shop_admin > fulfillment
     is_root = user.get("is_root", False) or "root" in role_names
-    is_shop_admin = "shop_admin" in role_names
+    is_shop_admin = "shop_admin" in role_names  or "Seller Roles" in role_names
     is_fulfillment = "fulfillment" in role_names or "Fulfillment" in role_names
 
     # Build base query
@@ -3031,7 +3055,7 @@ def get_my_not_completed_orders(
 
     # Determine role priority: root > shop_admin > fulfillment
     is_root = user.get("is_root", False) or "root" in role_names
-    is_shop_admin = "shop_admin" in role_names
+    is_shop_admin = "shop_admin" in role_names  or "Seller Roles" in role_names
     is_fulfillment = "fulfillment" in role_names or "Fulfillment" in role_names
 
     # Build base query

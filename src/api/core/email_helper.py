@@ -20,6 +20,7 @@ class EmailHelper:
         self.smtp_username = os.getenv('SMTP_USERNAME')
         self.smtp_password = os.getenv('SMTP_PASSWORD')
         self.smtp_use_tls = os.getenv('SMTP_USE_TLS', 'True').lower() == 'true'
+        self.smtp_use_ssl = os.getenv('SMTP_USE_SSL', 'False').lower() == 'true'
         self.from_email = os.getenv('FROM_EMAIL', self.smtp_username)
         self.from_name = os.getenv('FROM_NAME', 'System')
         
@@ -137,11 +138,18 @@ class EmailHelper:
             msg.attach(part2)
 
             # Connect to SMTP server and send email
-            print(f"[SMTP DEBUG] Connecting to {self.smtp_host}:{self.smtp_port}...")
-            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30) as server:
+            print(f"[SMTP DEBUG] Connecting to {self.smtp_host}:{self.smtp_port} (SSL={self.smtp_use_ssl}, TLS={self.smtp_use_tls})...")
+
+            # Use SMTP_SSL for port 465/SSL, regular SMTP for port 587/STARTTLS
+            if self.smtp_use_ssl:
+                server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=30)
+            else:
+                server = smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30)
+
+            try:
                 print(f"[SMTP DEBUG] Connected successfully")
 
-                if self.smtp_use_tls:
+                if self.smtp_use_tls and not self.smtp_use_ssl:
                     print(f"[SMTP DEBUG] Starting TLS...")
                     server.starttls()
                     print(f"[SMTP DEBUG] TLS started")
@@ -156,6 +164,8 @@ class EmailHelper:
                 print(f"[SMTP DEBUG] Sending message to {to_emails}...")
                 server.send_message(msg)
                 print(f"[SMTP DEBUG] Message sent!")
+            finally:
+                server.quit()
 
             print(f"[SMTP SUCCESS] Email sent successfully to {', '.join(to_emails)}")
             return True

@@ -249,6 +249,7 @@ def login_user(
         .scalars()
         .first()
     )
+   
     if not user:
         return api_response(404, "User not found")
     if not verify_password(request.password, user.password):
@@ -280,6 +281,7 @@ def login_user(
     )
 
     user_read = serialize_user_with_avatar(user)
+    print(f"user:{user_read}")
     # cookie will test in postman and frontend only with tag credential:true
     response.set_cookie(
         key="refresh_token",

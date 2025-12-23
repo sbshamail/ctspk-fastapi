@@ -1,5 +1,6 @@
 # tax_route.py
-from fastapi import APIRouter
+from typing import Optional
+from fastapi import APIRouter, Query
 from sqlalchemy import select
 from src.api.core.utility import slugify, uniqueSlugify
 from src.api.core.middleware.decorator import handle_async_wrapper
@@ -79,8 +80,17 @@ def delete_tax(
 
 
 @router.get("/list", response_model=list[TaxRead])
-def list_taxes(query_params: ListQueryParams, user: requireSignin):
+def list_taxes(
+    query_params: ListQueryParams,
+    user: requireSignin,
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+):
     query_params = vars(query_params)
+
+    # Add is_active to customFilters if provided
+    if is_active is not None:
+        query_params["customFilters"] = [["is_active", is_active]]
+
     searchFields = ["name", "country", "state", "city"]
     return listRecords(
         query_params=query_params,

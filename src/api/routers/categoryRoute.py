@@ -272,10 +272,8 @@ def list(
         return api_response(404, "No products found")
 
     categories = result["data"]
-    # assuming your search result is in `categories`
-    # Treat the first search result as root by ignoring its parent
-    if categories and categories[0].parent_id:
-        categories[0].parent_id = None
+
+    # Build a map of all categories in the result
     category_map = {
         c.id: CategoryReadNested(
             id=c.id,
@@ -294,18 +292,21 @@ def list(
     }
     roots = []
 
-    # Step 1: attach children
+    # Step 1: attach children to their parents
     for cat in category_map.values():
-        if cat.parent_id and cat.id != cat.parent_id:  # has a parent
+        if cat.parent_id and cat.id != cat.parent_id:
             parent = category_map.get(cat.parent_id)
             if parent:
                 if not any(child.id == cat.id for child in parent.children):
                     parent.children.append(cat)
-        # ❌ DO NOT append to roots here
 
-    # Step 2: collect only roots
+    # Step 2: collect roots (categories with no parent_id OR parent not in result set)
     for cat in category_map.values():
-        if not cat.parent_id:  # no parent_id means it's a root
+        if not cat.parent_id:
+            # Actual root category
+            roots.append(cat)
+        elif cat.parent_id not in category_map:
+            # Parent not in result set - treat as root for this response
             roots.append(cat)
 
     return api_response(200, "Category found", roots, result["total"])
