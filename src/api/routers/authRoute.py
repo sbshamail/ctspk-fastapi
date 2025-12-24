@@ -307,27 +307,82 @@ def login_user(
 )
 def refresh_token(
     refresh_token: str,
+    response: Response,
+    session: GetSession,
 ):
     if not refresh_token:
-        api_response(401, "Missing refresh token")
+        return api_response(401, "Missing refresh token")
 
     payload = verify_refresh_token(refresh_token)
     if not payload:
-        raise api_response(401, "Invalid refresh token")
-    user = decode_token(refresh_token)
-    # user = UserRead.model_validate(db_user)
-    access_token = create_access_token(user)
-    new_refresh_token = create_access_token(user_data=user, refresh=True)
+        return api_response(401, "Invalid refresh token")
 
-    return api_response(
-        200,
-        "Refresh",
-        {
-            "access_token": access_token,
-            "refresh_token": new_refresh_token,
-            "user": user,
-        },
+    token_data = decode_token(refresh_token)
+    if not token_data:
+        return api_response(401, "Invalid refresh token")
+
+    # Fetch fresh user data from database
+    user = (
+        session.exec(
+            select(User)
+            .options(
+                selectinload(User.user_roles).selectinload(UserRole.role),
+                selectinload(User.user_shops).selectinload(UserShop.shop),
+            )
+            .where(User.id == token_data.get("user", {}).get("id"))
+        )
+        .scalars()
+        .first()
     )
+
+    if not user:
+        return api_response(404, "User not found")
+
+    if not user.is_active:
+        return api_response(403, "User account is disabled")
+
+    # Build user data for token
+    roles = user.role_names
+    permissions = user.permissions
+    shops = [{"id": shop.id, "name": shop.name} for shop in user.shops]
+
+    user_data = {
+        "id": user.id,
+        "email": user.email,
+        "is_root": user.is_root or False,
+        "roles": roles,
+        "permissions": permissions,
+        "shops": shops,
+    }
+
+    access_token = create_access_token(user_data=user_data)
+    new_refresh_token = create_access_token(user_data=user_data, refresh=True)
+
+    exp_time = datetime.now(timezone.utc) + timedelta(
+        minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+    )
+
+    user_read = serialize_user_with_avatar(user)
+
+    # Set refresh token cookie
+    response.set_cookie(
+        key="refresh_token",
+        value=new_refresh_token,
+        httponly=True,
+        samesite="strict",
+        max_age=30 * 24 * 60 * 60,  # 30 days
+    )
+
+    content = {
+        "message": "Token refreshed successfully",
+        "token_type": "bearer",
+        "access_token": access_token,
+        "refresh_token": new_refresh_token,
+        "user": user_read,
+        "exp": exp_time.isoformat(),
+    }
+
+    return api_response(200, "Token refreshed successfully", content)
 
 
 @router.post("/logout")
