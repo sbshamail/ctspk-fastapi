@@ -25,7 +25,10 @@ class OrderReview(TimeStampedModel, table=True):
     deleted_at: Optional[datetime] = None
 
     # Relationships
-    order: Optional["Order"] = Relationship(back_populates="order_review")
+    order: Optional["Order"] = Relationship(
+        back_populates="order_review",
+        sa_relationship_kwargs={"foreign_keys": "[OrderReview.order_id]"}
+    )
     user: Optional["User"] = Relationship(back_populates="order_reviews")
 
 
