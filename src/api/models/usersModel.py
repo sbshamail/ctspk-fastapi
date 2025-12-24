@@ -9,10 +9,10 @@ from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 if TYPE_CHECKING:
     from src.api.models import (
-        UserRole, 
-        Role, 
-        Shop, 
-        UserShop, 
+        UserRole,
+        Role,
+        Shop,
+        UserShop,
         UserMedia,
         Order,
         Address,
@@ -20,7 +20,8 @@ if TYPE_CHECKING:
         Review,
         ReturnRequest,
         WalletTransaction,
-        UserWallet
+        UserWallet,
+        OrderReview
     )
 
 
@@ -66,6 +67,7 @@ class User(TimeStampedModel, table=True):
     addresses: list["Address"] = Relationship(back_populates="customer")
     wishlists: Optional["Wishlist"] = Relationship(back_populates="user")
     reviews: Optional["Review"] = Relationship(back_populates="user")
+    order_reviews: Optional["OrderReview"] = Relationship(back_populates="user")
     #return_requests: Optional["ReturnRequest"] = Relationship(back_populates="user")
     #wallet_transactions: Optional["WalletTransaction"] = Relationship(back_populates="user")
     #wallet: Optional["UserWallet"] = Relationship(back_populates="user")

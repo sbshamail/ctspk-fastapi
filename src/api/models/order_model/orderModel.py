@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         Shipping,
         Coupon
     )
+    from src.api.models.orderReviewModel import OrderReview
 
 
 class OrderStatusEnum(str, PyEnum):
@@ -104,6 +105,9 @@ class Order(TimeStampedModel, table=True):
     deliver_image: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
     completed_image: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
 
+    # Order review reference
+    order_review_id: Optional[int] = Field(default=None, foreign_key="order_reviews.id")
+
     # relationships
     customer: Optional["User"] = Relationship(
         back_populates="customer_orders",
@@ -131,6 +135,11 @@ class Order(TimeStampedModel, table=True):
     tax: Optional["Tax"] = Relationship()
     shipping: Optional["Shipping"] = Relationship()
     coupon: Optional["Coupon"] = Relationship()
+    # Order review relationship
+    order_review: Optional["OrderReview"] = Relationship(
+        back_populates="order",
+        sa_relationship_kwargs={"foreign_keys": "[OrderReview.order_id]"}
+    )
 
 class OrderProduct(TimeStampedModel, table=True):
     __tablename__: Literal["order_product"] = "order_product"

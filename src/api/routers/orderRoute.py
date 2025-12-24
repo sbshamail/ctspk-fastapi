@@ -610,13 +610,17 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         return api_response(400, error_msg)
 
     # NEW: Calculate final amounts with tax, shipping, and coupon
-    tax_amount = subtotal_amount * (calc_data['tax_rate'] / 100)
-    shipping_amount = calc_data['shipping_amount']
-    coupon_discount = calc_data['coupon_discount']
-    
+    tax_amount = round(subtotal_amount * (calc_data['tax_rate'] / 100))
+    shipping_amount = round(calc_data['shipping_amount'])
+    coupon_discount = round(calc_data['coupon_discount'])
+
+    # Round subtotal and product discount
+    subtotal_amount = round(subtotal_amount)
+    total_product_discount = round(total_product_discount)
+
     # Calculate final total
-    final_total = subtotal_amount + tax_amount + shipping_amount - coupon_discount
-    
+    final_total = round(subtotal_amount + tax_amount + shipping_amount - coupon_discount)
+
     # Ensure total doesn't go below zero
     final_total = max(0, final_total)
 
@@ -691,26 +695,26 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
             sale_price = float(product.sale_price) if product.sale_price and product.sale_price > 0 else None
             variation_data = None
 
-        # Calculate item-level values
+        # Calculate item-level values (rounded to whole numbers)
         final_price = sale_price if sale_price and sale_price > 0 else price
-        subtotal = final_price * quantity
-        item_discount = calculate_product_discount(price, sale_price, quantity)
-        item_tax = calculate_item_tax(subtotal, calc_data['tax_rate'])
+        subtotal = round(final_price * quantity)
+        item_discount = round(calculate_product_discount(price, sale_price, quantity))
+        item_tax = round(calculate_item_tax(subtotal, calc_data['tax_rate']))
 
         # Calculate admin commission on subtotal (after sale price discount)
         admin_commission = calculate_admin_commission(
             session, product.id, subtotal
         )
         total_admin_commission += admin_commission
-        
+
         # Create OrderProduct with enhanced fields
         op = OrderProduct(
             order_id=order.id,
             product_id=product.id,
             variation_option_id=item.variation_option_id,
             order_quantity=str(quantity),
-            unit_price=price,  # Original price
-            sale_price=sale_price,  # NEW: Sale price
+            unit_price=round(price),  # Original price
+            sale_price=round(sale_price) if sale_price else None,  # NEW: Sale price
             subtotal=subtotal,
             item_discount=item_discount,  # NEW: Item discount
             item_tax=item_tax,  # NEW: Item tax
@@ -1181,20 +1185,24 @@ def create_order_from_cart(
     if not is_valid:
         return api_response(400, error_msg)
 
-    # ✅ 7. Calculate final amounts with tax, shipping, and coupon
-    tax_amount = subtotal_amount * (calc_data['tax_rate'] / 100)
-    shipping_amount = calc_data['shipping_amount']
-    coupon_discount = calc_data['coupon_discount']
-    
+    # ✅ 7. Calculate final amounts with tax, shipping, and coupon (rounded to whole numbers)
+    tax_amount = round(subtotal_amount * (calc_data['tax_rate'] / 100))
+    shipping_amount = round(calc_data['shipping_amount'])
+    coupon_discount = round(calc_data['coupon_discount'])
+
+    # Round subtotal and product discount
+    subtotal_amount = round(subtotal_amount)
+    total_product_discount = round(total_product_discount)
+
     # Calculate final total
-    final_total = subtotal_amount + tax_amount + shipping_amount - coupon_discount
-    
+    final_total = round(subtotal_amount + tax_amount + shipping_amount - coupon_discount)
+
     # Ensure total doesn't go below zero
     final_total = max(0, final_total)
 
     # ✅ 8. Create order with enhanced fields
     tracking_number = generate_tracking_number()
-    
+
     order = Order(
         tracking_number=tracking_number,
         customer_id=user_id,
@@ -1237,14 +1245,14 @@ def create_order_from_cart(
         if product_data.variation_option_id:
             variation_snapshot = get_variation_snapshot(session, product_data.variation_option_id)
 
-        # Calculate item-level values
+        # Calculate item-level values (rounded to whole numbers)
         quantity = float(product_data.order_quantity)
-        item_discount = calculate_product_discount(
+        item_discount = round(calculate_product_discount(
             product_data.unit_price,
             product.sale_price if product.sale_price and product.sale_price > 0 else None,
             quantity
-        )
-        item_tax = calculate_item_tax(product_data.subtotal, calc_data['tax_rate'])
+        ))
+        item_tax = round(calculate_item_tax(product_data.subtotal, calc_data['tax_rate']))
 
         # Calculate admin commission on subtotal (after sale price discount)
         admin_commission = calculate_admin_commission(
@@ -1253,16 +1261,16 @@ def create_order_from_cart(
             product_data.subtotal
         )
         total_admin_commission += admin_commission
-        
+
         # Create order product with enhanced fields
         order_product = OrderProduct(
             order_id=order.id,
             product_id=product_data.product_id,
             variation_option_id=product_data.variation_option_id,
             order_quantity=product_data.order_quantity,
-            unit_price=product_data.unit_price,
-            sale_price=product.sale_price if product.sale_price and product.sale_price > 0 else None,
-            subtotal=product_data.subtotal,
+            unit_price=round(product_data.unit_price),
+            sale_price=round(product.sale_price) if product.sale_price and product.sale_price > 0 else None,
+            subtotal=round(product_data.subtotal),
             item_discount=item_discount,
             item_tax=item_tax,
             admin_commission=admin_commission,
@@ -1475,14 +1483,18 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
     if not is_valid:
         return api_response(400, error_msg)
 
-    # NEW: Calculate final amounts with tax, shipping, and coupon
-    tax_amount = subtotal_amount * (calc_data['tax_rate'] / 100)
-    shipping_amount = calc_data['shipping_amount']
-    coupon_discount = calc_data['coupon_discount']
-    
+    # NEW: Calculate final amounts with tax, shipping, and coupon (rounded to whole numbers)
+    tax_amount = round(subtotal_amount * (calc_data['tax_rate'] / 100))
+    shipping_amount = round(calc_data['shipping_amount'])
+    coupon_discount = round(calc_data['coupon_discount'])
+
+    # Round subtotal and product discount
+    subtotal_amount = round(subtotal_amount)
+    total_product_discount = round(total_product_discount)
+
     # Calculate final total
-    final_total = subtotal_amount + tax_amount + shipping_amount - coupon_discount
-    
+    final_total = round(subtotal_amount + tax_amount + shipping_amount - coupon_discount)
+
     # Ensure total doesn't go below zero
     final_total = max(0, final_total)
 
@@ -1532,30 +1544,30 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
             
         # Create product snapshot
         product_snapshot = get_product_snapshot(session, product.id)
-        
-        # Calculate item-level values
-        item_discount = calculate_product_discount(
+
+        # Calculate item-level values (rounded to whole numbers)
+        item_discount = round(calculate_product_discount(
             op_request.unit_price,
             product.sale_price if product.sale_price and product.sale_price > 0 else None,
             quantity
-        )
-        item_tax = calculate_item_tax(op_request.subtotal, calc_data['tax_rate'])
+        ))
+        item_tax = round(calculate_item_tax(op_request.subtotal, calc_data['tax_rate']))
 
         # Calculate admin commission on subtotal (after sale price discount)
         admin_commission = calculate_admin_commission(
             session, product.id, op_request.subtotal
         )
         total_admin_commission += admin_commission
-        
+
         # Create OrderProduct
         op = OrderProduct(
             order_id=order.id,
             product_id=op_request.product_id,
             variation_option_id=op_request.variation_option_id,
             order_quantity=op_request.order_quantity,
-            unit_price=op_request.unit_price,
-            sale_price=product.sale_price if product.sale_price and product.sale_price > 0 else None,
-            subtotal=op_request.subtotal,
+            unit_price=round(op_request.unit_price),
+            sale_price=round(product.sale_price) if product.sale_price and product.sale_price > 0 else None,
+            subtotal=round(op_request.subtotal),
             item_discount=item_discount,
             item_tax=item_tax,
             admin_commission=admin_commission,

@@ -56,6 +56,9 @@ from .product_model.wishlistsModel import Wishlist
 # Review
 from .reviewModel import Review
 
+# Order Review
+from .orderReviewModel import OrderReview
+
 # FAQ
 from .faqModel import FAQ
 # Return Product

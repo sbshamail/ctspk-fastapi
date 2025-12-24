@@ -6,7 +6,7 @@ Works alongside the notification system to send emails
 from typing import List, Optional
 from sqlmodel import Session, select
 from src.api.models.usersModel import User
-from src.api.models.shopModel import Shop
+from src.api.models.shop_model.shopsModel import Shop
 from src.api.core.email_helper import send_email
 
 
