@@ -183,6 +183,7 @@ def create_return_request(
         user_id=user.get("id"),
         return_type=request.return_type,
         reason=request.reason,
+        photos=request.photos,
         refund_amount=refund_amount,
         return_items=return_items
     )
@@ -581,3 +582,44 @@ def get_return_request(
         return api_response(403, "Not authorized to view this return")
 
     return api_response(200, "Return request found", ReturnRequestRead.model_validate(return_request))
+
+
+# ✅ UPDATE RETURN REQUEST (User can update photos/reason while pending)
+@router.put("/update/{return_id}")
+def update_return_request(
+    return_id: int,
+    request: ReturnRequestUpdate,
+    session: GetSession,
+    user: requireSignin
+):
+    return_request = session.get(ReturnRequest, return_id)
+    raiseExceptions((return_request, 404, "Return request not found"))
+
+    # Check ownership or admin permission
+    is_owner = return_request.user_id == user.get("id")
+    has_admin_permission = "return:update" in user.get("permissions", []) or "all" in user.get("permissions", [])
+
+    if not is_owner and not has_admin_permission:
+        return api_response(403, "Not authorized to update this return request")
+
+    # Users can only update while pending
+    if is_owner and not has_admin_permission:
+        if return_request.status != ReturnStatus.PENDING:
+            return api_response(400, "Cannot update return request after it has been processed")
+        # Users can only update photos and reason
+        if request.photos is not None:
+            return_request.photos = request.photos
+
+    # Admins can update all fields
+    if has_admin_permission:
+        if request.photos is not None:
+            return_request.photos = request.photos
+        if request.admin_notes is not None:
+            return_request.admin_notes = request.admin_notes
+        if request.rejected_reason is not None:
+            return_request.rejected_reason = request.rejected_reason
+
+    session.commit()
+    session.refresh(return_request)
+
+    return api_response(200, "Return request updated successfully", ReturnRequestRead.model_validate(return_request))

@@ -28,7 +28,7 @@ router = APIRouter(prefix="/email", tags=["Emailtemplate"])
 def create_role(
     request: EmailCreate,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("email:create"),
 ):
      # Debug print
     print("📦 Incoming request:", request.model_dump())
@@ -52,7 +52,7 @@ def update_role(
     id: int,
     request: EmailUpdate,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("email:update"),
 ):
     email = session.get(Emailtemplate, id)  # Like findById
     raiseExceptions((email, 404, "Email not found"))
@@ -91,7 +91,7 @@ def get_role(id_slug: str, session: GetSession):
 def delete_role(
     id: int,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("email:delete"),
 ):
     email = session.get(Emailtemplate, id)
     raiseExceptions((email, 404, "Email not found"))  # FIXED: Changed "shipping" to "email"
@@ -128,7 +128,7 @@ def patch_email_status(
     id: int,
     request: EmailActivate,
     session: GetSession,
-    user=requirePermission(["system:*"]),  # 🔒 both allowed
+    user=requirePermission(["email:activate","email:deactivate"]),  # 🔒 both allowed
 ):
     email = session.get(Emailtemplate, id)
     raiseExceptions((email, 404, "Email not found"))
@@ -148,7 +148,7 @@ def duplicate_email(
     id: int,
     request: EmailDuplicate,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("system:create"),
 ):
     # Get the original email template
     email = session.get(Emailtemplate, id)

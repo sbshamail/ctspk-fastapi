@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from sqlalchemy import Column, JSON
 from sqlmodel import SQLModel, Field, Relationship
+from pydantic import field_validator
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
 if TYPE_CHECKING:
@@ -42,16 +43,17 @@ class ReturnRequest(TimeStampedModel, table=True):
     return_type: ReturnType = Field(default=ReturnType.SINGLE_PRODUCT, index=True)
     reason: str = Field(nullable=False, max_length=1000)
     status: ReturnStatus = Field(default=ReturnStatus.PENDING, index=True)
-    
+    photos: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
+
     # Refund details
     refund_amount: float = Field(default=0.0)
     refund_status: RefundStatus = Field(default=RefundStatus.PENDING, index=True)
     wallet_credit_id: Optional[int] = Field(default=None, foreign_key="wallet_transactions.id")
-    
+
     # Transfer eligibility
     transfer_eligible_at: Optional[datetime] = Field(default=None, index=True)
     transferred_at: Optional[datetime] = Field(default=None)
-    
+
     # Additional info
     admin_notes: Optional[str] = Field(default=None)
     rejected_reason: Optional[str] = Field(default=None)
@@ -133,6 +135,17 @@ class ReturnRequestCreate(SQLModel):
     return_type: ReturnType
     reason: str
     items: List[ReturnItemCreate]  # For single product returns
+    photos: Optional[List[Dict[str, Any]]] = None
+
+    @field_validator('photos', mode='before')
+    @classmethod
+    def empty_photos_to_none(cls, v):
+        """Treat empty array or empty dict as None"""
+        if v is None:
+            return None
+        if isinstance(v, list) and len(v) == 0:
+            return None
+        return v
 
 
 class ReturnRequestRead(TimeStampReadModel):
@@ -144,6 +157,7 @@ class ReturnRequestRead(TimeStampReadModel):
     status: ReturnStatus
     refund_amount: float
     refund_status: RefundStatus
+    photos: Optional[List[Dict[str, Any]]] = None
     wallet_credit_id: Optional[int] = None
     transfer_eligible_at: Optional[datetime] = None
     transferred_at: Optional[datetime] = None
@@ -167,6 +181,17 @@ class ReturnRequestUpdate(SQLModel):
     status: Optional[ReturnStatus] = None
     admin_notes: Optional[str] = None
     rejected_reason: Optional[str] = None
+    photos: Optional[List[Dict[str, Any]]] = None
+
+    @field_validator('photos', mode='before')
+    @classmethod
+    def empty_photos_to_none(cls, v):
+        """Treat empty array or empty dict as None"""
+        if v is None:
+            return None
+        if isinstance(v, list) and len(v) == 0:
+            return None
+        return v
 
 
 class WalletTransactionRead(TimeStampReadModel):
