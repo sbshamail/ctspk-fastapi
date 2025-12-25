@@ -69,8 +69,8 @@ router = APIRouter(prefix="/order", tags=["Order"])
 
 def generate_tracking_number():
     """Generate unique tracking number"""
-    return f"TRK-{uuid.uuid4().hex[:12].upper()}"
-
+    now = datetime.now()
+    return f"GTISB-{now:%Y-%m-%d}-{uuid.uuid4().hex[:8].upper()}"
 
 def save_default_addresses_from_order(
     session,
@@ -1689,6 +1689,7 @@ def update(id: int, request: OrderUpdate, session: GetSession, user: requireSign
             OrderStatusEnum.OUT_FOR_DELIVERY: "order_out_for_delivery_date",
             OrderStatusEnum.AT_DISTRIBUTION_CENTER: "order_at_distribution_center_date",
             OrderStatusEnum.PACKED: "order_packed_date",
+            OrderStatusEnum.ORDER_DELIVER: "order_deliver_date",
         }
 
         status_field = status_field_map.get(request.order_status)
@@ -1715,7 +1716,7 @@ def update_status(
     raiseExceptions((order, 404, "Order not found"))
 
     # ✅ ORDER STATUS SEQUENCE VALIDATION
-    # Sequence: pending -> processing -> packed -> at_distribution_center -> at_local_facility -> out_for_delivery -> completed
+    # Sequence: pending -> processing -> packed -> at_distribution_center -> at_local_facility -> out_for_delivery -> order_deliver -> completed
     ORDER_STATUS_SEQUENCE = [
         OrderStatusEnum.PENDING,              # 1
         OrderStatusEnum.PROCESSING,           # 2
@@ -1723,7 +1724,8 @@ def update_status(
         OrderStatusEnum.AT_DISTRIBUTION_CENTER,  # 4
         OrderStatusEnum.AT_LOCAL_FACILITY,    # 5
         OrderStatusEnum.OUT_FOR_DELIVERY,     # 6
-        OrderStatusEnum.COMPLETED,            # 7
+        OrderStatusEnum.ORDER_DELIVER,        # 7
+        OrderStatusEnum.COMPLETED,            # 8
     ]
 
     # Special statuses that can be set at any time (not part of normal flow)
@@ -1813,11 +1815,11 @@ def update_status(
                 "delivery_image is required when setting status to Out For Delivery",
                 {"required_field": "deliver_image"}
             )
-    if request.order_status == OrderStatusEnum.COMPLETED:
+    if request.order_status == OrderStatusEnum.ORDER_DELIVER:
         if not request.completed_image:
             return api_response(
                 400,
-                "completed_image is required when setting status to COMPLETED",
+                "completed_image is required when setting status to Order Deliver",
                 {"required_field": "completed_image"}
             )
 
@@ -1825,8 +1827,8 @@ def update_status(
     if request.order_status == OrderStatusEnum.OUT_FOR_DELIVERY and request.deliver_image:
         order.deliver_image = request.deliver_image
 
-    # Save completed_image when status is COMPLETED
-    if request.order_status == OrderStatusEnum.COMPLETED and request.completed_image:
+    # Save completed_image when status is ORDER_DELIVER
+    if request.order_status == OrderStatusEnum.ORDER_DELIVER and request.completed_image:
         order.completed_image = request.completed_image
 
     # Handle inventory restoration for cancelled/refunded orders
@@ -1871,6 +1873,7 @@ def update_status(
             OrderStatusEnum.OUT_FOR_DELIVERY: "order_out_for_delivery_date",
             OrderStatusEnum.AT_DISTRIBUTION_CENTER: "order_at_distribution_center_date",
             OrderStatusEnum.PACKED: "order_packed_date",
+            OrderStatusEnum.ORDER_DELIVER: "order_deliver_date",
         }
 
         status_field = status_field_map.get(request.order_status)
@@ -1889,33 +1892,34 @@ def update_status(
     create_shop_earning(session, order)
     session.commit()  # Commit shop earnings
 
-    # Send order status update email
-    try:
-        # Get user email if customer exists
-        customer_email = None
-        if order.customer_id:
-            from src.api.models.usersModel import User
-            customer = session.get(User, order.customer_id)
-            if customer:
-                customer_email = customer.email
+    # Send order status update email only for OUT_FOR_DELIVERY and ORDER_DELIVER statuses
+    if request.order_status in [OrderStatusEnum.OUT_FOR_DELIVERY, OrderStatusEnum.ORDER_DELIVER]:
+        try:
+            # Get user email if customer exists
+            customer_email = None
+            if order.customer_id:
+                from src.api.models.usersModel import User
+                customer = session.get(User, order.customer_id)
+                if customer:
+                    customer_email = customer.email
 
-        if customer_email or order.customer_contact:
-            send_email(
-                to_email=customer_email or order.customer_contact,
-                email_template_id=6,  # Use appropriate template ID for order status update
-                replacements={
-                    "customer_name": order.customer_name,
-                    "tracking_number": order.tracking_number,
-                    "order_number": order.tracking_number,
-                    "order_id": order.id,
-                    "order_status": request.order_status,
-                    "payment_status": request.payment_status or order.payment_status,
-                },
-                session=session
-            )
-    except Exception as e:
-        # Log email error but don't fail status update
-        Print(f"Failed to send order status update email: {e}")
+            if customer_email or order.customer_contact:
+                send_email(
+                    to_email=customer_email or order.customer_contact,
+                    email_template_id=6,  # Use appropriate template ID for order status update
+                    replacements={
+                        "customer_name": order.customer_name,
+                        "tracking_number": order.tracking_number,
+                        "order_number": order.tracking_number,
+                        "order_id": order.id,
+                        "order_status": order.order_status,
+                        "payment_status": order.payment_status or order.payment_status,
+                    },
+                    session=session
+                )
+        except Exception as e:
+            # Log email error but don't fail status update
+            Print(f"Failed to send order status update email: {e}")
 
     return api_response(
         200, "Order Status Updated Successfully", OrderRead.model_validate(order)

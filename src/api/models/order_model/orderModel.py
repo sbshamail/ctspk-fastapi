@@ -46,6 +46,7 @@ class OrderStatusEnum(str, PyEnum):
     OUT_FOR_DELIVERY = "order-out-for-delivery"
     AT_DISTRIBUTION_CENTER = "order-at-distribution-center"
     PACKED = "order-packed"
+    ORDER_DELIVER = "order-deliver"
 
 
 class PaymentStatusEnum(str, PyEnum):
@@ -203,6 +204,7 @@ class OrderStatus(TimeStampedModel, table=True):
     order_out_for_delivery_date: Optional[datetime] = Field(default=None)
     order_packed_date: Optional[datetime] = Field(default=None)
     order_at_distribution_center_date: Optional[datetime] = Field(default=None)
+    order_deliver_date: Optional[datetime] = Field(default=None)
 
     orders: Optional["Order"] = Relationship(
         back_populates="order_status_history",
@@ -308,7 +310,7 @@ class OrderStatusUpdate(SQLModel):
     order_status: Optional[OrderStatusEnum] = None
     payment_status: Optional[PaymentStatusEnum] = None
     deliver_image: Optional[List[Dict[str, Any]]] = None  # Required for OUT_FOR_DELIVERY (step 6)
-    completed_image: Optional[List[Dict[str, Any]]] = None  # Required for COMPLETED (step 7)
+    completed_image: Optional[List[Dict[str, Any]]] = None  # Required for ORDER_DELIVER (step 7)
 
 
 class ProductOrderRead(SQLModel):
@@ -378,6 +380,7 @@ class OrderRead(TimeStampReadModel):
     shop_count: Optional[int] = None
     deliver_image: Optional[List[Dict[str, Any]]] = None
     completed_image: Optional[List[Dict[str, Any]]] = None
+    order_review_id:  Optional[int] = None
 
 
 class OrderReadNested(OrderRead):
@@ -399,3 +402,4 @@ class OrderStatusRead(TimeStampReadModel):
     order_out_for_delivery_date: Optional[datetime] = None
     order_packed_date: Optional[datetime] = None
     order_at_distribution_center_date: Optional[datetime] = None
+    order_deliver_date: Optional[datetime] = None

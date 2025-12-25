@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Query
-from sqlalchemy import select
+from sqlmodel import select
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.dependencies import (
