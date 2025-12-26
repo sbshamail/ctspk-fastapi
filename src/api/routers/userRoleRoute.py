@@ -87,7 +87,7 @@ def get_user(
 def delete_user(
     id: int,
     session: GetSession,
-    user=requirePermission("user-delete"),
+    user=requirePermission("user:delete"),
 ):
     db_user = session.get(User, id)
     raiseExceptions((db_user, 404, "User not found"))

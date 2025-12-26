@@ -551,19 +551,55 @@ def get_my_returns(
     )
 
 
-# ✅ GET ALL RETURN REQUESTS (Admin)
+# ✅ GET ALL RETURN REQUESTS (Admin or Shop Owner)
 @router.get("/list", response_model=list[ReturnRequestRead])
 def list_all_returns(
     query_params: ListQueryParams,
-    user=requirePermission("return:view_all")
+    session: GetSession,
+    user: requireSignin
 ):
     query_params = vars(query_params)
-    
+    user_id = user.get("id")
+    is_root = user.get("is_root", False)
+
+    # If user is root, show all returns
+    if is_root:
+        return listRecords(
+            query_params=query_params,
+            searchFields=["reason"],
+            Model=ReturnRequest,
+            Schema=ReturnRequestRead,
+        )
+
+    # Otherwise, filter by user's shops
+    from src.api.models.shop_model.shopsModel import Shop
+    from src.api.models.order_model.orderModel import Order, OrderProduct
+
+    # Get shops owned by the user
+    shop_ids = session.execute(
+        select(Shop.id).where(Shop.owner_id == user_id)
+    ).scalars().all()
+
+    if not shop_ids:
+        return api_response(404, "No shops found for this user")
+
+    # Get order IDs that have products from user's shops
+    order_ids = session.execute(
+        select(OrderProduct.order_id)
+        .where(OrderProduct.shop_id.in_(shop_ids))
+        .distinct()
+    ).scalars().all()
+
+    if not order_ids:
+        return api_response(404, "No orders found for your shops")
+
+    # Filter returns by those order IDs
     return listRecords(
         query_params=query_params,
         searchFields=["reason"],
         Model=ReturnRequest,
         Schema=ReturnRequestRead,
+        otherFilters=lambda stmt, m: stmt.where(m.order_id.in_(order_ids)),
     )
 
 

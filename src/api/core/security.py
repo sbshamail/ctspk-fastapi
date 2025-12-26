@@ -160,7 +160,15 @@ def require_admin(user: dict = Depends(require_signin)):
     return user
 
 
-def require_permission(*permissions: str):
+def require_permission(*permissions):
+    # Flatten permissions - handle both requirePermission("a", "b") and requirePermission(["a", "b"])
+    flat_permissions: List[str] = []
+    for p in permissions:
+        if isinstance(p, list):
+            flat_permissions.extend(p)
+        else:
+            flat_permissions.append(p)
+
     def permission_checker(user: dict = Depends(require_signin)):
         user_permissions: List[str] = user.get("permissions", [])
 
@@ -168,11 +176,29 @@ def require_permission(*permissions: str):
         if "system:*" in user_permissions:
             return user
 
-        # ✅ OR logic: check if user has any required permission
-        if any(p in user_permissions for p in permissions):
-            return user
+        # ✅ Check for wildcard permissions (e.g., shop:* matches shop:view, shop:create, etc.)
+        for required_perm in flat_permissions:
+            # Exact match
+            if required_perm in user_permissions:
+                return user
+
+            # Check if user has wildcard for this resource (e.g., user has shop:* and route needs shop:view)
+            if ":" in required_perm:
+                resource = required_perm.split(":")[0]
+                if f"{resource}:*" in user_permissions:
+                    return user
+
+            # Check if route requires wildcard and user has any permission for that resource
+            # (e.g., route needs shop:* and user has shop:view)
+            if required_perm.endswith(":*"):
+                resource = required_perm.replace(":*", "")
+                if any(up.startswith(f"{resource}:") for up in user_permissions):
+                    return user
 
         # ❌ no match → deny
-        api_response(status.HTTP_403_FORBIDDEN, "Permission denied")
+        print(f"Permission denied for user: {user.get('email')}")
+        print(f"  Required: {flat_permissions}")
+        print(f"  User has: {user_permissions}")
+        api_response(status.HTTP_403_FORBIDDEN, f"Permission denied. Required: {flat_permissions}, You have: {user_permissions}")
 
     return permission_checker

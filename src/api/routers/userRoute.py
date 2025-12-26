@@ -35,7 +35,7 @@ def serialize_user_with_avatar(user: User) -> UserRead:
 def create_user(
     request: UserCreate,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("user:create"),
 ):
     # Check if user already exists
     existing_user = session.exec(
@@ -127,7 +127,7 @@ def update_user_by_admin(
     user_id: int,
     request: UpdateUserByAdmin,  # You might want to create a UserUpdateWithRoles schema
     session: GetSession,
-    user=requirePermission("all"),
+    user=requirePermission("user:update"),
 ):
     db_user = session.get(User, user_id)
     raiseExceptions((db_user, 404, "User not found"))
@@ -238,7 +238,7 @@ def get_user(
 def delete_user(
     user_id: int,
     session: GetSession,
-    user=requirePermission("all"),
+    user=requirePermission("user:delete"),
 ):
     db_user = session.get(User, user_id)
     raiseExceptions((db_user, 400, "User not found"))

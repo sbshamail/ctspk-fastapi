@@ -118,7 +118,7 @@ def update_shop(
     shop_id: int,
     request: ShopVerifyByAdmin,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission(["approve:approve","shop:reject","shop:deactivate","shop:activate"]),
 ):
     db_shop = session.get(Shop, shop_id)  # Like findById
     raiseExceptions((db_shop, 404, "Shop not found"))
@@ -151,7 +151,7 @@ def update_shop(
 
 # ✅ DELETE shop
 @router.delete("/delete/{id}")
-def delete_shop(id: int, session: GetSession, user=requirePermission("shop_admin")):
+def delete_shop(id: int, session: GetSession, user=requirePermission(["shop_admin","shop:delete"])):
     shop = session.get(Shop, id)
     raiseExceptions((shop, 404, "Shop not found"))
 
@@ -165,7 +165,7 @@ def delete_shop(id: int, session: GetSession, user=requirePermission("shop_admin
 def list_shops(
     session: GetSession,
     query_params: ListQueryParams,
-    user=requirePermission("all"),
+    user=requirePermission(["shop:*","vendor:view"]),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
 ):
     query_params = vars(query_params)
@@ -213,7 +213,7 @@ def patch_shop_status(
     id: int,
     request: ShopVerifyByAdmin,
     session: GetSession,
-    user=requirePermission(["system:*", "shop_admin"]),  # 🔒 both allowed
+    user=requirePermission(["shop:approve", "shop:toggle","shop:reject","shop:activate","shop:deactivate"]),  # 🔒 both allowed
 ):
     shop = session.get(Shop, id)
     raiseExceptions((shop, 404, "Shop not found"))

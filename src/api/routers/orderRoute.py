@@ -548,8 +548,9 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
     # ✅ 4. Calculate initial totals and validate variable products
     subtotal_amount = 0.0
     total_product_discount = 0.0
+    actual_amount = 0.0  # Sum of (price * quantity) without any discount
     validation_errors = []
-    
+
     # NEW: Calculate initial subtotal for tax/shipping/coupon validation
     initial_calculation = {}
     for item in cart_items:
@@ -594,7 +595,10 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         # Calculate product discount
         item_discount = calculate_product_discount(price, sale_price, quantity)
         total_product_discount += item_discount
-        
+
+        # Calculate actual_amount (price * quantity without any discount)
+        actual_amount += price * quantity
+
         # Use sale price if available, otherwise use regular price
         final_price = sale_price if sale_price and sale_price > 0 else price
         subtotal_amount += final_price * quantity
@@ -632,8 +636,10 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         customer_contact=shipping_address.get("phone"),
         customer_name=shipping_address.get("name"),
         amount=subtotal_amount,  # Subtotal before discounts/taxes
+        actual_amount=round(actual_amount),  # Sum of (price * quantity) without discount
         sales_tax=tax_amount,
         total=final_total,
+        paid_total=final_total,  # Set paid_total = total
         discount=total_product_discount,  # Total product discounts
         coupon_discount=coupon_discount,  # NEW: Coupon discount
         shipping_address=shipping_address,
@@ -1038,9 +1044,10 @@ def create_order_from_cart(
     # ✅ 5. Validate all cart items and calculate initial totals
     subtotal_amount = 0.0
     total_product_discount = 0.0
+    actual_amount = 0.0  # Sum of (price * quantity) without any discount
     validation_errors = []
     order_products_data = []
-    
+
     Print(f"🔍 Validating {len(valid_cart_items)} cart items...")
     
     for i, cart_data in enumerate(valid_cart_items):
@@ -1150,12 +1157,15 @@ def create_order_from_cart(
         # Calculate product discount
         item_discount = calculate_product_discount(price, sale_price, quantity)
         total_product_discount += item_discount
-        
+
+        # Calculate actual_amount (price * quantity without any discount)
+        actual_amount += price * quantity
+
         # Use sale price if available, otherwise use regular price
         final_price = sale_price if sale_price and sale_price > 0 else price
         subtotal = final_price * quantity
         subtotal_amount += subtotal
-        
+
         Print(f"   💰 Price calculations: final_price={final_price}, subtotal={subtotal}, item_discount={item_discount}")
         
         # Prepare order product data
@@ -1209,8 +1219,10 @@ def create_order_from_cart(
         customer_contact=shipping_address.get("phone"),
         customer_name=shipping_address.get("name"),
         amount=subtotal_amount,  # Subtotal before discounts/taxes
+        actual_amount=round(actual_amount),  # Sum of (price * quantity) without discount
         sales_tax=tax_amount,
         total=final_total,
+        paid_total=final_total,  # Set paid_total = total
         discount=total_product_discount,  # Total product discounts
         coupon_discount=coupon_discount,  # Coupon discount
         shipping_address=shipping_address,
@@ -1445,8 +1457,9 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
     # ✅ 2. Validate products and calculate initial totals
     subtotal_amount = 0.0
     total_product_discount = 0.0
+    actual_amount = 0.0  # Sum of (price * quantity) without any discount
     validation_errors = []
-    
+
     for op_request in request.order_products:
         is_available, message = validate_product_availability(session, op_request)
         if not is_available:
@@ -1466,11 +1479,15 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
             
         # Calculate product discount
         item_discount = calculate_product_discount(
-            op_request.unit_price, 
-            product.sale_price if product.sale_price and product.sale_price > 0 else None, 
+            op_request.unit_price,
+            product.sale_price if product.sale_price and product.sale_price > 0 else None,
             quantity
         )
         total_product_discount += item_discount
+
+        # Calculate actual_amount (price * quantity without any discount)
+        actual_amount += op_request.unit_price * quantity
+
         subtotal_amount += op_request.subtotal
 
     if validation_errors:
@@ -1506,8 +1523,10 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
         customer_contact=request.customer_contact,
         customer_name=request.customer_name,
         amount=subtotal_amount,
+        actual_amount=round(actual_amount),  # Sum of (price * quantity) without discount
         sales_tax=tax_amount,
         total=final_total,
+        paid_total=final_total,  # Set paid_total = total
         discount=total_product_discount,
         coupon_discount=coupon_discount,  # NEW: Coupon discount
         payment_gateway=request.payment_gateway,
@@ -2154,7 +2173,121 @@ def list_orders(
             continue  # Skip this order
     
     return api_response(200, "Orders found", enhanced_orders, result["total"])
+@router.get(
+    "/my-orders",
+    response_model=list[OrderReadNested],
+)
+def list_orders(
+    user: requireSignin,
+    session: GetSession,
+    dateRange: Optional[str] = None,
+    numberRange: Optional[str] = None,
+    searchTerm: str = None,
+    columnFilters: Optional[str] = Query(None),
+    order_status: Optional[OrderStatusEnum] = None,
+    payment_status: Optional[PaymentStatusEnum] = None,
+    shop_id: Optional[int] = None,  # ADDED: Filter by shop_id (from order products)
+    sort: Optional[str] = Query(None, description="Sort by column. Example: ['created_at','desc'] or ['total','asc']"),
+    page: int = None,
+    skip: int = 0,
+    limit: int = Query(200, ge=1, le=200),
+):
+    customFilters = [["customer_id", user.get("id")]]
 
+    filters = {
+        "searchTerm": searchTerm,
+        "columnFilters": columnFilters,
+        "dateRange": dateRange,
+        "numberRange": numberRange,
+        "customFilters": customFilters,
+    }
+
+    searchFields = ["tracking_number", "customer_contact", "customer_name"]
+
+    # Add status filters
+    if order_status:
+        if "columnFilters" not in filters or not filters["columnFilters"]:
+            filters["columnFilters"] = []
+        filters["columnFilters"].append(["order_status", order_status.value])
+
+    if payment_status:
+        if "columnFilters" not in filters or not filters["columnFilters"]:
+            filters["columnFilters"] = []
+        filters["columnFilters"].append(["payment_status", payment_status.value])
+
+    # Handle shop filtering - we need to filter orders that have products from this shop
+    if shop_id:
+        # First get order IDs that have products from this shop
+        order_ids_with_shop = session.exec(
+            select(OrderProduct.order_id)
+            .where(OrderProduct.shop_id == shop_id)
+            .distinct()
+        ).all()
+
+        if not order_ids_with_shop:
+            return api_response(404, "No orders found for this shop")
+
+        if "columnFilters" not in filters or not filters["columnFilters"]:
+            filters["columnFilters"] = []
+        filters["columnFilters"].append(
+            ["id", [str(oid) for oid in order_ids_with_shop]]
+        )
+
+    result = listop(
+        session=session,
+        Model=Order,
+        searchFields=searchFields,
+        filters=filters,
+        skip=skip,
+        page=page,
+        limit=limit,
+        sort=sort,
+    )
+
+    if not result["data"]:
+        return api_response(404, "No orders found")
+
+    # Enhance each order with shop information and fulfillment user info
+    enhanced_orders = []
+    for order in result["data"]:
+        try:
+            # Convert null values to empty strings or appropriate defaults
+            if hasattr(order, 'customer_contact') and order.customer_contact is None:
+                order.customer_contact = ""
+            if hasattr(order, 'customer_name') and order.customer_name is None:
+                order.customer_name = ""
+            if hasattr(order, 'tracking_number') and order.tracking_number is None:
+                order.tracking_number = ""  # Or generate one if business logic allows
+            order_data = OrderReadNested.model_validate(order)
+
+            # Get unique shops from order products
+            shops = set()
+            for order_product in order.order_products:
+                if order_product.shop_id:
+                    shops.add(order_product.shop_id)
+
+            # Get shop details
+            shop_details = []
+            for s_id in shops:
+                shop = session.get(Shop, s_id)
+                if shop:
+                    shop_details.append(
+                        {"id": shop.id, "name": shop.name, "slug": shop.slug}
+                    )
+
+            order_data.shops = shop_details
+            order_data.shop_count = len(shop_details)
+
+            # Add fulfillment user info if fullfillment_id > 0
+            order_data = add_fulfillment_user_info(order_data, order, session)
+
+            enhanced_orders.append(order_data)
+        except Exception as e:
+            # Log the problematic order but continue processing others
+            Print(f"Error processing order {order.id if order else 'unknown'}: {str(e)}")
+            continue  # Skip this order
+    
+    return api_response(200, "Orders found", enhanced_orders, result["total"])
 
 @router.get(
     "/listorder",
@@ -2225,6 +2358,140 @@ def list_all_orders(
         page=page,
         limit=limit,
         sort=sort,
+    )
+
+    if not result["data"]:
+        return api_response(404, "No orders found")
+
+    # Enhance each order with shop information and fulfillment user info
+    enhanced_orders = []
+    for order in result["data"]:
+        order_data = OrderReadNested.model_validate(order)
+
+        # Get unique shops from order products
+        shops = set()
+        for order_product in order.order_products:
+            if order_product.shop_id:
+                shops.add(order_product.shop_id)
+
+        # Get shop details
+        shop_details = []
+        for s_id in shops:
+            shop = session.get(Shop, s_id)
+            if shop:
+                shop_details.append(
+                    {"id": shop.id, "name": shop.name, "slug": shop.slug}
+                )
+
+        order_data.shops = shop_details
+        order_data.shop_count = len(shop_details)
+
+        # Add fulfillment user info if fullfillment_id > 0
+        order_data = add_fulfillment_user_info(order_data, order, session)
+
+        enhanced_orders.append(order_data)
+
+    return api_response(200, "Orders found", enhanced_orders, result["total"])
+
+@router.get(
+    "/shoporders",
+    response_model=list[OrderReadNested],
+)
+def list_all_orders(
+    user: requireSignin,
+    session: GetSession,
+    dateRange: Optional[str] = None,
+    numberRange: Optional[str] = None,
+    searchTerm: str = None,
+    columnFilters: Optional[str] = Query(None),
+    order_status: Optional[OrderStatusEnum] = None,
+    payment_status: Optional[PaymentStatusEnum] = None,
+    shop_id: Optional[int] = None,  # ADDED: Filter by shop_id (from order products)
+    sort: Optional[str] = Query(None, description="Sort by column. Example: ['created_at','desc'] or ['total','asc']"),
+    page: int = None,
+    skip: int = 0,
+    limit: int = Query(200, ge=1, le=200),
+):
+    user_id = user.get("id")
+    is_root = user.get("is_root", False)
+
+    filters = {
+        "searchTerm": searchTerm,
+        "columnFilters": columnFilters,
+        "dateRange": dateRange,
+        "numberRange": numberRange,
+    }
+
+    searchFields = ["tracking_number", "customer_contact", "customer_name"]
+
+    # Add status filters
+    if order_status:
+        if "columnFilters" not in filters or not filters["columnFilters"]:
+            filters["columnFilters"] = []
+        filters["columnFilters"].append(["order_status", order_status.value])
+
+    if payment_status:
+        if "columnFilters" not in filters or not filters["columnFilters"]:
+            filters["columnFilters"] = []
+        filters["columnFilters"].append(["payment_status", payment_status.value])
+
+    # Track order IDs to filter by (for non-root users or shop filtering)
+    filter_order_ids = None
+
+    # If user is NOT root, filter by user's shops
+    if not is_root:
+        # Get shops owned by the user
+        user_shop_ids = session.execute(
+            select(Shop.id).where(Shop.owner_id == user_id)
+        ).scalars().all()
+
+        if not user_shop_ids:
+            return api_response(404, "No shops found for this user")
+
+        # Get order IDs that have products from user's shops
+        filter_order_ids = session.execute(
+            select(OrderProduct.order_id)
+            .where(OrderProduct.shop_id.in_(user_shop_ids))
+            .distinct()
+        ).scalars().all()
+
+        if not filter_order_ids:
+            return api_response(404, "No orders found for your shops")
+
+    # Handle additional shop filtering if shop_id is provided
+    if shop_id:
+        # First get order IDs that have products from this shop
+        order_ids_with_shop = session.execute(
+            select(OrderProduct.order_id)
+            .where(OrderProduct.shop_id == shop_id)
+            .distinct()
+        ).scalars().all()
+
+        if not order_ids_with_shop:
+            return api_response(404, "No orders found for this shop")
+
+        # Intersect with existing filter_order_ids if set
+        if filter_order_ids is not None:
+            filter_order_ids = list(set(filter_order_ids) & set(order_ids_with_shop))
+        else:
+            filter_order_ids = order_ids_with_shop
+
+    # Build otherFilters function if we have order IDs to filter
+    def order_id_filter(stmt, m):
+        if filter_order_ids is not None:
+            return stmt.where(m.id.in_(filter_order_ids))
+        return stmt
+
+    result = listop(
+        session=session,
+        Model=Order,
+        searchFields=searchFields,
+        filters=filters,
+        skip=skip,
+        page=page,
+        limit=limit,
+        sort=sort,
+        otherFilters=order_id_filter if filter_order_ids else None,
     )
 
     if not result["data"]:

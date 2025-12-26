@@ -46,7 +46,7 @@ class OrderStatusEnum(str, PyEnum):
     OUT_FOR_DELIVERY = "order-out-for-delivery"
     AT_DISTRIBUTION_CENTER = "order-at-distribution-center"
     PACKED = "order-packed"
-    ORDER_DELIVER = "order-deliver"
+    ORDER_DELIVER = "order-delivered"
 
 
 class PaymentStatusEnum(str, PyEnum):
@@ -75,6 +75,7 @@ class Order(TimeStampedModel, table=True):
     customer_contact: str = Field(max_length=191)
     customer_name: Optional[str] = Field(max_length=191, default=None)
     amount: float = Field()  # Subtotal before any discounts/taxes
+    actual_amount: Optional[float] = Field(default=None)  # Sum of (price * quantity) without any discount
     sales_tax: Optional[float] = Field(default=None)  # Total sales tax
     paid_total: Optional[float] = Field(default=None)  # Final amount paid
     total: Optional[float] = Field(default=None)  # Final total after all calculations
@@ -353,6 +354,7 @@ class OrderRead(TimeStampReadModel):
     customer_contact: Optional[str] = None
     customer_name: Optional[str] = None
     amount: float
+    actual_amount: Optional[float] = None
     sales_tax: Optional[float] = None
     paid_total: Optional[float] = None
     total: Optional[float] = None
@@ -383,11 +385,6 @@ class OrderRead(TimeStampReadModel):
     order_review_id:  Optional[int] = None
 
 
-class OrderReadNested(OrderRead):
-    order_products: List[OrderProductRead] = []
-    order_status_history: Optional["OrderStatusRead"] = None
-
-
 class OrderStatusRead(TimeStampReadModel):
     id: int
     order_id: int
@@ -403,3 +400,8 @@ class OrderStatusRead(TimeStampReadModel):
     order_packed_date: Optional[datetime] = None
     order_at_distribution_center_date: Optional[datetime] = None
     order_deliver_date: Optional[datetime] = None
+
+
+class OrderReadNested(OrderRead):
+    order_products: List[OrderProductRead] = []
+    order_status_history: Optional[OrderStatusRead] = None

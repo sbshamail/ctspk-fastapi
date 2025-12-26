@@ -16,7 +16,7 @@ ROOT_PERMISSIONS = {"system:*", "all"}
 def create_role(
     request: RoleCreate,
     session: GetSession,
-    user=requirePermission("role-create"),
+    user=requirePermission(["role:create"]),
 ):
     # Check if role name already exists
     existing_role = session.exec(
@@ -56,7 +56,7 @@ def update_role(
     id: int,
     request: RoleUpdate,
     session: GetSession,
-    user=requirePermission("role-update"),
+    user=requirePermission(["role:update"]),
 ):
     role = session.get(Role, id)
     raiseExceptions((role, 404, "Role not found"))
@@ -99,7 +99,7 @@ def update_role(
 
 
 @router.get("/read/{id}")
-def get_role(id: int, session: GetSession, user=requirePermission("role")):
+def get_role(id: int, session: GetSession, user=requirePermission(["role:delete"])):
     role = session.get(Role, id)
     raiseExceptions((role, 404, "Role not found"))
     return api_response(200, "Role Found", RoleRead.model_validate(role))
@@ -132,7 +132,7 @@ def update_role_status(
     id: int,
     is_active: bool,
     session: GetSession,
-    user=requirePermission("role-update"),
+    user=requirePermission(["role:update"]),
 ):
     role = session.get(Role, id)
     raiseExceptions((role, 404, "Role not found"))

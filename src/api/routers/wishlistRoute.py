@@ -25,7 +25,7 @@ def add_to_wishlist(
     user:requireSignin,  # This provides the authenticated user
 ):
     print("❤️ Adding to wishlist:", request.model_dump())
-    print(f"👤 Authenticated user ID: {user.get("id")}")
+    print(f"Authenticated user ID: {user.get('id')}")
 
     # Check if item already exists in wishlist
     existing_item = session.exec(
@@ -226,7 +226,7 @@ def list_my_wishlist(
 ):
     query_params_dict = vars(query_params)
     print(f"user:{user}")
-    print(f"user_id:{user.get("id")}")
+    print(f"user_id:{user.get('id')}")
     # Get wishlist items with product data
     enhanced_wishlist = get_wishlist_items_with_products(session, query_params_dict, user.get("id"))
     total_count = get_wishlist_count(session, user.get("id"))
