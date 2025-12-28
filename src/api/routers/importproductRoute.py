@@ -846,7 +846,9 @@ def get_import_history_detail(
         }
         
         return api_response(200, "Import details retrieved", response_data)
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         return api_response(500, f"Failed to retrieve import details: {str(e)}")
 

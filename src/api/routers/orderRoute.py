@@ -1,7 +1,7 @@
 # src/api/routes/orderRoute.py
 import ast
 from typing import Optional, Dict, Any
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy import update as sql_update
 from sqlmodel import SQLModel, Field,Relationship
@@ -34,6 +34,8 @@ from src.api.models.product_model.productsModel import Product, ProductRead, Pro
 from src.api.models.product_model.variationOptionModel import VariationOption
 from src.api.models.category_model import Category
 from src.api.models.shop_model.shopsModel import Shop
+from src.api.models.shop_model.userShopModel import UserShop
+from src.api.models.role_model.userRoleModel import UserRole
 from src.api.models.withdrawModel import ShopEarning
 # NEW: Import tax and shipping models
 from src.api.models.taxModel import Tax
@@ -564,7 +566,13 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         except (ValueError, TypeError):
             validation_errors.append(f"Invalid quantity for product {product.name}: {item.quantity}")
             continue
-            
+
+        # Check if product is variable and requires variation_option_id
+        if product.product_type == ProductType.VARIABLE:
+            if not item.variation_option_id or item.variation_option_id <= 0:
+                validation_errors.append(f"Product '{product.name}' is a variable product. Please select a valid variation option before purchasing.")
+                continue
+
         # Handle variable products
         if item.variation_option_id:
             variation = session.get(VariationOption, item.variation_option_id)
@@ -1094,7 +1102,15 @@ def create_order_from_cart(
             continue
         
         Print(f"   ✅ Quantity is valid: {quantity}")
-        
+
+        # Check if product is variable and requires variation_option_id
+        if product.product_type == ProductType.VARIABLE:
+            if not variation_option_id or variation_option_id <= 0:
+                error_msg = f"Product '{product.name}' is a variable product. Please select a valid variation option before purchasing."
+                Print(f"   ❌ {error_msg}")
+                validation_errors.append(error_msg)
+                continue
+
         # Determine product type and validate availability
         item_type = OrderItemType.VARIABLE if variation_option_id else OrderItemType.SIMPLE
         Print(f"   Item type: {item_type}")
@@ -1465,12 +1481,24 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
         if not is_available:
             validation_errors.append(f"Product {op_request.product_id}: {message}")
             continue
-            
+
         product = session.get(Product, op_request.product_id)
         if not product:
             validation_errors.append(f"Product {op_request.product_id} not found")
             continue
-            
+
+        # Check if product is variable and requires variation_option_id
+        if product.product_type == ProductType.VARIABLE:
+            variation_id = getattr(op_request, 'variation_option_id', None)
+            if not variation_id or variation_id <= 0:
+                validation_errors.append(f"Product '{product.name}' is a variable product. Please select a valid variation option before purchasing.")
+                continue
+            # Verify variation belongs to product
+            variation = session.get(VariationOption, variation_id)
+            if not variation or variation.product_id != product.id:
+                validation_errors.append(f"Invalid variation option for product '{product.name}'. Please select a valid option.")
+                continue
+
         try:
             quantity = float(op_request.order_quantity)
         except (ValueError, TypeError):
@@ -2568,6 +2596,172 @@ def get_sales_report(
 ):
     """Get sales report with product-wise sales data (filtered by user's shops)"""
     try:
+        # Get user info
+        user_id = user.get("id")
+        is_root = user.get("is_root", False)
+
+        # Get user's role IDs from database
+        user_role_ids = session.exec(
+            select(UserRole.role_id).where(UserRole.user_id == user_id)
+        ).all()
+        user_role_ids = [r if isinstance(r, int) else r[0] for r in user_role_ids]
+
+        # Define role groups
+        shop_restricted_roles = [21, 23, 24, 25]  # Roles that can only see their assigned shops
+        all_shops_roles = [20, 22]  # Roles that can see all shops
+
+        # Determine access level
+        # 1. is_root=True -> see all shops
+        # 2. Role IDs 21, 23, 24, 25 -> see only assigned shops
+        # 3. Role IDs 20, 22 (and not in shop_restricted_roles) -> see all shops
+
+        has_shop_restricted_role = any(role_id in shop_restricted_roles for role_id in user_role_ids)
+        has_all_shops_role = any(role_id in all_shops_roles for role_id in user_role_ids)
+
+        # Determine if user can see all shops
+        can_see_all_shops = is_root or (has_all_shops_role and not has_shop_restricted_role)
+
+        # Get user's shop IDs from user_shop table (for shop-restricted users)
+        user_shop_ids = []
+        if not can_see_all_shops:
+            user_shop_results = session.exec(
+                select(UserShop.shop_id).where(UserShop.user_id == user_id)
+            ).all()
+            user_shop_ids = [s if isinstance(s, int) else s[0] for s in user_shop_results]
+
+            # If user has no shops assigned and can't see all shops, deny access
+            if not user_shop_ids:
+                return api_response(403, "You don't have any shops assigned")
+
+        # Validate shop_id access if specific shop requested
+        if shop_id and not can_see_all_shops:
+            if shop_id not in user_shop_ids:
+                return api_response(403, "You don't have access to this shop")
+
+        # Build query to get order IDs for completed orders
+        order_query = select(Order.id).where(Order.order_status == OrderStatusEnum.COMPLETED)
+
+        # Apply date filters
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            order_query = order_query.where(Order.created_at >= start_dt)
+
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
+            order_query = order_query.where(Order.created_at <= end_dt)
+
+        # Get order IDs - need to extract scalar values
+        order_ids_result = session.exec(order_query).all()
+
+        # Extract actual ID values from result
+        order_ids = [row if isinstance(row, int) else row[0] for row in order_ids_result]
+
+        if not order_ids:
+            return api_response(200, "Sales report generated", {
+                "period": {"start_date": start_date, "end_date": end_date},
+                "summary": {
+                    "total_orders": 0,
+                    "total_products_sold": 0,
+                    "total_revenue": 0,
+                },
+                "product_sales": [],
+            })
+
+        # Query order products directly
+        op_query = select(OrderProduct).where(OrderProduct.order_id.in_(order_ids))
+
+        # Apply shop filter based on user access
+        if shop_id:
+            # Specific shop requested (already validated above)
+            op_query = op_query.where(OrderProduct.shop_id == shop_id)
+        elif not can_see_all_shops:
+            # Shop-restricted users: filter by their assigned shops only
+            op_query = op_query.where(OrderProduct.shop_id.in_(user_shop_ids))
+        # Users who can see all shops without shop_id filter see all shops
+
+        # Apply product filter if provided
+        if product_id:
+            op_query = op_query.where(OrderProduct.product_id == product_id)
+
+        # Use scalars() to get proper OrderProduct instances
+        order_products = session.exec(op_query).scalars().all()
+
+        sales_data = {}
+        total_revenue = 0
+        total_products_sold = 0
+        user_order_ids = set()  # Track unique orders containing user's shop products
+
+        for order_product in order_products:
+            prod_id = order_product.product_id
+            quantity = float(order_product.order_quantity)
+            revenue = order_product.subtotal
+
+            # Track unique order IDs for user's shop products
+            user_order_ids.add(order_product.order_id)
+
+            if prod_id not in sales_data:
+                product = session.get(Product, prod_id)
+                shop = (
+                    session.get(Shop, order_product.shop_id)
+                    if order_product.shop_id
+                    else None
+                )
+                sales_data[prod_id] = {
+                    "product_id": prod_id,
+                    "product_name": product.name if product else "Unknown",
+                    "product_sku": product.sku if product else "Unknown",
+                    "shop_id": order_product.shop_id,
+                    "shop_name": shop.name if shop else "Unknown",
+                    "total_quantity_sold": 0,
+                    "total_revenue": 0,
+                    "average_price": 0,
+                }
+
+            sales_data[prod_id]["total_quantity_sold"] += quantity
+            sales_data[prod_id]["total_revenue"] += revenue
+            total_products_sold += quantity
+            total_revenue += revenue
+
+        # Calculate average prices
+        for product_data in sales_data.values():
+            if product_data["total_quantity_sold"] > 0:
+                product_data["average_price"] = (
+                    product_data["total_revenue"] / product_data["total_quantity_sold"]
+                )
+
+        report = {
+            "period": {"start_date": start_date, "end_date": end_date},
+            "summary": {
+                "total_orders": len(user_order_ids),  # Only orders with user's shop products
+                "total_products_sold": total_products_sold,
+                "total_revenue": total_revenue,
+            },
+            "product_sales": list(sales_data.values()),
+        }
+
+        return api_response(200, "Sales report generated", report)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Sales report error: {error_details}")
+        return api_response(500, f"Error generating sales report: {str(e)}")
+
+@router.get("/shops-sales-report")
+def get_sales_report(
+    session: GetSession,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    shop_id: Optional[int] = None,  # Now filters by shop in order products
+    product_id: Optional[int] = None,
+    user: requireSignin = None,
+):
+    """Get sales report with product-wise sales data (filtered by user's shops)"""
+    try:
         # Get user's permissions and shops
         user_permissions = user.get("permissions", [])
         user_shops = user.get("shops", [])
@@ -2688,13 +2882,13 @@ def get_sales_report(
 
         return api_response(200, "Sales report generated", report)
 
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
         print(f"Sales report error: {error_details}")
         return api_response(500, f"Error generating sales report: {str(e)}")
-
-
 # Add this endpoint to check cancellation eligibility
 # Enhanced version with admin-only cancellation for specific scenarios
 @router.get("/{order_id}/cancellation-eligibility")

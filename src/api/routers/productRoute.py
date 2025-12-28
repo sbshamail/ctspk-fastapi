@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from sqlalchemy import select, func, and_, or_, cast, Float, exists
 from typing import List, Dict, Optional
 from sqlmodel import select
@@ -645,6 +645,8 @@ def process_video_url(request: dict, session: GetSession):
         else:
             return api_response(400, "Could not extract video data from the URL")
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error processing video URL: {str(e)}")
         return api_response(500, f"Error processing video URL: {str(e)}")

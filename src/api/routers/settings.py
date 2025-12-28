@@ -84,7 +84,7 @@ def get_settings(
 def create_settings(
     session: GetSession,
     request: SettingsCreate,
-    user=requirePermission("settings:create")
+    user=requirePermission("setting:create")
 ):
     # Check if settings for this language already exist
     statement = select(Settings).where(Settings.language == request.language)
@@ -115,7 +115,7 @@ def update_settings(
     session: GetSession,
     id: int,
     request: SettingsUpdate,
-    user=requirePermission("settings:update")
+    user=requirePermission("setting:update")
 ):
     settings = session.get(Settings, id)
     raiseExceptions((settings, 404, "Settings not found"))
@@ -146,7 +146,7 @@ def update_general_settings(
     session: GetSession,
     id: int,
     request: GeneralSettingsUpdate,
-    user=requirePermission("settings:update")
+    user=requirePermission("setting:update")
 ):
     settings = session.get(Settings, id)
     raiseExceptions((settings, 404, "Settings not found"))
@@ -177,7 +177,7 @@ def update_delivery_settings(
     session: GetSession,
     id: int,
     request: DeliverySettingsUpdate,
-    user=requirePermission("settings:update")
+    user=requirePermission("setting:update")
 ):
     settings = session.get(Settings, id)
     raiseExceptions((settings, 404, "Settings not found"))
@@ -207,7 +207,7 @@ def update_contact_settings(
     session: GetSession,
     id: int,
     request: ContactSettingsUpdate,
-    user=requirePermission("settings:update")
+    user=requirePermission("setting:update")
 ):
     settings = session.get(Settings, id)
     raiseExceptions((settings, 404, "Settings not found"))
@@ -242,7 +242,7 @@ def update_seo_settings(
     session: GetSession,
     id: int,
     request: SeoSettingsUpdate,
-    user=requirePermission("settings:update")
+    user=requirePermission("setting:update")
 ):
     settings = session.get(Settings, id)
     raiseExceptions((settings, 404, "Settings not found"))
@@ -277,7 +277,7 @@ def update_payment_settings(
     session: GetSession,
     id: int,
     request: PaymentSettingsUpdate,
-    user=requirePermission("settings:update")
+    user=requirePermission("setting:update")
 ):
     settings = session.get(Settings, id)
     raiseExceptions((settings, 404, "Settings not found"))
@@ -310,7 +310,7 @@ def update_payment_settings(
 def delete_settings(
     session: GetSession,
     id: int,
-    user=requirePermission("settings:delete")
+    user=requirePermission("setting:delete")
 ):
     settings = session.get(Settings, id)
     raiseExceptions((settings, 404, "Settings not found"))
@@ -329,7 +329,7 @@ def delete_settings(
 def list_settings(
     session: GetSession,
     query_params: ListQueryParams,
-    user=requirePermission("settings:view_all")
+    user=requirePermission("setting:view")
 ):
     query_params = vars(query_params)
     searchFields = ["language"]
@@ -372,7 +372,7 @@ def add_delivery_time_slot(
     session: GetSession,
     id: int,
     slot: DeliveryTimeSlot,
-    user=requirePermission("settings:update")
+    user=requirePermission("setting:update")
 ):
     settings = session.get(Settings, id)
     raiseExceptions((settings, 404, "Settings not found"))
@@ -404,7 +404,7 @@ def remove_delivery_time_slot(
     session: GetSession,
     id: int,
     index: int,
-    user=requirePermission("settings:update")
+    user=requirePermission("setting:update")
 ):
     settings = session.get(Settings, id)
     raiseExceptions((settings, 404, "Settings not found"))
@@ -436,7 +436,7 @@ def update_delivery_time_slot(
     id: int,
     index: int,
     slot: DeliveryTimeSlot,
-    user=requirePermission("settings:update")
+    user=requirePermission("setting:update")
 ):
     settings = session.get(Settings, id)
     raiseExceptions((settings, 404, "Settings not found"))
@@ -533,7 +533,7 @@ def get_shipping_value(
 def bulk_update_settings(
     session: GetSession,
     request: dict,
-    user=requirePermission("settings:update")
+    user=requirePermission("setting:update")
 ):
     """Bulk update settings from React form data"""
     try:

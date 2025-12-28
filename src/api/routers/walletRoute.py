@@ -1,5 +1,5 @@
 # src/api/routes/walletRoute.py
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from sqlalchemy import select
 from datetime import datetime
 from src.api.core.response import api_response, raiseExceptions
@@ -157,6 +157,8 @@ def transfer_to_bank(
 
         return api_response(200, f"Rs.{request.amount} transfer initiated successfully")
 
+    except HTTPException:
+        raise
     except Exception as e:
         session.rollback()
         return api_response(500, f"Transfer failed: {str(e)}")

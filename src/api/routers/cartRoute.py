@@ -12,12 +12,43 @@ from src.api.models.cart_model import (
     BulkAddCartRequest, BulkAddCartResponse, CartQuantityUpdate, CartDeleteRequest,
     CartDeleteManyRequest
 )
-from src.api.models.product_model.productsModel import Product
+from src.api.models.product_model.productsModel import Product, ProductType
 from src.api.models.product_model.variationOptionModel import VariationOption
 from src.api.core.dependencies import GetSession, ListQueryParams, requireSignin
 
 
 router = APIRouter(prefix="/cart", tags=["Cart"])
+
+
+def validate_variable_product(session: GetSession, product_id: int, variation_option_id: Optional[int]) -> tuple[bool, str, Optional[Product]]:
+    """
+    Validate that variable products have a variation_option_id.
+    Returns (is_valid, error_message, product)
+    """
+    product = session.execute(
+        select(Product).where(Product.id == product_id)
+    ).scalar_one_or_none()
+
+    if not product:
+        return False, f"Product with ID {product_id} not found", None
+
+    # Check if product is variable type
+    if product.product_type == ProductType.VARIABLE:
+        if variation_option_id is None or variation_option_id <= 0:
+            return False, f"Product '{product.name}' is a variable product. Please select a valid variation option before adding to cart.", product
+
+        # Verify variation_option_id exists and belongs to this product
+        variation = session.execute(
+            select(VariationOption).where(
+                VariationOption.id == variation_option_id,
+                VariationOption.product_id == product_id
+            )
+        ).scalar_one_or_none()
+
+        if not variation:
+            return False, f"Invalid variation option for product '{product.name}'. Please select a valid option.", product
+
+    return True, "", product
 
 
 def build_cart_item_response(
@@ -109,6 +140,11 @@ def add_to_cart(
     """
     user_id = user.get("id")
 
+    # Validate variable product requires variation_option_id
+    is_valid, error_msg, _ = validate_variable_product(session, request.product_id, request.variation_option_id)
+    if not is_valid:
+        return api_response(400, error_msg)
+
     # Check if cart item already exists for this user and product (+ variation if provided)
     if request.variation_option_id is not None and request.variation_option_id > 0:
         # Check for product + variation combination
@@ -170,6 +206,16 @@ def bulk_add_to_cart(
     Request body: {"items": [{"product_id": 0, "shop_id": 0, "quantity": 0, "variation_option_id": null or value}]}
     """
     user_id = user.get("id")
+
+    # Validate all items first - check variable products require variation_option_id
+    validation_errors = []
+    for item in request.items:
+        is_valid, error_msg, _ = validate_variable_product(session, item.product_id, item.variation_option_id)
+        if not is_valid:
+            validation_errors.append({"product_id": item.product_id, "error": error_msg})
+
+    if validation_errors:
+        return api_response(400, "Some products require variation selection", {"errors": validation_errors})
 
     # Get all existing cart items for this user
     stmt = select(Cart).where(Cart.user_id == user_id)
@@ -241,6 +287,11 @@ def create_role(
     """
     user_id = user.get("id")
 
+    # Validate variable product requires variation_option_id
+    is_valid, error_msg, _ = validate_variable_product(session, request.product_id, request.variation_option_id)
+    if not is_valid:
+        return api_response(400, error_msg)
+
     # Check if cart item already exists for this user and product (+ variation if provided)
     if request.variation_option_id is not None and request.variation_option_id > 0:
         # Check for product + variation combination
@@ -302,10 +353,20 @@ def bulk_create_cart_items(
     failed_count = 0
     failed_items = []
 
+    # Validate all items first - check variable products require variation_option_id
+    validation_errors = []
+    for item in request.items:
+        is_valid, error_msg, _ = validate_variable_product(session, item.product_id, item.variation_option_id)
+        if not is_valid:
+            validation_errors.append({"product_id": item.product_id, "error": error_msg})
+
+    if validation_errors:
+        return api_response(400, "Some products require variation selection", {"errors": validation_errors})
+
     # Get all existing cart items for this user to check for duplicates
     stmt = select(Cart).where(Cart.user_id == user_id)
     existing_carts = session.execute(stmt).scalars().all()
-    
+
     existing_cart_dict = {cart.product_id: cart for cart in existing_carts}
 
     for item in request.items:
