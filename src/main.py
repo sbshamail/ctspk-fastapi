@@ -114,6 +114,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:3001",
         "https://shop.ghertak.com",
+        "https://admin.ghertak.com",
     ],  # or "*"
     allow_credentials=True,
     allow_methods=["*"],
