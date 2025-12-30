@@ -51,7 +51,7 @@ class AddressCreate(SQLModel):
     title: str
     type: str
     address: AddressDetail
-    customer_id: int
+    customer_id: Optional[int] = None  # Optional - set from authenticated user's token
     is_default: bool = False
     location: Optional[Location] = None
 

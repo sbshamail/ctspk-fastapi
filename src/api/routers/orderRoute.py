@@ -528,7 +528,7 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         missing = [pid for pid in unique_product_ids if pid not in found]
         return api_response(404, f"Product(s) not found: {missing}")
 
-    # ✅ 3. Validate carts if user is authenticated
+    # ✅ 3. Fetch carts to clear after order creation (if user is authenticated)
     carts = []
     if user:
         carts = (
@@ -540,12 +540,6 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
             .scalars()
             .all()
         )
-        if len(carts) != len(unique_product_ids):
-            found_ids = {c.product_id for c in carts}
-            missing = [pid for pid in unique_product_ids if pid not in found_ids]
-            return api_response(
-                404, f"Cart item(s) not found for product(s): {missing}"
-            )
 
     # ✅ 4. Calculate initial totals and validate variable products
     subtotal_amount = 0.0
