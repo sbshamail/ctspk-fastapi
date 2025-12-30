@@ -29,7 +29,7 @@ router = APIRouter(prefix="/tax", tags=["Tax"])
 def create_tax(
     request: TaxCreate,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("tax:create"),
 ):
     # Create ORM object
     tax = Tax(**request.model_dump())
@@ -47,7 +47,7 @@ def update_tax(
     id: int,
     request: TaxUpdate,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("tax:update"),
 ):
     tax = session.get(Tax, id)
     raiseExceptions((tax, 404, "Tax not found"))
@@ -69,7 +69,7 @@ def get_tax(id: int, session: GetSession):
 def delete_tax(
     id: int,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("tax:delete"),
 ):
     tax = session.get(Tax, id)
     raiseExceptions((tax, 404, "Tax not found"))
@@ -105,7 +105,7 @@ def patch_tax_global(
     id: int,
     request: TaxActivate,
     session: GetSession,
-    user=requirePermission(["system:*"]),
+    user=requirePermission(["tax:activate","tax:deactivate"]),
 ):
     tax = session.get(Tax, id)
     raiseExceptions((tax, 404, "Tax not found"))
@@ -123,7 +123,7 @@ def patch_tax_shipping(
     id: int,
     request: TaxShippingToggle,
     session: GetSession,
-    user=requirePermission(["system:*"]),
+    user=requirePermission(["tax:activate","tax:deactivate"]),
 ):
     tax = session.get(Tax, id)
     raiseExceptions((tax, 404, "Tax not found"))

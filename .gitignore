@@ -12,3 +12,4 @@ wheels/
 .env
 src/api/nul
 nul
+requirements.txt
