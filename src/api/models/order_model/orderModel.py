@@ -33,6 +33,7 @@ if TYPE_CHECKING:
         Coupon
     )
     from src.api.models.orderReviewModel import OrderReview
+    from src.api.models.payment_model.paymentTransactionModel import PaymentTransaction
 
 
 class OrderStatusEnum(str, PyEnum):
@@ -66,6 +67,12 @@ class OrderItemType(str, PyEnum):
     VARIABLE = "variable"
 
 
+class FreeShippingSource(str, PyEnum):
+    NONE = "none"
+    COUPON = "coupon"
+    SETTINGS = "settings"
+
+
 class Order(TimeStampedModel, table=True):
     __tablename__: Literal["orders"] = "orders"
 
@@ -94,6 +101,8 @@ class Order(TimeStampedModel, table=True):
     billing_address: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
     logistics_provider: Optional[int] = Field(default=None)
     delivery_fee: Optional[float] = Field(default=None)
+    original_delivery_fee: Optional[float] = Field(default=None)  # Original shipping before free shipping discount
+    free_shipping_source: Optional[str] = Field(default="none")  # FreeShippingSource: none, coupon, settings
     delivery_time: Optional[str] = Field(default=None, max_length=191)
     order_status: Optional[str] = Field(default="order-pending")
     payment_status: Optional[str] = Field(default="payment-pending")
@@ -141,6 +150,10 @@ class Order(TimeStampedModel, table=True):
     order_review: Optional["OrderReview"] = Relationship(
         back_populates="order",
         sa_relationship_kwargs={"foreign_keys": "[OrderReview.order_id]"}
+    )
+    # Payment transactions relationship
+    payment_transactions: List["PaymentTransaction"] = Relationship(
+        back_populates="order"
     )
 
 class OrderProduct(TimeStampedModel, table=True):
@@ -272,6 +285,8 @@ class OrderCreate(SQLModel):
     billing_address: Optional[Dict[str, Any]] = None
     logistics_provider: Optional[int] = None
     delivery_fee: Optional[float] = None
+    original_delivery_fee: Optional[float] = None  # Original shipping before free shipping discount
+    free_shipping_source: Optional[str] = None  # FreeShippingSource: none, coupon, settings
     delivery_time: Optional[str] = None
     payment_gateway: Optional[str] = None
     # NEW: Added required fields
@@ -296,6 +311,8 @@ class OrderUpdate(SQLModel):
     billing_address: Optional[Dict[str, Any]] = None
     logistics_provider: Optional[int] = None
     delivery_fee: Optional[float] = None
+    original_delivery_fee: Optional[float] = None  # Original shipping before free shipping discount
+    free_shipping_source: Optional[str] = None  # FreeShippingSource: none, coupon, settings
     delivery_time: Optional[str] = None
     # NEW: Added tax and shipping fields
     tax_id: Optional[int] = None
@@ -369,6 +386,8 @@ class OrderRead(TimeStampReadModel):
     billing_address: Optional[Dict[str, Any]] = None
     logistics_provider: Optional[int] = None
     delivery_fee: Optional[float] = None
+    original_delivery_fee: Optional[float] = None  # Original shipping before free shipping discount
+    free_shipping_source: Optional[str] = None  # FreeShippingSource: none, coupon, settings
     delivery_time: Optional[str] = None
     # NEW: Added tax and shipping fields
     tax_id: Optional[int] = None

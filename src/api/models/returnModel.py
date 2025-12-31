@@ -148,6 +148,17 @@ class ReturnRequestCreate(SQLModel):
         return v
 
 
+class ReturnItemRead(TimeStampReadModel):
+    id: int
+    return_request_id: int
+    order_item_id: int
+    product_id: int
+    variation_option_id: Optional[int] = None
+    quantity: int
+    unit_price: float
+    refund_amount: float
+
+
 class ReturnRequestRead(TimeStampReadModel):
     id: int
     order_id: int
@@ -163,18 +174,7 @@ class ReturnRequestRead(TimeStampReadModel):
     transferred_at: Optional[datetime] = None
     admin_notes: Optional[str] = None
     rejected_reason: Optional[str] = None
-    items: List["ReturnItemRead"] = []
-
-
-class ReturnItemRead(TimeStampReadModel):
-    id: int
-    return_request_id: int
-    order_item_id: int
-    product_id: int
-    variation_option_id: Optional[int] = None
-    quantity: int
-    unit_price: float
-    refund_amount: float
+    items: List[ReturnItemRead] = []
 
 
 class ReturnRequestUpdate(SQLModel):

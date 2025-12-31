@@ -13,3 +13,4 @@ wheels/
 src/api/nul
 nul
 requirements.txt
+.claude/settings.local.json

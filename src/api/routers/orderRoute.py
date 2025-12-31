@@ -28,7 +28,8 @@ from src.api.models.order_model.orderModel import (
     OrderItemType,
     OrderProductCreate,
     OrderFromCartCreate,
-    FulfillmentUserInfo
+    FulfillmentUserInfo,
+    FreeShippingSource
 )
 from src.api.models.product_model.productsModel import Product, ProductRead, ProductType
 from src.api.models.product_model.variationOptionModel import VariationOption
@@ -42,6 +43,7 @@ from src.api.models.taxModel import Tax
 from src.api.models.shipping_model.shippingModel import Shipping
 from src.api.models.couponModel import Coupon, CouponType
 from src.api.models.addressModel import Address, AddressDetail, Location
+from src.api.models.settingsModel import Settings
 from src.api.core.dependencies import (
     GetSession,
     requirePermission,
@@ -428,19 +430,38 @@ def update_order_status_history(session, order_id: int, status_field: str):
     session.add(order_status)
 
 
-def validate_tax_shipping_coupon(session, tax_id: Optional[int], shipping_id: Optional[int], coupon_id: Optional[int], order_amount: float) -> tuple[bool, str, Dict[str, Any]]:
+def validate_tax_shipping_coupon(
+    session,
+    tax_id: Optional[int],
+    shipping_id: Optional[int],
+    coupon_id: Optional[int],
+    order_amount: float,
+    language: str = "en"
+) -> tuple[bool, str, Dict[str, Any]]:
     """
     Validate tax, shipping, and coupon with enhanced coupon validation
+    and settings-based free shipping support.
+
     Returns: (is_valid, error_message, calculation_data)
+
+    calculation_data includes:
+    - tax_rate, tax_amount
+    - shipping_amount (final amount after free shipping discount)
+    - original_shipping_amount (original shipping before discount)
+    - coupon_discount (discount amount from FIXED/PERCENTAGE coupons only)
+    - coupon_type
+    - free_shipping_source ('none', 'settings', 'coupon')
     """
     calculation_data = {
         'tax_rate': 0.0,
         'tax_amount': 0.0,
         'shipping_amount': 0.0,
+        'original_shipping_amount': 0.0,
         'coupon_discount': 0.0,
-        'coupon_type': None
+        'coupon_type': None,
+        'free_shipping_source': FreeShippingSource.NONE.value
     }
-    
+
     # Validate tax
     if tax_id:
         tax = session.get(Tax, tax_id)
@@ -449,42 +470,116 @@ def validate_tax_shipping_coupon(session, tax_id: Optional[int], shipping_id: Op
         if not tax.is_global and not tax.is_active:
             return False, "Tax is not active", calculation_data
         calculation_data['tax_rate'] = tax.rate
-    
-    # Validate shipping
+
+    # Validate shipping and store original amount
+    original_shipping = 0.0
     if shipping_id:
         shipping = session.get(Shipping, shipping_id)
         if not shipping:
             return False, "Shipping not found", calculation_data
         if not shipping.is_active:
             return False, "Shipping is not active", calculation_data
-        calculation_data['shipping_amount'] = shipping.amount
-    
+        original_shipping = shipping.amount
+        calculation_data['shipping_amount'] = original_shipping
+        calculation_data['original_shipping_amount'] = original_shipping
+
+    # Fetch settings for free shipping configuration
+    settings_statement = select(Settings).where(Settings.language == language)
+    settings_result = session.exec(settings_statement).first()
+
+    # Handle Row object vs Settings model
+    settings = None
+    if settings_result:
+        if hasattr(settings_result, 'options'):
+            settings = settings_result
+        elif hasattr(settings_result, '_mapping'):
+            # Extract Settings from Row object
+            mapping = dict(settings_result._mapping)
+            settings = mapping.get('Settings') or mapping.get(Settings)
+
+    # Fallback to English settings if language-specific not found
+    if not settings and language != "en":
+        settings_statement = select(Settings).where(Settings.language == "en")
+        settings_result = session.exec(settings_statement).first()
+        if settings_result:
+            if hasattr(settings_result, 'options'):
+                settings = settings_result
+            elif hasattr(settings_result, '_mapping'):
+                mapping = dict(settings_result._mapping)
+                settings = mapping.get('Settings') or mapping.get(Settings)
+
+    # Get free shipping settings (with defaults)
+    free_shipping_enabled = False
+    free_shipping_amount_cap = 0
+    minimum_order_amount = 0
+
+    options = None
+    if settings:
+        if hasattr(settings, 'options'):
+            options = settings.options
+        elif isinstance(settings, dict):
+            options = settings.get('options')
+
+    if options:
+        free_shipping_enabled = options.get('freeShipping', False)
+        # Only get cap and minimum amount if free shipping is enabled
+        if free_shipping_enabled:
+            # Handle string values from settings (e.g., "3000" instead of 3000)
+            try:
+                free_shipping_amount_cap = float(options.get('freeShippingAmount', 0) or 0)
+            except (ValueError, TypeError):
+                free_shipping_amount_cap = 0
+            try:
+                minimum_order_amount = float(options.get('minimumOrderAmount', 0) or 0)
+            except (ValueError, TypeError):
+                minimum_order_amount = 0
+
+    # Check minimum order amount requirement ONLY if free shipping is enabled
+    if free_shipping_enabled and minimum_order_amount > 0 and order_amount < minimum_order_amount:
+        return False, f"Minimum order amount is {minimum_order_amount}", calculation_data
+
+    # Apply settings-based free shipping (with CAP) if enabled
+    settings_free_shipping_applied = False
+    if free_shipping_enabled and original_shipping > 0 and free_shipping_amount_cap > 0:
+        # Apply capped shipping discount
+        shipping_discount = min(original_shipping, free_shipping_amount_cap)
+        calculation_data['shipping_amount'] = original_shipping - shipping_discount
+        calculation_data['free_shipping_source'] = FreeShippingSource.SETTINGS.value
+        settings_free_shipping_applied = True
+
     # Validate coupon with enhanced checks
     if coupon_id:
         coupon = session.get(Coupon, coupon_id)
         if not coupon:
             return False, "Coupon not found", calculation_data
-        
+
         # Check if coupon is active
         now = datetime.now()
         if now < coupon.active_from or now > coupon.expire_at:
             return False, "Coupon is not active", calculation_data
-        
+
         # Check minimum cart amount
         if order_amount < coupon.minimum_cart_amount:
             return False, f"Order amount must be at least {coupon.minimum_cart_amount} to use this coupon", calculation_data
-        
+
         calculation_data['coupon_type'] = coupon.type
-        
+
         # Calculate coupon discount based on type
         if coupon.type == CouponType.FIXED:
             calculation_data['coupon_discount'] = min(coupon.amount, order_amount)
         elif coupon.type == CouponType.PERCENTAGE:
             calculation_data['coupon_discount'] = order_amount * (coupon.amount / 100)
         elif coupon.type == CouponType.FREE_SHIPPING:
-            calculation_data['coupon_discount'] = calculation_data['shipping_amount']
-            calculation_data['shipping_amount'] = 0.0
-    
+            # Only apply coupon free shipping if settings-based free shipping wasn't already applied
+            if not settings_free_shipping_applied and original_shipping > 0:
+                # Apply capped shipping discount (respects freeShippingAmount cap)
+                max_discount = free_shipping_amount_cap if free_shipping_amount_cap > 0 else original_shipping
+                shipping_discount = min(original_shipping, max_discount)
+                calculation_data['shipping_amount'] = original_shipping - shipping_discount
+                calculation_data['free_shipping_source'] = FreeShippingSource.COUPON.value
+            # Note: coupon_discount stays 0.0 for FREE_SHIPPING coupons
+            # The shipping discount is tracked via free_shipping_source field
+
     return True, "Validation successful", calculation_data
 
 
@@ -608,9 +703,9 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
     if validation_errors:
         return api_response(400, "Product validation failed", {"errors": validation_errors})
 
-    # NEW: Validate tax, shipping, and coupon
+    # NEW: Validate tax, shipping, and coupon (with settings-based free shipping)
     is_valid, error_msg, calc_data = validate_tax_shipping_coupon(
-        session, request.tax_id, request.shipping_id, request.coupon_id, subtotal_amount
+        session, request.tax_id, request.shipping_id, request.coupon_id, subtotal_amount, "en"
     )
     if not is_valid:
         return api_response(400, error_msg)
@@ -618,7 +713,9 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
     # NEW: Calculate final amounts with tax, shipping, and coupon
     tax_amount = round(subtotal_amount * (calc_data['tax_rate'] / 100))
     shipping_amount = round(calc_data['shipping_amount'])
+    original_shipping_amount = round(calc_data['original_shipping_amount'])
     coupon_discount = round(calc_data['coupon_discount'])
+    free_shipping_source = calc_data['free_shipping_source']
 
     # Round subtotal and product discount
     subtotal_amount = round(subtotal_amount)
@@ -653,6 +750,8 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         shipping_id=request.shipping_id,
         coupon_id=request.coupon_id,
         delivery_fee=shipping_amount,
+        original_delivery_fee=original_shipping_amount,  # NEW: Original shipping before free shipping
+        free_shipping_source=free_shipping_source,  # NEW: Track source of free shipping
         order_status="order-pending",
         payment_status="payment-cash-on-delivery",
         language="en",
@@ -1198,9 +1297,9 @@ def create_order_from_cart(
         Print(f"❌ Validation errors: {validation_errors}")
         return api_response(400, "Cart validation failed", {"errors": validation_errors})
 
-    # ✅ 6. Validate tax, shipping, and coupon
+    # ✅ 6. Validate tax, shipping, and coupon (with settings-based free shipping)
     is_valid, error_msg, calc_data = validate_tax_shipping_coupon(
-        session, request.tax_id, request.shipping_id, request.coupon_id, subtotal_amount
+        session, request.tax_id, request.shipping_id, request.coupon_id, subtotal_amount, "en"
     )
     if not is_valid:
         return api_response(400, error_msg)
@@ -1208,7 +1307,9 @@ def create_order_from_cart(
     # ✅ 7. Calculate final amounts with tax, shipping, and coupon (rounded to whole numbers)
     tax_amount = round(subtotal_amount * (calc_data['tax_rate'] / 100))
     shipping_amount = round(calc_data['shipping_amount'])
+    original_shipping_amount = round(calc_data['original_shipping_amount'])
     coupon_discount = round(calc_data['coupon_discount'])
+    free_shipping_source = calc_data['free_shipping_source']
 
     # Round subtotal and product discount
     subtotal_amount = round(subtotal_amount)
@@ -1244,14 +1345,16 @@ def create_order_from_cart(
         shipping_id=request.shipping_id,
         coupon_id=request.coupon_id,
         delivery_fee=shipping_amount,
+        original_delivery_fee=original_shipping_amount,  # NEW: Original shipping before free shipping
+        free_shipping_source=free_shipping_source,  # NEW: Track source of free shipping
         order_status=OrderStatusEnum.PENDING.value,
         payment_status=PaymentStatusEnum.PENDING.value,
         language="en",
     )
-    
+
     session.add(order)
     session.flush()
-    
+
     # ✅ 9. Create order products with snapshots and commissions
     total_admin_commission = Decimal("0.00")
     created_order_products = []
@@ -1515,9 +1618,9 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
     if validation_errors:
         return api_response(400, "Product validation failed", {"errors": validation_errors})
 
-    # NEW: Validate tax, shipping, and coupon
+    # NEW: Validate tax, shipping, and coupon (with settings-based free shipping)
     is_valid, error_msg, calc_data = validate_tax_shipping_coupon(
-        session, request.tax_id, request.shipping_id, request.coupon_id, subtotal_amount
+        session, request.tax_id, request.shipping_id, request.coupon_id, subtotal_amount, "en"
     )
     if not is_valid:
         return api_response(400, error_msg)
@@ -1525,7 +1628,9 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
     # NEW: Calculate final amounts with tax, shipping, and coupon (rounded to whole numbers)
     tax_amount = round(subtotal_amount * (calc_data['tax_rate'] / 100))
     shipping_amount = round(calc_data['shipping_amount'])
+    original_shipping_amount = round(calc_data['original_shipping_amount'])
     coupon_discount = round(calc_data['coupon_discount'])
+    free_shipping_source = calc_data['free_shipping_source']
 
     # Round subtotal and product discount
     subtotal_amount = round(subtotal_amount)
@@ -1556,6 +1661,8 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
         billing_address=request.billing_address,
         logistics_provider=request.logistics_provider,
         delivery_fee=shipping_amount,
+        original_delivery_fee=original_shipping_amount,  # NEW: Original shipping before free shipping
+        free_shipping_source=free_shipping_source,  # NEW: Track source of free shipping
         delivery_time=request.delivery_time,
         # NEW: Add tax_id, shipping_id, coupon_id
         tax_id=request.tax_id,

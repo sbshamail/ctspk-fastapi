@@ -65,6 +65,8 @@ from src.api.routers import (
     contactusRoute,
     # notification
     notificationRoute,
+    # payment
+    paymentRoute,
 )
 
 
@@ -72,7 +74,7 @@ from src.api.routers import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- Runs once on startup ---
-    print("🟢 Application starting up...")
+    print("[+] Application starting up...")
 
     # Start cron jobs
     try:
@@ -80,12 +82,12 @@ async def lifespan(app: FastAPI):
 
         start_all_cron_jobs()
     except Exception as e:
-        print(f"⚠️  Warning: Could not start cron jobs: {e}")
+        print(f"[!] Warning: Could not start cron jobs: {e}")
 
     yield  # 👈 after this, FastAPI starts handling requests
 
     # --- Runs once on shutdown ---
-    print("🔴 Application shutting down...")
+    print("[-] Application shutting down...")
 
     # Stop cron jobs
     try:
@@ -93,7 +95,7 @@ async def lifespan(app: FastAPI):
 
         stop_all_cron_jobs()
     except Exception as e:
-        print(f"⚠️  Warning: Could not stop cron jobs: {e}")
+        print(f"[!] Warning: Could not stop cron jobs: {e}")
 
 
 # Initialize the FastAPI app with the custom lifespan
@@ -112,6 +114,8 @@ app.add_middleware(
         "https://front.ghertak.com",
         "http://front.ghertak.com",
         "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
         "http://localhost:3001",
         "https://shop.ghertak.com",
         "https://admin.ghertak.com",
@@ -184,3 +188,5 @@ app.include_router(settings.router)
 app.include_router(contactusRoute.router)
 # notification
 app.include_router(notificationRoute.router)
+# payment
+app.include_router(paymentRoute.router)
