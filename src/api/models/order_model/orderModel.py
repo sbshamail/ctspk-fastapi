@@ -33,7 +33,7 @@ if TYPE_CHECKING:
         Coupon
     )
     from src.api.models.orderReviewModel import OrderReview
-    from src.api.models.payment_model.paymentTransactionModel import PaymentTransaction
+    # from src.api.models.payment_model.paymentTransactionModel import PaymentTransaction  # commented out - not working on server
 
 
 class OrderStatusEnum(str, PyEnum):
@@ -96,6 +96,7 @@ class Order(TimeStampedModel, table=True):
     coupon_id: Optional[int] = Field(default=None, foreign_key="coupons.id")
     discount: Optional[float] = Field(default=None)  # Product discount total
     coupon_discount: Optional[float] = Field(default=None)  # NEW: Coupon discount amount
+    wallet_amount_used: Optional[float] = Field(default=0.0)  # Wallet amount used for this order
     payment_gateway: Optional[str] = Field(default=None, max_length=191)
     shipping_address: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
     billing_address: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
@@ -151,10 +152,10 @@ class Order(TimeStampedModel, table=True):
         back_populates="order",
         sa_relationship_kwargs={"foreign_keys": "[OrderReview.order_id]"}
     )
-    # Payment transactions relationship
-    payment_transactions: List["PaymentTransaction"] = Relationship(
-        back_populates="order"
-    )
+    # Payment transactions relationship - commented out (not working on server)
+    # payment_transactions: List["PaymentTransaction"] = Relationship(
+    #     back_populates="order"
+    # )
 
 class OrderProduct(TimeStampedModel, table=True):
     __tablename__: Literal["order_product"] = "order_product"
@@ -256,6 +257,9 @@ class OrderCartCreate(SQLModel):
     tax_id: Optional[int] = None
     shipping_id: Optional[int] = None
     coupon_id: Optional[int] = None
+    # Wallet payment options (optional, only for logged-in users)
+    use_wallet: Optional[bool] = False  # Whether to use wallet balance for payment
+    wallet_amount: Optional[float] = None  # Amount to deduct from wallet (None = use max available)
 
 # For /create-from-cart route - gets cart items from cart table, no cart in request
 class OrderFromCartCreate(SQLModel):
@@ -269,6 +273,9 @@ class OrderFromCartCreate(SQLModel):
     customer_contact: Optional[str] = None
     customer_id: Optional[int] = None
     delivery_time: Optional[str] = None
+    # Wallet payment options (optional, only for logged-in users)
+    use_wallet: Optional[bool] = False  # Whether to use wallet balance for payment
+    wallet_amount: Optional[float] = None  # Amount to deduct from wallet (None = use max available)
 
 class OrderCreate(SQLModel):
     customer_id: Optional[int] = None
@@ -381,6 +388,7 @@ class OrderRead(TimeStampReadModel):
     coupon_id: Optional[int] = None
     discount: Optional[float] = None
     coupon_discount: Optional[float] = None  # NEW: Coupon discount field
+    wallet_amount_used: Optional[float] = None  # Wallet amount used for this order
     payment_gateway: Optional[str] = None
     shipping_address: Optional[Dict[str, Any]] = None
     billing_address: Optional[Dict[str, Any]] = None

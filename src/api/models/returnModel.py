@@ -102,7 +102,10 @@ class WalletTransaction(TimeStampedModel, table=True):
     
     # Reference to return request
     return_request_id: Optional[int] = Field(default=None, foreign_key="return_requests.id")
-    
+
+    # Reference to order (for wallet payment tracking)
+    order_id: Optional[int] = Field(default=None, foreign_key="orders.id", index=True)
+
     # Relationships
     #user: Optional["User"] = Relationship(back_populates="wallet_transactions")
     #return_request: Optional["ReturnRequest"] = Relationship(back_populates="wallet_transaction")
@@ -206,6 +209,7 @@ class WalletTransactionRead(TimeStampReadModel):
     transferred_to_bank: bool
     transferred_at: Optional[datetime] = None
     return_request_id: Optional[int] = None
+    order_id: Optional[int] = None  # Order that used this wallet payment
 
 
 class UserWalletRead(TimeStampReadModel):

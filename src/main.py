@@ -65,8 +65,8 @@ from src.api.routers import (
     contactusRoute,
     # notification
     notificationRoute,
-    # payment
-    paymentRoute,
+    # payment - commented out (not working on server)
+    # paymentRoute,
 )
 
 
@@ -188,5 +188,5 @@ app.include_router(settings.router)
 app.include_router(contactusRoute.router)
 # notification
 app.include_router(notificationRoute.router)
-# payment
-app.include_router(paymentRoute.router)
+# payment - commented out (not working on server)
+# app.include_router(paymentRoute.router)

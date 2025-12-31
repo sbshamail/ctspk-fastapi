@@ -1,2 +1,6 @@
 # Additional requirements for cron job functionality
 schedule==1.2.0
+
+# Additional packages installed in this session
+httpx>=0.24.0
+anyio>=3.7.1,<4.0.0

@@ -44,6 +44,7 @@ from src.api.models.shipping_model.shippingModel import Shipping
 from src.api.models.couponModel import Coupon, CouponType
 from src.api.models.addressModel import Address, AddressDetail, Location
 from src.api.models.settingsModel import Settings
+from src.api.models.returnModel import UserWallet, WalletTransaction
 from src.api.core.dependencies import (
     GetSession,
     requirePermission,
@@ -727,6 +728,32 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
     # Ensure total doesn't go below zero
     final_total = max(0, final_total)
 
+    # ✅ WALLET DEDUCTION: Process wallet payment if requested
+    wallet_amount_used = 0.0
+    paid_total = final_total  # Amount to be paid after wallet deduction
+
+    if user and request.use_wallet and final_total > 0:
+        # Get user's wallet
+        wallet = session.exec(
+            select(UserWallet).where(UserWallet.user_id == user["id"])
+        ).first()
+
+        if wallet and wallet.balance > 0:
+            # Calculate wallet amount to use
+            if request.wallet_amount is not None and request.wallet_amount > 0:
+                # Use specified amount (capped by balance and order total)
+                wallet_amount_used = min(request.wallet_amount, wallet.balance, final_total)
+            else:
+                # Use max available (capped by order total)
+                wallet_amount_used = min(wallet.balance, final_total)
+
+            wallet_amount_used = round(wallet_amount_used, 2)
+
+            if wallet_amount_used > 0:
+                # Calculate remaining amount to pay
+                paid_total = round(final_total - wallet_amount_used, 2)
+                paid_total = max(0, paid_total)
+
     # ✅ 5. Build order fields with NEW fields
     tracking_number = generate_tracking_number()
     order = Order(
@@ -738,9 +765,10 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         actual_amount=round(actual_amount),  # Sum of (price * quantity) without discount
         sales_tax=tax_amount,
         total=final_total,
-        paid_total=final_total,  # Set paid_total = total
+        paid_total=paid_total,  # Amount to pay after wallet deduction
         discount=total_product_discount,  # Total product discounts
         coupon_discount=coupon_discount,  # NEW: Coupon discount
+        wallet_amount_used=wallet_amount_used,  # NEW: Wallet amount used
         shipping_address=shipping_address,
         billing_address=shipping_address,  # same for now
         delivery_time=request.delivery_time,
@@ -877,6 +905,31 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         shipping_address=shipping_address,
         is_authenticated=user is not None
     )
+
+    # ✅ 8. Create wallet transaction and update balance if wallet was used
+    if wallet_amount_used > 0 and user:
+        # Get the wallet again to ensure we have latest data
+        wallet = session.exec(select(UserWallet).where(UserWallet.user_id == user["id"])).first()
+        if wallet:
+            # Calculate new balance
+            new_balance = round(wallet.balance - wallet_amount_used, 2)
+
+            # Create wallet transaction record
+            wallet_transaction = WalletTransaction(
+                user_id=user["id"],
+                amount=wallet_amount_used,
+                transaction_type="debit",
+                balance_after=new_balance,
+                description=f"Payment for order #{order.tracking_number}",
+                is_refund=False,
+                order_id=order.id
+            )
+            session.add(wallet_transaction)
+
+            # Update wallet balance
+            wallet.balance = new_balance
+            wallet.total_debited = round(wallet.total_debited + wallet_amount_used, 2)
+            session.add(wallet)
 
     try:
         session.commit()
@@ -1321,6 +1374,29 @@ def create_order_from_cart(
     # Ensure total doesn't go below zero
     final_total = max(0, final_total)
 
+    # ✅ 7.5. Calculate wallet deduction if requested
+    wallet_amount_used = 0.0
+    paid_total = final_total
+
+    if request.use_wallet and final_total > 0:
+        # Get user's wallet
+        wallet = session.exec(select(UserWallet).where(UserWallet.user_id == user_id)).first()
+        if wallet and wallet.balance > 0:
+            # Determine amount to use from wallet
+            if request.wallet_amount is not None and request.wallet_amount > 0:
+                # Use specified amount (capped by balance and total)
+                wallet_amount_used = min(request.wallet_amount, wallet.balance, final_total)
+            else:
+                # Use entire wallet balance (capped by total)
+                wallet_amount_used = min(wallet.balance, final_total)
+
+            wallet_amount_used = round(wallet_amount_used, 2)
+
+            if wallet_amount_used > 0:
+                # Calculate remaining amount to pay
+                paid_total = round(final_total - wallet_amount_used, 2)
+                paid_total = max(0, paid_total)
+
     # ✅ 8. Create order with enhanced fields
     tracking_number = generate_tracking_number()
 
@@ -1333,7 +1409,8 @@ def create_order_from_cart(
         actual_amount=round(actual_amount),  # Sum of (price * quantity) without discount
         sales_tax=tax_amount,
         total=final_total,
-        paid_total=final_total,  # Set paid_total = total
+        paid_total=paid_total,  # Amount to pay after wallet deduction
+        wallet_amount_used=wallet_amount_used,  # NEW: Wallet amount used
         discount=total_product_discount,  # Total product discounts
         coupon_discount=coupon_discount,  # Coupon discount
         shipping_address=shipping_address,
@@ -1438,7 +1515,32 @@ def create_order_from_cart(
             is_authenticated=True  # This endpoint requires authentication (requireSignin)
         )
 
-        # Commit all changes (order creation + cart clearance)
+        # ✅ Create wallet transaction and update balance if wallet was used
+        if wallet_amount_used > 0:
+            # Get the wallet again to ensure we have latest data
+            wallet = session.exec(select(UserWallet).where(UserWallet.user_id == user_id)).first()
+            if wallet:
+                # Calculate new balance
+                new_balance = round(wallet.balance - wallet_amount_used, 2)
+
+                # Create wallet transaction record
+                wallet_transaction = WalletTransaction(
+                    user_id=user_id,
+                    amount=wallet_amount_used,
+                    transaction_type="debit",
+                    balance_after=new_balance,
+                    description=f"Payment for order #{order.tracking_number}",
+                    is_refund=False,
+                    order_id=order.id
+                )
+                session.add(wallet_transaction)
+
+                # Update wallet balance
+                wallet.balance = new_balance
+                wallet.total_debited = round(wallet.total_debited + wallet_amount_used, 2)
+                session.add(wallet)
+
+        # Commit all changes (order creation + cart clearance + wallet transaction)
         session.commit()
 
         Print(f"✅ Successfully cleared {len(cart_items_to_delete)} items from cart")
