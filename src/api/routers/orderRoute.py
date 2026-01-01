@@ -2,9 +2,9 @@
 import ast
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Query, HTTPException
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy import update as sql_update
-from sqlmodel import SQLModel, Field,Relationship
+from sqlmodel import SQLModel, Field, Relationship
 from src.api.models.cart_model.cartModel import Cart
 from src.api.core.utility import Print, uniqueSlugify
 from src.api.core.operation import listop, updateOp
@@ -734,9 +734,9 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
 
     if user and request.use_wallet and final_total > 0:
         # Get user's wallet
-        wallet = session.exec(
+        wallet = session.execute(
             select(UserWallet).where(UserWallet.user_id == user["id"])
-        ).first()
+        ).scalars().first()
 
         if wallet and wallet.balance > 0:
             # Calculate wallet amount to use
@@ -909,7 +909,7 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
     # ✅ 8. Create wallet transaction and update balance if wallet was used
     if wallet_amount_used > 0 and user:
         # Get the wallet again to ensure we have latest data
-        wallet = session.exec(select(UserWallet).where(UserWallet.user_id == user["id"])).first()
+        wallet = session.execute(select(UserWallet).where(UserWallet.user_id == user["id"])).scalars().first()
         if wallet:
             # Calculate new balance
             new_balance = round(wallet.balance - wallet_amount_used, 2)
@@ -1380,7 +1380,7 @@ def create_order_from_cart(
 
     if request.use_wallet and final_total > 0:
         # Get user's wallet
-        wallet = session.exec(select(UserWallet).where(UserWallet.user_id == user_id)).first()
+        wallet = session.execute(select(UserWallet).where(UserWallet.user_id == user_id)).scalars().first()
         if wallet and wallet.balance > 0:
             # Determine amount to use from wallet
             if request.wallet_amount is not None and request.wallet_amount > 0:
@@ -1518,7 +1518,7 @@ def create_order_from_cart(
         # ✅ Create wallet transaction and update balance if wallet was used
         if wallet_amount_used > 0:
             # Get the wallet again to ensure we have latest data
-            wallet = session.exec(select(UserWallet).where(UserWallet.user_id == user_id)).first()
+            wallet = session.execute(select(UserWallet).where(UserWallet.user_id == user_id)).scalars().first()
             if wallet:
                 # Calculate new balance
                 new_balance = round(wallet.balance - wallet_amount_used, 2)

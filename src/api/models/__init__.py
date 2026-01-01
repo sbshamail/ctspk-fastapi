@@ -63,6 +63,8 @@ from .orderReviewModel import OrderReview
 from .faqModel import FAQ
 # Return Product
 from .returnModel import ReturnItem,ReturnRequest,WalletTransaction,UserWallet
+# Payment Transaction
+from .payment_model.paymentTransactionModel import PaymentTransaction
 # # attribute
 from .product_model.importHistoryModel import ProductImportHistory
 from .product_model.productPurchaseModel import ProductPurchase
@@ -101,6 +103,7 @@ __all__ = [
     "ReturnRequest",
     "WalletTransaction",
     "UserWallet",
+    "PaymentTransaction",
     #"TransactionLog",
     #"Settings",
     #"Tax",

@@ -3,6 +3,8 @@ from fastapi import FastAPI
 from sqlmodel import SQLModel
 from fastapi.middleware.cors import CORSMiddleware
 from src.api.core.middleware.error_handling import register_exception_handlers
+# Import all models to ensure SQLAlchemy mapper is fully configured
+from src.api import models
 from src.api.routers.attribute import (
     attributeRoute,
     attributeValueRoute,
@@ -66,7 +68,7 @@ from src.api.routers import (
     # notification
     notificationRoute,
     # payment - commented out (not working on server)
-    # paymentRoute,
+    paymentRoute,
 )
 
 
@@ -188,5 +190,5 @@ app.include_router(settings.router)
 app.include_router(contactusRoute.router)
 # notification
 app.include_router(notificationRoute.router)
-# payment - commented out (not working on server)
-# app.include_router(paymentRoute.router)
+# payment 
+app.include_router(paymentRoute.router)

@@ -33,7 +33,7 @@ if TYPE_CHECKING:
         Coupon
     )
     from src.api.models.orderReviewModel import OrderReview
-    # from src.api.models.payment_model.paymentTransactionModel import PaymentTransaction  # commented out - not working on server
+    from src.api.models.payment_model.paymentTransactionModel import PaymentTransaction  # commented out - not working on server
 
 
 class OrderStatusEnum(str, PyEnum):
@@ -152,10 +152,10 @@ class Order(TimeStampedModel, table=True):
         back_populates="order",
         sa_relationship_kwargs={"foreign_keys": "[OrderReview.order_id]"}
     )
-    # Payment transactions relationship - commented out (not working on server)
-    # payment_transactions: List["PaymentTransaction"] = Relationship(
-    #     back_populates="order"
-    # )
+    # Payment transactions relationship
+    payment_transactions: List["PaymentTransaction"] = Relationship(
+         back_populates="order"
+     )
 
 class OrderProduct(TimeStampedModel, table=True):
     __tablename__: Literal["order_product"] = "order_product"
