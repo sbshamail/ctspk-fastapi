@@ -120,6 +120,9 @@ class Order(TimeStampedModel, table=True):
     # Order review reference
     order_review_id: Optional[int] = Field(default=None, foreign_key="order_reviews.id")
 
+    # Payment response from payment gateway
+    payment_response: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+
     # relationships
     customer: Optional["User"] = Relationship(
         back_populates="customer_orders",
@@ -260,6 +263,8 @@ class OrderCartCreate(SQLModel):
     # Wallet payment options (optional, only for logged-in users)
     use_wallet: Optional[bool] = False  # Whether to use wallet balance for payment
     wallet_amount: Optional[float] = None  # Amount to deduct from wallet (None = use max available)
+    # Payment response from payment gateway
+    payment_response: Optional[Dict[str, Any]] = None
 
 # For /create-from-cart route - gets cart items from cart table, no cart in request
 class OrderFromCartCreate(SQLModel):
@@ -276,6 +281,8 @@ class OrderFromCartCreate(SQLModel):
     # Wallet payment options (optional, only for logged-in users)
     use_wallet: Optional[bool] = False  # Whether to use wallet balance for payment
     wallet_amount: Optional[float] = None  # Amount to deduct from wallet (None = use max available)
+    # Payment response from payment gateway (null for cash on delivery)
+    payment_response: Optional[Dict[str, Any]] = None
 
 class OrderCreate(SQLModel):
     customer_id: Optional[int] = None
@@ -410,6 +417,7 @@ class OrderRead(TimeStampReadModel):
     deliver_image: Optional[List[Dict[str, Any]]] = None
     completed_image: Optional[List[Dict[str, Any]]] = None
     order_review_id:  Optional[int] = None
+    payment_response: Optional[Dict[str, Any]] = None
 
 
 class OrderStatusRead(TimeStampReadModel):

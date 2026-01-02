@@ -8,7 +8,7 @@ from src.api.core.dependencies import GetSession, requireSignin, isAuthenticated
 from src.api.core.payment.payment_helper import PaymentHelper
 from src.api.core.payment.gateway_factory import PaymentGatewayFactory
 from src.api.models.order_model.orderModel import Order
-from src.api.models.payment_model.paymentTransactionModel import RefundRequest
+from src.api.models.payment_model.paymentTransactionModel import RefundRequest, PayFastCreatePaymentRequest
 from src.config import DOMAIN
 
 router = APIRouter(prefix="/payment", tags=["Payment"])
@@ -85,6 +85,144 @@ def initiate_payment(
         return api_response(200, "Payment initiated", result)
     else:
         return api_response(400, result.get("error", "Payment initiation failed"), result)
+
+
+# ============================================
+# PAYFAST DIRECT PAYMENT
+# ============================================
+
+
+@router.post("/payfast/create-payment")
+def payfast_create_payment(
+    request: PayFastCreatePaymentRequest,
+):
+    """
+    Generate PayFast payment UUID for onsite payment modal.
+    Calls PayFast API to get ACCESS_TOKEN for embedded checkout.
+    """
+    import httpx
+    import hashlib
+    import hmac
+    from datetime import datetime
+    from src.config import (
+        PAYFAST_MERCHANT_ID,
+        PAYFAST_SECURED_KEY,
+        PAYFAST_BASE_URL,
+        PAYFAST_RETURN_URL,
+        PAYFAST_CANCEL_URL,
+    )
+
+    if not all([PAYFAST_MERCHANT_ID, PAYFAST_SECURED_KEY, PAYFAST_BASE_URL]):
+        return api_response(500, "PayFast gateway not configured")
+
+    # Build request data for PayFast (without SIGNATURE initially)
+    customer_name = f"{request.customerFirstName} {request.customerLastName}"
+
+    request_data = {
+        "MERCHANT_ID": PAYFAST_MERCHANT_ID,
+        "MERCHANT_NAME": "CTSPK Store",
+        "TOKEN": request.orderId,
+        "PROCCODE": "00",
+        "TXNAMT": str(int(request.amount * 100)),  # Amount in paisa
+        "CUSTOMER_MOBILE_NO": request.customerPhone or "",
+        "CUSTOMER_EMAIL_ADDRESS": request.customerEmail or "",
+        "VERSION": "MERCHANT-CART-0.1",
+        "TXNDESC": request.itemDescription or request.itemName,
+        "SUCCESS_URL": PAYFAST_RETURN_URL,
+        "FAILURE_URL": PAYFAST_CANCEL_URL,
+        "BASKET_ID": request.orderId,
+        "ORDER_DATE": datetime.now().strftime("%Y%m%d%H%M%S"),
+        "CHECKOUT_URL": f"{PAYFAST_RETURN_URL}?token={request.orderId}",
+    }
+
+    # Generate HMAC-SHA256 signature (same as existing PayFast gateway)
+    sorted_data = sorted(request_data.items())
+    param_string = "&".join([f"{k}={v}" for k, v in sorted_data if v])
+    signature = hmac.new(
+        PAYFAST_SECURED_KEY.encode("utf-8"),
+        param_string.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    request_data["SIGNATURE"] = signature
+
+    # Call PayFast API to get ACCESS_TOKEN for onsite checkout
+    try:
+        # Use GetToken endpoint for onsite modal
+        api_url = f"{PAYFAST_BASE_URL}/Ecommerce/api/Transaction/GetAccessToken"
+
+        with httpx.Client(timeout=30.0, verify=False) as client:
+            # Try JSON first
+            response = client.post(
+                api_url,
+                json=request_data,
+                headers={"Content-Type": "application/json"}
+            )
+
+            # If JSON fails with 204/404, try form-encoded
+            if response.status_code in [204, 404, 405]:
+                api_url = f"{PAYFAST_BASE_URL}/Ecommerce/api/Transaction/PostTransaction"
+                response = client.post(
+                    api_url,
+                    data=request_data,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                )
+
+            # Debug: log raw response
+            print(f"PayFast Response Status: {response.status_code}")
+            print(f"PayFast Response Text: {response.text}")
+
+            # Try to parse JSON response
+            try:
+                response_data = response.json()
+            except Exception:
+                # If not JSON, return raw response for debugging
+                from fastapi.responses import JSONResponse
+                return JSONResponse(status_code=200, content={
+                    "success": 0,
+                    "detail": "PayFast returned non-JSON response",
+                    "data": {
+                        "status_code": response.status_code,
+                        "raw_response": response.text[:500] if response.text else "empty",
+                        "request_url": api_url,
+                        "request_data": request_data,
+                    }
+                })
+
+        # Check if we got ACCESS_TOKEN (try different key names)
+        access_token = (
+            response_data.get("ACCESS_TOKEN") or
+            response_data.get("access_token") or
+            response_data.get("Token") or
+            response_data.get("token") or
+            response_data.get("CHECKOUT_TOKEN")
+        )
+
+        if access_token:
+            return api_response(200, "Payment token generated", {
+                "accessToken": access_token,
+                "transactionId": request.orderId,
+                "merchantId": PAYFAST_MERCHANT_ID,
+                "amount": float(request.amount),
+                "response": response_data,
+            })
+        else:
+            # Return full response for debugging
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=200, content={
+                "success": 0,
+                "detail": response_data.get("MESSAGE") or response_data.get("message") or response_data.get("errorDescription") or "Failed to generate payment token",
+                "data": {
+                    "response": response_data,
+                    "request_url": api_url,
+                    "signature_string": param_string,
+                    "request_data": {k: v for k, v in request_data.items() if k != "SIGNATURE"},
+                }
+            })
+
+    except httpx.RequestError as e:
+        return api_response(500, f"PayFast API request failed: {str(e)}")
+    except Exception as e:
+        return api_response(500, f"Payment creation failed: {str(e)}")
 
 
 # ============================================

@@ -151,3 +151,15 @@ class RefundRequest(SQLModel):
     transaction_id: str
     amount: Optional[Decimal] = None  # None means full refund
     reason: Optional[str] = None
+
+
+class PayFastCreatePaymentRequest(SQLModel):
+    """Schema for PayFast create payment request"""
+    orderId: str
+    amount: Decimal
+    itemName: str
+    itemDescription: Optional[str] = None
+    customerEmail: str
+    customerFirstName: str
+    customerLastName: str
+    customerPhone: str

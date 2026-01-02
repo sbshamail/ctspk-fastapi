@@ -783,6 +783,7 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         order_status="order-pending",
         payment_status="payment-cash-on-delivery",
         language="en",
+        payment_response=request.payment_response,  # Payment gateway response as JSON
     )
 
     session.add(order)
@@ -1427,6 +1428,7 @@ def create_order_from_cart(
         order_status=OrderStatusEnum.PENDING.value,
         payment_status=PaymentStatusEnum.PENDING.value,
         language="en",
+        payment_response=request.payment_response,  # Payment gateway response (null for COD)
     )
 
     session.add(order)
