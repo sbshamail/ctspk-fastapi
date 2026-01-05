@@ -102,7 +102,6 @@ def payfast_create_payment(
     """
     import httpx
     import hashlib
-    import hmac
     from datetime import datetime
     from src.config import (
         PAYFAST_MERCHANT_ID,
@@ -115,15 +114,16 @@ def payfast_create_payment(
     if not all([PAYFAST_MERCHANT_ID, PAYFAST_SECURED_KEY, PAYFAST_BASE_URL]):
         return api_response(500, "PayFast gateway not configured")
 
-    # Build request data for PayFast (without SIGNATURE initially)
+    # Build request data for PayFast
     customer_name = f"{request.customerFirstName} {request.customerLastName}"
+    amount_in_paisa = str(int(request.amount * 100))
 
     request_data = {
         "MERCHANT_ID": PAYFAST_MERCHANT_ID,
         "MERCHANT_NAME": "CTSPK Store",
         "TOKEN": request.orderId,
         "PROCCODE": "00",
-        "TXNAMT": str(int(request.amount * 100)),  # Amount in paisa
+        "TXNAMT": amount_in_paisa,
         "CUSTOMER_MOBILE_NO": request.customerPhone or "",
         "CUSTOMER_EMAIL_ADDRESS": request.customerEmail or "",
         "VERSION": "MERCHANT-CART-0.1",
@@ -133,17 +133,8 @@ def payfast_create_payment(
         "BASKET_ID": request.orderId,
         "ORDER_DATE": datetime.now().strftime("%Y%m%d%H%M%S"),
         "CHECKOUT_URL": f"{PAYFAST_RETURN_URL}?token={request.orderId}",
+        "SECURED_KEY": PAYFAST_SECURED_KEY,
     }
-
-    # Generate HMAC-SHA256 signature (same as existing PayFast gateway)
-    sorted_data = sorted(request_data.items())
-    param_string = "&".join([f"{k}={v}" for k, v in sorted_data if v])
-    signature = hmac.new(
-        PAYFAST_SECURED_KEY.encode("utf-8"),
-        param_string.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-    request_data["SIGNATURE"] = signature
 
     # Call PayFast API to get ACCESS_TOKEN for onsite checkout
     try:
@@ -184,7 +175,7 @@ def payfast_create_payment(
                         "status_code": response.status_code,
                         "raw_response": response.text[:500] if response.text else "empty",
                         "request_url": api_url,
-                        "request_data": request_data,
+                        "request_data": {k: v for k, v in request_data.items() if k != "SECURED_KEY"},
                     }
                 })
 
@@ -214,8 +205,7 @@ def payfast_create_payment(
                 "data": {
                     "response": response_data,
                     "request_url": api_url,
-                    "signature_string": param_string,
-                    "request_data": {k: v for k, v in request_data.items() if k != "SIGNATURE"},
+                    "request_data": {k: v for k, v in request_data.items() if k != "SECURED_KEY"},
                 }
             })
 

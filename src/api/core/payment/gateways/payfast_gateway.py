@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional, Dict, Any, Tuple
+from urllib.parse import quote
 import httpx
 
 from src.config import (
@@ -48,10 +49,18 @@ class PayFastGateway(BasePaymentGateway):
             self.return_url,
         ])
 
-    def generate_signature(self, data: Dict[str, Any]) -> str:
-        """Generate HMAC-SHA256 signature for PayFast"""
+    def generate_signature(self, data: Dict[str, Any], url_encode: bool = False) -> str:
+        """Generate HMAC-SHA256 signature for PayFast
+
+        Args:
+            data: Dictionary of request parameters
+            url_encode: Whether to URL-encode values (required for GetAccessToken API)
+        """
         sorted_data = sorted(data.items())
-        param_string = "&".join([f"{k}={v}" for k, v in sorted_data if v])
+        if url_encode:
+            param_string = "&".join([f"{k}={quote(str(v), safe='')}" for k, v in sorted_data if v])
+        else:
+            param_string = "&".join([f"{k}={v}" for k, v in sorted_data if v])
 
         signature = hmac.new(
             self.secured_key.encode("utf-8"),
