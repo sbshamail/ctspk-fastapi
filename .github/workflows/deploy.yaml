@@ -14,6 +14,7 @@ jobs:
 
       - name: Sync dependencies
         run: |
+          export PATH="$HOME/.local/bin:$PATH"
           [ -d .venv ] || uv venv
           uv sync --frozen
 
