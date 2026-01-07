@@ -398,3 +398,116 @@ def get_order_transactions(
 
     transactions = PaymentHelper.get_order_transactions(session, order_id)
     return api_response(200, "Transactions retrieved", transactions)
+
+
+# ============================================
+# PAYFAST IPN (Instant Payment Notification)
+# ============================================
+
+
+@router.post("/payfast/ipn")
+async def payfast_ipn(
+    session: GetSession,
+    request: Request,
+):
+    """
+    Handle PayFast IPN (Instant Payment Notification).
+    Updates order payment status based on the transaction result.
+
+    PayFast Response Codes:
+    - 00: Success
+    - Other codes: Failed/Declined
+    """
+    from sqlmodel import select
+    from src.api.models.order_model.orderModel import PaymentStatusEnum
+
+    # Parse the IPN data
+    content_type = request.headers.get("content-type", "")
+
+    if "application/json" in content_type:
+        ipn_data = await request.json()
+    else:
+        form = await request.form()
+        ipn_data = dict(form)
+
+    # Log the IPN data for debugging
+    print(f"PayFast IPN received: {ipn_data}")
+
+    # Extract key fields from PayFast IPN
+    # TOKEN/BASKET_ID contains the order tracking number
+    order_token = (
+        ipn_data.get("TOKEN") or
+        ipn_data.get("token") or
+        ipn_data.get("BASKET_ID") or
+        ipn_data.get("basket_id") or
+        ipn_data.get("pp_TxnRefNo") or
+        ipn_data.get("orderRefNumber")
+    )
+
+    # Response code determines success/failure
+    response_code = (
+        ipn_data.get("RESPONSE_CODE") or
+        ipn_data.get("response_code") or
+        ipn_data.get("pp_ResponseCode") or
+        ipn_data.get("responseCode") or
+        ""
+    )
+
+    # Response message for logging
+    response_message = (
+        ipn_data.get("RESPONSE_MESSAGE") or
+        ipn_data.get("response_message") or
+        ipn_data.get("pp_ResponseMessage") or
+        ipn_data.get("responseMessage") or
+        ""
+    )
+
+    if not order_token:
+        print("PayFast IPN: No order token found in request")
+        return {"status": "error", "message": "No order token provided"}
+
+    # Find the order by tracking number
+    statement = select(Order).where(Order.tracking_number == order_token)
+    order = session.exec(statement).first()
+
+    if not order:
+        print(f"PayFast IPN: Order not found for token {order_token}")
+        return {"status": "error", "message": "Order not found"}
+
+    # Determine payment status based on response code
+    # PayFast uses "00" for successful transactions
+    if response_code == "00":
+        new_payment_status = PaymentStatusEnum.SUCCESS
+        print(f"PayFast IPN: Payment SUCCESS for order {order_token}")
+    elif response_code in ["", None]:
+        # No response code might mean pending or processing
+        new_payment_status = PaymentStatusEnum.PROCESSING
+        print(f"PayFast IPN: Payment PROCESSING for order {order_token}")
+    else:
+        # Any other code is a failure
+        new_payment_status = PaymentStatusEnum.FAILED
+        print(f"PayFast IPN: Payment FAILED for order {order_token} - Code: {response_code}, Message: {response_message}")
+
+    # Update order payment status
+    order.payment_status = new_payment_status.value
+
+    # Store the full IPN response for reference
+    order.payment_response = ipn_data
+
+    # If payment successful, also update payment gateway if not set
+    if new_payment_status == PaymentStatusEnum.SUCCESS and not order.payment_gateway:
+        order.payment_gateway = "payfast"
+
+    session.add(order)
+    session.commit()
+    session.refresh(order)
+
+    print(f"PayFast IPN: Order {order_token} payment status updated to {new_payment_status.value}")
+
+    # Return success to acknowledge receipt (prevents PayFast retries)
+    return {
+        "status": "ok",
+        "order_id": order.id,
+        "tracking_number": order.tracking_number,
+        "payment_status": order.payment_status
+    }
