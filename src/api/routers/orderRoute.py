@@ -596,6 +596,36 @@ def calculate_item_tax(subtotal: float, tax_rate: float) -> float:
     return subtotal * (tax_rate / 100)
 
 
+def get_payment_status_by_gateway(payment_gateway: Optional[str]) -> str:
+    """
+    Determine payment status based on payment gateway.
+
+    - payfast: payment-processing (awaiting IPN confirmation)
+    - cod/cash_on_delivery: payment-cash-on-delivery
+    - easypaisa/jazzcash: payment-success (instant confirmation)
+    - wallet: payment-wallet
+    - cash: payment-cash
+    - Default: payment-pending
+    """
+    if not payment_gateway:
+        return PaymentStatusEnum.PENDING.value
+
+    gateway_lower = payment_gateway.lower().strip()
+
+    if gateway_lower == "payfast":
+        return PaymentStatusEnum.PROCESSING.value
+    elif gateway_lower in ["cod", "cash_on_delivery", "cash-on-delivery", "cash on delivery"]:
+        return PaymentStatusEnum.CASH_ON_DELIVERY.value
+    elif gateway_lower in ["easypaisa", "jazzcash"]:
+        return PaymentStatusEnum.SUCCESS.value
+    elif gateway_lower == "wallet":
+        return PaymentStatusEnum.WALLET.value
+    elif gateway_lower == "cash":
+        return PaymentStatusEnum.CASH.value
+    else:
+        return PaymentStatusEnum.PENDING.value
+
+
 @router.post("/cartcreate")
 def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated = None):
     cart_items = request.cart or []
@@ -781,7 +811,7 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
         original_delivery_fee=original_shipping_amount,  # NEW: Original shipping before free shipping
         free_shipping_source=free_shipping_source,  # NEW: Track source of free shipping
         order_status="order-pending",
-        payment_status="payment-cash-on-delivery",
+        payment_status=get_payment_status_by_gateway(request.payment_gateway),
         language="en",
         payment_response=request.payment_response,  # Payment gateway response as JSON
     )
@@ -1426,7 +1456,7 @@ def create_order_from_cart(
         original_delivery_fee=original_shipping_amount,  # NEW: Original shipping before free shipping
         free_shipping_source=free_shipping_source,  # NEW: Track source of free shipping
         order_status=OrderStatusEnum.PENDING.value,
-        payment_status=PaymentStatusEnum.PENDING.value,
+        payment_status=get_payment_status_by_gateway(request.payment_gateway),
         language="en",
         payment_response=request.payment_response,  # Payment gateway response (null for COD)
     )
@@ -1773,7 +1803,7 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
         shipping_id=request.shipping_id,
         coupon_id=request.coupon_id,
         order_status="order-pending",
-        payment_status="payment-pending",
+        payment_status=get_payment_status_by_gateway(request.payment_gateway),
         language="en",
     )
 
