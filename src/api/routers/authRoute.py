@@ -72,11 +72,13 @@ def initialize_first_user(
     # Create roles
     admin_role = Role(
         name="root",
+        slug="root",
         user_id=user.id,
         permissions=["all", "system:*"],
     )
     shop_admin_role = Role(
-        name="shop_admin",
+        name="Seller Roles",
+        slug="shop_admin",
         user_id=user.id,
         permissions=["shop_admin", "role"],
     )
