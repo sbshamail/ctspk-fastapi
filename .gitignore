@@ -15,3 +15,6 @@ nul
 requirements.txt
 .claude/settings.local.json
 requirements-bk.txt
+
+# Log files
+logs/
