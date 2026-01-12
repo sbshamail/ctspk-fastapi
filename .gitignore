@@ -18,3 +18,7 @@ requirements-bk.txt
 
 # Log files
 logs/
+settins.json
+
+# SQL scripts
+fix_sequences.sql

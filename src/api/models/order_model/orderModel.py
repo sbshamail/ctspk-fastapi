@@ -182,6 +182,7 @@ class OrderProduct(TimeStampedModel, table=True):
     )  # Store variation attributes
 
     # ADDED: Product snapshot at time of order
+    product_snapshot: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
     variation_snapshot: Optional[Dict[str, Any]] = Field(sa_column=Column(JSON))
 
     # ADDED: Review ID when review is added for this order item
