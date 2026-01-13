@@ -66,7 +66,8 @@ class ShopEarning(TimeStampedModel, table=True):
     order_amount: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)
     admin_commission: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)
     shop_earning: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)
-    is_settled: bool = Field(default=False)
+    settled_amount: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)  # Tracks partial settlements
+    is_settled: bool = Field(default=False)  # True when settled_amount >= shop_earning
     settled_at: Optional[datetime] = Field(default=None)
     
     # Relationships
@@ -118,6 +119,8 @@ class ShopEarningRead(TimeStampReadModel):
     order_amount: Decimal
     admin_commission: Decimal
     shop_earning: Decimal
+    settled_amount: Decimal = Decimal("0.00")  # Amount already settled/withdrawn
+    remaining_balance: Optional[Decimal] = None  # Computed: shop_earning - settled_amount
     is_settled: bool
     settled_at: Optional[datetime] = None
     order_tracking_number: Optional[str] = None
