@@ -1,5 +1,7 @@
 from typing import Optional
+from decimal import Decimal
 from fastapi import APIRouter, Query
+from sqlalchemy import func
 from sqlmodel import select
 
 from src.api.core.utility import uniqueSlugify
@@ -7,9 +9,11 @@ from src.api.models.shop_model import (
     Shop,
     ShopCreate,
     ShopRead,
+    ShopReadWithEarnings,
     ShopUpdate,
     ShopVerifyByAdmin,
 )
+from src.api.models.withdrawModel import ShopEarning
 
 from src.api.models.role_model.userRoleModel import UserRole
 from src.api.models.role_model.roleModel import Role
@@ -181,31 +185,56 @@ def list_shops(
         Model=Shop,
         Schema=ShopRead,
     )
-# ✅ LIST shops for signed-in user
-@router.get("/my-shops", response_model=list[ShopRead])
+# ✅ LIST shops for signed-in user with earnings summary
+@router.get("/my-shops")
 def my_shops(
     session: GetSession,
-    query_params: ListQueryParams,
     user: requireSignin,
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
 ):
-    query_params = vars(query_params)
-    searchFields = ["name", "slug", "description"]
-
-    # Filter shops by owner_id matching signed-in user
-    # columnFilters expects string format: [["column", "value"]]
+    """Get all shops owned by signed-in user with earnings summary"""
     user_id = user.get("id")
-    query_params["columnFilters"] = f'[["owner_id", {user_id}]]'
 
-    # Add is_active to customFilters if provided
+    # Build query for user's shops
+    query = select(Shop).where(Shop.owner_id == user_id)
     if is_active is not None:
-        query_params["customFilters"] = [["is_active", is_active]]
+        query = query.where(Shop.is_active == is_active)
 
-    return listRecords(
-        query_params=query_params,
-        searchFields=searchFields,
-        Model=Shop,
-        Schema=ShopRead,
+    shops = session.exec(query).all()
+
+    if not shops:
+        return api_response(200, "No shops found", [], 0)
+
+    # Build response with earnings data for each shop
+    shops_with_earnings = []
+    for shop in shops:
+        # Get earnings summary for this shop
+        earnings_stmt = select(
+            func.coalesce(func.sum(ShopEarning.shop_earning), 0),
+            func.coalesce(func.sum(ShopEarning.settled_amount), 0),
+            func.coalesce(func.sum(ShopEarning.admin_commission), 0)
+        ).where(ShopEarning.shop_id == shop.id)
+
+        earnings_result = session.exec(earnings_stmt).first()
+        total_earnings = Decimal(str(earnings_result[0])) if earnings_result[0] else Decimal("0.00")
+        total_settled = Decimal(str(earnings_result[1])) if earnings_result[1] else Decimal("0.00")
+        total_admin_commission = Decimal(str(earnings_result[2])) if earnings_result[2] else Decimal("0.00")
+        available_balance = total_earnings - total_settled
+
+        # Create shop response with earnings
+        shop_data = ShopReadWithEarnings.model_validate(shop)
+        shop_data.total_earnings = total_earnings
+        shop_data.total_settled = total_settled
+        shop_data.total_admin_commission = total_admin_commission
+        shop_data.available_balance = available_balance
+
+        shops_with_earnings.append(shop_data)
+
+    return api_response(
+        200,
+        f"Found {len(shops_with_earnings)} shop(s)",
+        shops_with_earnings,
+        len(shops_with_earnings)
     )
 # ✅ PATCH shop status (toggle/verify)
 @router.patch("/{id}/status")

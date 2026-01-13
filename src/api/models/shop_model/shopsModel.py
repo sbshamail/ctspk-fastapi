@@ -1,5 +1,6 @@
 # src/api/models/shopModel.py
 from typing import Literal, Optional, List, TYPE_CHECKING
+from decimal import Decimal
 from sqlalchemy import Column
 from sqlmodel import Field, Relationship, SQLModel
 from sqlalchemy.dialects.postgresql import JSONB
@@ -89,3 +90,12 @@ class ShopRead(TimeStampReadModel):
     owner: Optional[UserReadBase] = None
 
     model_config = {"from_attributes": True}
+
+
+# ---------- READ WITH EARNINGS ----------
+class ShopReadWithEarnings(ShopRead):
+    """Shop read schema with earnings summary from shop_earnings table"""
+    total_earnings: Decimal = Decimal("0.00")  # Total shop_earning
+    total_settled: Decimal = Decimal("0.00")  # Total settled_amount
+    total_admin_commission: Decimal = Decimal("0.00")  # Total admin_commission
+    available_balance: Decimal = Decimal("0.00")  # total_earnings - total_settled
