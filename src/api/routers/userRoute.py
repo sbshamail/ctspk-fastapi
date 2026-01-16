@@ -312,6 +312,7 @@ def list_users(
     role: Optional[int] = Query(None, description="Filter by single role ID (legacy)"),
     role_ids: Optional[List[int]] = Query(None, description="Filter by allowed role IDs (include users with these roles)"),
     exclude_role_ids: Optional[List[int]] = Query(None, description="Filter by excluded role IDs (exclude users with these roles)"),
+    customer: Optional[bool] = Query(None, description="If true, show only users without any roles (customers)"),
     page: int = None,
     skip: int = 0,
     limit: int = Query(10, ge=1, le=200),
@@ -321,11 +322,13 @@ def list_users(
     - role: Filter by single role ID (legacy support)
     - role_ids: Include users with ANY of these role IDs (allowed roles)
     - exclude_role_ids: Exclude users with ANY of these role IDs (not allowed roles)
+    - customer: If true, show only users without any roles (customers)
 
     Examples:
     - /user/list?role_ids=1&role_ids=2 - Get users with role 1 OR role 2
     - /user/list?exclude_role_ids=3&exclude_role_ids=4 - Get users WITHOUT role 3 AND role 4
     - /user/list?role_ids=1&role_ids=2&exclude_role_ids=3 - Get users with role 1 or 2, but NOT role 3
+    - /user/list?customer=true - Get users without any roles (customers only)
     """
     filters = {
         "searchTerm": searchTerm,
@@ -349,10 +352,25 @@ def list_users(
 
     base_statement = None
 
-    if role_ids or exclude_role_ids or role:
-        # Get user IDs that match the role criteria
+    # Get all user IDs that have at least one role
+    users_with_roles_query = sa_select(distinct(UserRole.user_id))
+    users_with_roles = [row[0] for row in session.execute(users_with_roles_query).fetchall()]
 
-        # Start with all user IDs
+    # Handle customer filter - show only users without any roles
+    if customer is True:
+        # Get all users and exclude those with roles
+        all_users_query = sa_select(distinct(User.id))
+        all_user_ids = [row[0] for row in session.execute(all_users_query).fetchall()]
+        customer_user_ids = [uid for uid in all_user_ids if uid not in users_with_roles]
+
+        if not customer_user_ids:
+            return api_response(404, "No customers found")
+
+        base_statement = sm_select(User).where(User.id.in_(customer_user_ids))
+
+    # Handle role_ids and exclude_role_ids filtering
+    elif role_ids or exclude_role_ids or role:
+        # Get user IDs that match the role criteria
         if role_ids or role:
             # Get users who have ANY of the allowed role_ids
             allowed_roles = role_ids if role_ids else ([role] if role else [])
@@ -362,7 +380,9 @@ def list_users(
             )
             included_user_ids = [row[0] for row in session.execute(included_user_ids_query).fetchall()]
         else:
-            included_user_ids = None  # No inclusion filter
+            # When exclude_role_ids is used without role_ids, start with users who have roles
+            # (users without roles should not be shown when role filter is applied)
+            included_user_ids = users_with_roles
 
         if exclude_role_ids:
             # Get users who have ANY of the excluded role_ids
@@ -374,16 +394,8 @@ def list_users(
         else:
             excluded_user_ids = []
 
-        # Calculate final user IDs to include
-        if included_user_ids is not None:
-            # Start with included users, then remove excluded
-            final_user_ids = [uid for uid in included_user_ids if uid not in excluded_user_ids]
-        else:
-            # No inclusion filter, just exclude
-            # We need to get all users first and exclude
-            all_users_query = sa_select(distinct(User.id))
-            all_user_ids = [row[0] for row in session.execute(all_users_query).fetchall()]
-            final_user_ids = [uid for uid in all_user_ids if uid not in excluded_user_ids]
+        # Calculate final user IDs to include (only users with roles)
+        final_user_ids = [uid for uid in included_user_ids if uid not in excluded_user_ids]
 
         if not final_user_ids:
             return api_response(404, "No User found")
