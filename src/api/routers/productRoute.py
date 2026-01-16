@@ -23,6 +23,8 @@ from src.api.models.product_model.productsModel import (
     ProductStatus,
     VariationData,
 )
+from src.api.models.manufacturer_model.manufacturerModel import Manufacturer
+from src.api.models.shop_model.shopsModel import Shop
 from pydantic import BaseModel, field_validator
 from src.api.core.dependencies import (
     GetSession,
@@ -2225,3 +2227,268 @@ def remove_qty(
         session.rollback()
         print(f"Error removing product quantity: {str(e)}")
         return api_response(500, f"Error removing quantity: {str(e)}")
+
+
+# Pydantic schema for inventory response
+class ProductInventoryRead(BaseModel):
+    id: int
+    name: str
+    slug: str
+    product_type: str
+    category_id: Optional[int] = None
+    category_name: Optional[str] = None
+    manufacturer_id: Optional[int] = None
+    manufacturer_name: Optional[str] = None
+    shop_id: Optional[int] = None
+    shop_name: Optional[str] = None
+    current_stock: int
+    total_sold: int
+    price: Optional[float] = None
+    sale_price: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/inventory")
+def get_product_inventory(
+    session: GetSession,
+    query_params: ListQueryParams,
+    category_id: Optional[int] = Query(None, description="Filter by category ID"),
+    manufacturer_id: Optional[int] = Query(None, description="Filter by manufacturer ID"),
+    shop_id: Optional[int] = Query(None, description="Filter by shop ID"),
+    product_type: Optional[str] = Query(None, description="Filter by product type (simple, variable, grouped)"),
+    product_name: Optional[str] = Query(None, description="Filter by product name (partial match)"),
+    min_price: Optional[float] = Query(None, description="Filter by minimum price"),
+    max_price: Optional[float] = Query(None, description="Filter by maximum price"),
+    min_quantity: Optional[int] = Query(None, description="Filter by minimum quantity/stock"),
+    max_quantity: Optional[int] = Query(None, description="Filter by maximum quantity/stock"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    user=requirePermission("product_view", "shop_admin"),
+):
+    """
+    Get product inventory with filters for:
+    - category
+    - manufacturer
+    - shop
+    - product_type
+    - product_name
+    - price range
+    - quantity/stock range
+
+    Returns list of products with:
+    - id, name, slug, product_type
+    - category name
+    - manufacturer name
+    - shop name
+    - current_stock (quantity)
+    - total_sold
+
+    Note: Users can only view inventory from their own shops unless they have
+    "inventory:view" permission and role_id is not in [2, 4, 5, 6].
+    """
+    try:
+        # Extract query params
+        query_params_dict = vars(query_params)
+        limit = query_params_dict.get('limit', 50)
+        page = query_params_dict.get('page', 1)
+        skip = (page - 1) * limit
+
+        # Check if user can bypass shop ownership check
+        # User must have "inventory:view" permission AND role_id NOT in [2, 4, 5, 6]
+        user_permissions = user.get("permissions", [])
+        user_role_id = user.get("role_id")
+        restricted_role_ids = [2, 4, 5, 6]
+
+        has_inventory_view = "inventory:view" in user_permissions
+        can_bypass_shop_check = has_inventory_view and user_role_id not in restricted_role_ids
+
+        # Get user's shop IDs for filtering
+        user_shop_ids = [s["id"] for s in user.get("shops", [])]
+
+        if can_bypass_shop_check:
+            # User can view all shops - no shop filtering needed
+            if shop_id is not None:
+                # If specific shop_id provided, filter by that shop only
+                filter_shop_ids = [shop_id]
+            else:
+                # No shop filter - view all products
+                filter_shop_ids = None
+        else:
+            # Regular users - must filter by their own shops
+            if shop_id is not None:
+                if shop_id not in user_shop_ids:
+                    return api_response(403, "Access denied to specified shop")
+                filter_shop_ids = [shop_id]
+            else:
+                filter_shop_ids = user_shop_ids
+
+            # If user has no shops, return empty result
+            if not filter_shop_ids:
+                return api_response(200, "No shops found for user", [], 0)
+
+        # Build base query with joins for related data
+        query = (
+            select(
+                Product.id,
+                Product.name,
+                Product.slug,
+                Product.product_type,
+                Product.category_id,
+                Category.name.label("category_name"),
+                Product.manufacturer_id,
+                Manufacturer.name.label("manufacturer_name"),
+                Product.shop_id,
+                Shop.name.label("shop_name"),
+                Product.quantity.label("current_stock"),
+                Product.total_sold_quantity.label("total_sold"),
+                Product.price,
+                Product.sale_price,
+            )
+            .outerjoin(Category, Product.category_id == Category.id)
+            .outerjoin(Manufacturer, Product.manufacturer_id == Manufacturer.id)
+            .outerjoin(Shop, Product.shop_id == Shop.id)
+        )
+
+        # Apply shop filter only if filter_shop_ids is not None
+        if filter_shop_ids is not None:
+            query = query.where(Product.shop_id.in_(filter_shop_ids))
+
+        # Apply filters
+        if category_id is not None:
+            query = query.where(Product.category_id == category_id)
+
+        if manufacturer_id is not None:
+            query = query.where(Product.manufacturer_id == manufacturer_id)
+
+        if product_type is not None:
+            # Map string to ProductType enum
+            product_type_upper = product_type.upper()
+            if product_type_upper == "SIMPLE":
+                query = query.where(Product.product_type == ProductType.SIMPLE)
+            elif product_type_upper == "VARIABLE":
+                query = query.where(Product.product_type == ProductType.VARIABLE)
+            elif product_type_upper == "GROUPED":
+                query = query.where(Product.product_type == ProductType.GROUPED)
+
+        if product_name is not None:
+            search = f"%{product_name}%"
+            query = query.where(Product.name.ilike(search))
+
+        if min_price is not None:
+            query = query.where(Product.price >= min_price)
+
+        if max_price is not None:
+            query = query.where(Product.price <= max_price)
+
+        if min_quantity is not None:
+            query = query.where(Product.quantity >= min_quantity)
+
+        if max_quantity is not None:
+            query = query.where(Product.quantity <= max_quantity)
+
+        if is_active is not None:
+            query = query.where(Product.is_active == is_active)
+
+        # Apply searchTerm from query_params (searches name, description, sku)
+        if query_params_dict.get('searchTerm'):
+            search = f"%{query_params_dict['searchTerm']}%"
+            query = query.where(
+                or_(
+                    Product.name.ilike(search),
+                    Product.description.ilike(search),
+                    Product.sku.ilike(search)
+                )
+            )
+
+        # Apply columnFilters from query_params
+        if query_params_dict.get('columnFilters'):
+            import ast
+            column_filters = ast.literal_eval(query_params_dict['columnFilters'])
+            for col_filter in column_filters:
+                field_name, field_value = col_filter[0], col_filter[1]
+                if hasattr(Product, field_name):
+                    field = getattr(Product, field_name)
+                    if isinstance(field_value, list):
+                        query = query.where(field.in_(field_value))
+                    else:
+                        query = query.where(field == field_value)
+
+        # Apply numberRange filter
+        query = apply_number_range_filter(query, query_params_dict, Product)
+
+        # Apply sort filter (default: sort by name ascending)
+        query = apply_sort_filter(query, query_params_dict, Product, "name", "asc")
+
+        # Get total count for pagination
+        count_query = select(func.count(Product.id))
+
+        # Apply shop filter to count query only if filter_shop_ids is not None
+        if filter_shop_ids is not None:
+            count_query = count_query.where(Product.shop_id.in_(filter_shop_ids))
+
+        # Apply same filters to count query
+        if category_id is not None:
+            count_query = count_query.where(Product.category_id == category_id)
+        if manufacturer_id is not None:
+            count_query = count_query.where(Product.manufacturer_id == manufacturer_id)
+        if product_type is not None:
+            product_type_upper = product_type.upper()
+            if product_type_upper == "SIMPLE":
+                count_query = count_query.where(Product.product_type == ProductType.SIMPLE)
+            elif product_type_upper == "VARIABLE":
+                count_query = count_query.where(Product.product_type == ProductType.VARIABLE)
+            elif product_type_upper == "GROUPED":
+                count_query = count_query.where(Product.product_type == ProductType.GROUPED)
+        if product_name is not None:
+            count_query = count_query.where(Product.name.ilike(f"%{product_name}%"))
+        if min_price is not None:
+            count_query = count_query.where(Product.price >= min_price)
+        if max_price is not None:
+            count_query = count_query.where(Product.price <= max_price)
+        if min_quantity is not None:
+            count_query = count_query.where(Product.quantity >= min_quantity)
+        if max_quantity is not None:
+            count_query = count_query.where(Product.quantity <= max_quantity)
+        if is_active is not None:
+            count_query = count_query.where(Product.is_active == is_active)
+
+        total_count = session.exec(count_query).first() or 0
+
+        # Execute main query with pagination
+        query = query.offset(skip).limit(limit)
+        results = session.exec(query).all()
+
+        # Build response data
+        inventory_list = []
+        for row in results:
+            inventory_item = ProductInventoryRead(
+                id=row.id,
+                name=row.name,
+                slug=row.slug,
+                product_type=row.product_type.value if hasattr(row.product_type, 'value') else str(row.product_type),
+                category_id=row.category_id,
+                category_name=row.category_name,
+                manufacturer_id=row.manufacturer_id,
+                manufacturer_name=row.manufacturer_name,
+                shop_id=row.shop_id,
+                shop_name=row.shop_name,
+                current_stock=row.current_stock or 0,
+                total_sold=row.total_sold or 0,
+                price=row.price,
+                sale_price=row.sale_price,
+            )
+            inventory_list.append(inventory_item.model_dump())
+
+        return api_response(
+            200,
+            f"Found {len(inventory_list)} products",
+            inventory_list,
+            total_count
+        )
+
+    except Exception as e:
+        print(f"Error fetching product inventory: {str(e)}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        return api_response(500, f"Error fetching product inventory: {str(e)}")

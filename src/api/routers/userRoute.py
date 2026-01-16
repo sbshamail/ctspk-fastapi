@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from fastapi import (
     APIRouter,
     Depends,
@@ -309,11 +309,24 @@ def list_users(
     numberRange: Optional[str] = None,
     searchTerm: str = None,
     columnFilters: Optional[str] = Query(None),
-    role: Optional[int] = Query(None, description="Filter by role ID"),  # Correct parameter name
+    role: Optional[int] = Query(None, description="Filter by single role ID (legacy)"),
+    role_ids: Optional[List[int]] = Query(None, description="Filter by allowed role IDs (include users with these roles)"),
+    exclude_role_ids: Optional[List[int]] = Query(None, description="Filter by excluded role IDs (exclude users with these roles)"),
     page: int = None,
     skip: int = 0,
     limit: int = Query(10, ge=1, le=200),
 ):
+    """
+    List users with role filtering options:
+    - role: Filter by single role ID (legacy support)
+    - role_ids: Include users with ANY of these role IDs (allowed roles)
+    - exclude_role_ids: Exclude users with ANY of these role IDs (not allowed roles)
+
+    Examples:
+    - /user/list?role_ids=1&role_ids=2 - Get users with role 1 OR role 2
+    - /user/list?exclude_role_ids=3&exclude_role_ids=4 - Get users WITHOUT role 3 AND role 4
+    - /user/list?role_ids=1&role_ids=2&exclude_role_ids=3 - Get users with role 1 or 2, but NOT role 3
+    """
     filters = {
         "searchTerm": searchTerm,
         "columnFilters": columnFilters,
@@ -328,11 +341,55 @@ def list_users(
         "user_roles.role.name",      # Correct path: User -> UserRole -> Role -> name
         "user_roles.role.slug"       # Correct path: User -> UserRole -> Role -> slug
     ]
-    
-    # Add custom filter for role_id in the format expected by listop
-    if role is not None:
-        # Format as list of tuples: [(column_path, value)]
-        filters["customFilters"] = [("user_roles.role_id", role)]
+
+    # Build custom query for role filtering
+    # If role_ids or exclude_role_ids are provided, we need custom SQL filtering
+    from sqlalchemy import select as sa_select, distinct
+    from sqlmodel import select as sm_select
+
+    base_statement = None
+
+    if role_ids or exclude_role_ids or role:
+        # Get user IDs that match the role criteria
+
+        # Start with all user IDs
+        if role_ids or role:
+            # Get users who have ANY of the allowed role_ids
+            allowed_roles = role_ids if role_ids else ([role] if role else [])
+            included_user_ids_query = (
+                sa_select(distinct(UserRole.user_id))
+                .where(UserRole.role_id.in_(allowed_roles))
+            )
+            included_user_ids = [row[0] for row in session.execute(included_user_ids_query).fetchall()]
+        else:
+            included_user_ids = None  # No inclusion filter
+
+        if exclude_role_ids:
+            # Get users who have ANY of the excluded role_ids
+            excluded_user_ids_query = (
+                sa_select(distinct(UserRole.user_id))
+                .where(UserRole.role_id.in_(exclude_role_ids))
+            )
+            excluded_user_ids = [row[0] for row in session.execute(excluded_user_ids_query).fetchall()]
+        else:
+            excluded_user_ids = []
+
+        # Calculate final user IDs to include
+        if included_user_ids is not None:
+            # Start with included users, then remove excluded
+            final_user_ids = [uid for uid in included_user_ids if uid not in excluded_user_ids]
+        else:
+            # No inclusion filter, just exclude
+            # We need to get all users first and exclude
+            all_users_query = sa_select(distinct(User.id))
+            all_user_ids = [row[0] for row in session.execute(all_users_query).fetchall()]
+            final_user_ids = [uid for uid in all_user_ids if uid not in excluded_user_ids]
+
+        if not final_user_ids:
+            return api_response(404, "No User found")
+
+        # Create base statement with user ID filter using IN clause
+        base_statement = sm_select(User).where(User.id.in_(final_user_ids))
 
     result = listop(
         session=session,
@@ -342,8 +399,9 @@ def list_users(
         skip=skip,
         page=page,
         limit=limit,
+        Statement=base_statement,
     )
-    
+
     if not result["data"]:
         return api_response(404, "No User found")
 

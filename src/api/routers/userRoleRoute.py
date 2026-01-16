@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from fastapi import (
     APIRouter,
     Query,
@@ -119,32 +119,90 @@ def update_user_status(
 def list_users(
     session: GetSession,
     searchTerm: Optional[str] = None,
-    role: Optional[str] = None,
+    role: Optional[str] = Query(None, description="Filter by role name (legacy)"),
     shop: Optional[str] = None,
     is_active: Optional[bool] = None,
+    role_ids: Optional[List[int]] = Query(None, description="Filter by allowed role IDs (include users with these roles)"),
+    exclude_role_ids: Optional[List[int]] = Query(None, description="Filter by excluded role IDs (exclude users with these roles)"),
     page: int = None,
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
     user=requirePermission("user"),
 ):
+    """
+    List users with role filtering options:
+    - role: Filter by role name (legacy support)
+    - role_ids: Include users with ANY of these role IDs (allowed roles)
+    - exclude_role_ids: Exclude users with ANY of these role IDs (not allowed roles)
+
+    Examples:
+    - /user/list?role_ids=1&role_ids=2 - Get users with role 1 OR role 2
+    - /user/list?exclude_role_ids=3&exclude_role_ids=4 - Get users WITHOUT role 3 AND role 4
+    - /user/list?role_ids=1&role_ids=2&exclude_role_ids=3 - Get users with role 1 or 2, but NOT role 3
+    """
+    from sqlalchemy import select as sa_select, distinct
+    from sqlmodel import select as sm_select
+
     filters = {
         "searchTerm": searchTerm,
         "columnFilters": []
     }
 
-    # Add role filter
+    # Add role filter by name (legacy)
     if role:
         filters["columnFilters"].append(["user_roles.role.name", role])
-    
+
     # Add shop filter
     if shop:
         filters["columnFilters"].append(["shops.name", shop])
-    
+
     # Add active status filter
     if is_active is not None:
         filters["columnFilters"].append(["is_active", str(is_active)])
 
     searchFields = ["name", "email", "phone_no"]
+
+    # Build base statement - will be modified if role filtering is needed
+    base_statement = None
+
+    # Handle role_ids and exclude_role_ids filtering
+    if role_ids or exclude_role_ids:
+        # Get user IDs that match the role criteria
+        if role_ids:
+            # Get users who have ANY of the allowed role_ids
+            included_user_ids_query = (
+                sa_select(distinct(UserRole.user_id))
+                .where(UserRole.role_id.in_(role_ids))
+            )
+            included_user_ids = [row[0] for row in session.execute(included_user_ids_query).fetchall()]
+        else:
+            included_user_ids = None  # No inclusion filter
+
+        if exclude_role_ids:
+            # Get users who have ANY of the excluded role_ids
+            excluded_user_ids_query = (
+                sa_select(distinct(UserRole.user_id))
+                .where(UserRole.role_id.in_(exclude_role_ids))
+            )
+            excluded_user_ids = [row[0] for row in session.execute(excluded_user_ids_query).fetchall()]
+        else:
+            excluded_user_ids = []
+
+        # Calculate final user IDs to include
+        if included_user_ids is not None:
+            # Start with included users, then remove excluded
+            final_user_ids = [uid for uid in included_user_ids if uid not in excluded_user_ids]
+        else:
+            # No inclusion filter, just exclude
+            all_users_query = sa_select(distinct(User.id))
+            all_user_ids = [row[0] for row in session.execute(all_users_query).fetchall()]
+            final_user_ids = [uid for uid in all_user_ids if uid not in excluded_user_ids]
+
+        if not final_user_ids:
+            return api_response(404, "No users found")
+
+        # Create base statement with user ID filter using IN clause
+        base_statement = sm_select(User).where(User.id.in_(final_user_ids))
 
     result = listop(
         session=session,
@@ -154,7 +212,7 @@ def list_users(
         skip=skip,
         page=page,
         limit=limit,
-        relationships=["user_roles.role", "shops", "media"]
+        Statement=base_statement,
     )
 
     if not result["data"]:
