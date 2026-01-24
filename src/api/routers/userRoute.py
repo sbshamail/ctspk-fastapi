@@ -303,8 +303,8 @@ def delete_user(
 # ✅ READ ALL with Role Search and Filter
 @router.get("/list", response_model=list[UserRead])
 def list_users(
-    user: requireAdmin,
     session: GetSession,
+    user=requirePermission("user:view"),
     dateRange: Optional[str] = None,
     numberRange: Optional[str] = None,
     searchTerm: str = None,
