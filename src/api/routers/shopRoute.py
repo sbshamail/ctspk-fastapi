@@ -47,7 +47,7 @@ def create_shop(
         session.add(data)
 
         # 2️⃣ find the shop_admin role
-        role = session.exec(select(Role).where(Role.name == "shop_admin")).first()
+        role = session.exec(select(Role).where(Role.slug == "shop_admin")).first()
         raiseExceptions((role, 404, "Role not found"))
 
         # 3️⃣ Assign the shop_admin role to the user (if not already assigned)
@@ -100,7 +100,7 @@ def update_shop(
     id: int,
     request: ShopUpdate,
     session: GetSession,
-    user=requirePermission("shop_admin"),
+    user=requirePermission(["shop_admin","shop:update"]),
 ):
     shop = session.get(Shop, id)
     raiseExceptions((shop, 404, "Shop not found"))
