@@ -114,6 +114,7 @@ class UserCreate(SQLModel):
     password: str
     confirm_password: str
     role_ids: Optional[List[int]] = None  # Add role_ids for role assignment
+    shop_ids: Optional[List[int]] = None  # Add shop_ids for shop assignment
     is_active: bool = True
 
     @model_validator(mode="before")
@@ -169,6 +170,7 @@ class UserUpdate(SQLModel):
 class UpdateUserByAdmin(UserUpdate):
     # role_id: Optional[List] = None
     #role_ids: Optional[List[int]] = None
+    shop_ids: Optional[List[int]] = None  # Add shop_ids for shop assignment
     is_active: Optional[bool] = None
     contactinfo: Optional[Dict[str, Any]] = None
 

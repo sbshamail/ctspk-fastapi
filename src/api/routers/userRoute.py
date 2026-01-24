@@ -17,6 +17,8 @@ from src.api.core.response import api_response, raiseExceptions
 from src.api.models.usersModel import UserCreate,RegisterUser, UpdateUserByAdmin, User, UserRead, UserUpdate,ChangePasswordRequest,ForgotPasswordRequest,VerifyCodeRequest,ResetPasswordRequest,ProfileUpdate
 from src.api.models.role_model.roleModel import Role
 from src.api.models.role_model.userRoleModel import UserRole
+from src.api.models.shop_model.shopsModel import Shop
+from src.api.models.shop_model.userShopModel import UserShop
 import random
 
 router = APIRouter(prefix="/user", tags=["user"])
@@ -46,11 +48,11 @@ def create_user(
 
     # Hash password
     hashed_password = hash_password(request.password)
-    
-    # Create user data (exclude role_ids and confirm_password)
-    user_data = request.model_dump(exclude={'password', 'confirm_password', 'role_ids'})
+
+    # Create user data (exclude role_ids, shop_ids and confirm_password)
+    user_data = request.model_dump(exclude={'password', 'confirm_password', 'role_ids', 'shop_ids'})
     user_data['password'] = hashed_password
-    
+
     # Create user
     new_user = User(**user_data)
     session.add(new_user)
@@ -64,7 +66,7 @@ def create_user(
             if not role:
                 session.rollback()
                 return api_response(404, f"Role with ID {role_id} not found")
-            
+
             # Check if user-role relationship already exists
             existing_user_role = session.exec(
                 select(UserRole).where(
@@ -72,10 +74,31 @@ def create_user(
                     UserRole.role_id == role_id
                 )
             ).first()
-            
+
             if not existing_user_role:
                 user_role = UserRole(user_id=new_user.id, role_id=role_id)
                 session.add(user_role)
+
+    # Assign shops if shop_ids are provided
+    if request.shop_ids:
+        for shop_id in request.shop_ids:
+            # Check if shop exists
+            shop = session.get(Shop, shop_id)
+            if not shop:
+                session.rollback()
+                return api_response(404, f"Shop with ID {shop_id} not found")
+
+            # Check if user-shop relationship already exists
+            existing_user_shop = session.exec(
+                select(UserShop).where(
+                    UserShop.user_id == new_user.id,
+                    UserShop.shop_id == shop_id
+                )
+            ).first()
+
+            if not existing_user_shop:
+                user_shop = UserShop(user_id=new_user.id, shop_id=shop_id)
+                session.add(user_shop)
 
     session.commit()
     session.refresh(new_user)
@@ -131,19 +154,19 @@ def update_user_by_admin(
 ):
     db_user = session.get(User, user_id)
     raiseExceptions((db_user, 404, "User not found"))
-    
-    update_data = request.model_dump(exclude_unset=True, exclude={'role_ids'})
-    
+
+    update_data = request.model_dump(exclude_unset=True, exclude={'role_ids', 'shop_ids'})
+
     # Update basic fields
     for field, value in update_data.items():
         if value is not None and field != 'password':
             setattr(db_user, field, value)
-    
+
     # Handle password update
     if request.password:
         hashed_password = hash_password(request.password)
         db_user.password = hashed_password
-    
+
     # Handle role assignments if role_ids are provided
     if hasattr(request, 'role_ids') and request.role_ids is not None:
         # Remove existing user roles
@@ -152,14 +175,30 @@ def update_user_by_admin(
         ).all()
         for user_role in existing_user_roles:
             session.delete(user_role)
-        
+
         # Add new user roles
         for role_id in request.role_ids:
             role = session.get(Role, role_id)
             if role:
                 user_role = UserRole(user_id=user_id, role_id=role_id)
                 session.add(user_role)
-    
+
+    # Handle shop assignments if shop_ids are provided
+    if hasattr(request, 'shop_ids') and request.shop_ids is not None:
+        # Remove existing user shops
+        existing_user_shops = session.exec(
+            select(UserShop).where(UserShop.user_id == user_id)
+        ).all()
+        for user_shop in existing_user_shops:
+            session.delete(user_shop)
+
+        # Add new user shops
+        for shop_id in request.shop_ids:
+            shop = session.get(Shop, shop_id)
+            if shop:
+                user_shop = UserShop(user_id=user_id, shop_id=shop_id)
+                session.add(user_shop)
+
     session.add(db_user)
     session.commit()
     session.refresh(db_user)
