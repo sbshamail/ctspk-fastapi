@@ -228,46 +228,46 @@ def get_user(
         ).scalars().first()
 
         # Prepare email replacements
-        replacements = {
-            "name": db_user.name,
-            "customer_name": db_user.name,
-            "email": db_user.email,
-        }
+        # replacements = {
+        #     "name": db_user.name,
+        #     "customer_name": db_user.name,
+        #     "email": db_user.email,
+        # }
 
-        # Add coupon details if available
-        if free_shipping_coupon:
-            replacements.update({
-                "coupon_code": free_shipping_coupon.code,
-                "coupon_valid_from": free_shipping_coupon.active_from.strftime("%B %d, %Y"),
-                "coupon_valid_to": free_shipping_coupon.expire_at.strftime("%B %d, %Y"),
-                "coupon_minimum_amount": f"{free_shipping_coupon.minimum_cart_amount:.2f}",
-                "coupon_code_text":"Code:",
-                "date":"Date:",
-                "min_amount_text":"Minimum Cart Amount:"
-            })
-        else:
-            # Provide empty values if no coupon available
-            replacements.update({
-                "coupon_code": "",
-                "coupon_valid_from": "",
-                "coupon_valid_to": "",
-                "coupon_minimum_amount": "",
-                "coupon_code_text":"",
-                "date":"",
-                "min_amount_text":""
-            })
+        # # Add coupon details if available
+        # if free_shipping_coupon:
+        #     replacements.update({
+        #         "coupon_code": free_shipping_coupon.code,
+        #         "coupon_valid_from": free_shipping_coupon.active_from.strftime("%B %d, %Y"),
+        #         "coupon_valid_to": free_shipping_coupon.expire_at.strftime("%B %d, %Y"),
+        #         "coupon_minimum_amount": f"{free_shipping_coupon.minimum_cart_amount:.2f}",
+        #         "coupon_code_text":"Code:",
+        #         "date":"Date:",
+        #         "min_amount_text":"Minimum Cart Amount:"
+        #     })
+        # else:
+        #     # Provide empty values if no coupon available
+        #     replacements.update({
+        #         "coupon_code": "",
+        #         "coupon_valid_from": "",
+        #         "coupon_valid_to": "",
+        #         "coupon_minimum_amount": "",
+        #         "coupon_code_text":"",
+        #         "date":"",
+        #         "min_amount_text":""
+        #     })
 
-        send_email(
-            to_email=db_user.email,
-            email_template_id=3,  # Use appropriate template ID for user registration
-            replacements=replacements,
-        )
+        # send_email(
+        #     to_email=db_user.email,
+        #     email_template_id=3,  # Use appropriate template ID for user registration
+        #     replacements=replacements,
+        # )
     except Exception as e:
         # Log email error but don't fail registration
-        import traceback
+        #import traceback
         print(f"Failed to send registration email: {e}")
-        print(f"Error type: {type(e).__name__}")
-        print(f"Full traceback:\n{traceback.format_exc()}")
+        #print(f"Error type: {type(e).__name__}")
+        #print(f"Full traceback:\n{traceback.format_exc()}")
 
     return api_response(200, "User Found", serialize_user_with_avatar(db_user))
 
