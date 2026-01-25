@@ -298,7 +298,7 @@ def get_product_with_enhanced_data(session, product_id: int):
 def create(
     request: ProductCreate,
     session: GetSession,
-    user=requirePermission("product_create", "shop_admin"),
+    user=requirePermission(["product:create", "vendor-product:create"]),
 ):
     # Generate SKU if not provided
     if not request.sku:
@@ -374,7 +374,7 @@ def update(
     id: int,
     request: ProductUpdate,
     session: GetSession,
-    user=requirePermission("product_create"),
+    user=requirePermission(["product:update", "vendor-product:update"]),
 ):
     updateData = session.get(Product, id)
     raiseExceptions((updateData, 404, "Product not found"))
@@ -464,7 +464,7 @@ def get(id_slug: str, session: GetSession):
 def delete(
     id: int,
     session: GetSession,
-    user=requirePermission("product-delete"),
+    user=requirePermission(["product:delete","vendor-product:delete"]),
 ):
     product = session.get(Product, id)
     raiseExceptions((product, 404, "Product not found"))
@@ -610,7 +610,7 @@ def patch_product_status(
     id: int,
     request: ProductActivate,
     session: GetSession,
-    user=requirePermission(["system:*", "shop_admin"]),
+    user=requirePermission(["product:update*", "vendor-product:update"]),
 ):
     product = session.get(Product, id)
     raiseExceptions((product, 404, "Product not found"))
@@ -1002,7 +1002,7 @@ def get_stock_report(
     low_stock_threshold: int = 10,
     is_active: Optional[bool] = None,  # NEW: Filter by active status
     order_by: Optional[str] = None,    # NEW: Order by field
-    user=requirePermission("product_view", "shop_admin"),
+    user=requirePermission(["product:view", "vendor-product:view"]),
 ):
     """Get product stock report with purchase and sales data"""
     try:
@@ -1090,7 +1090,7 @@ def get_sale_products(
     query_params: ListQueryParams,
     is_active: bool = True,  # Filter by active status
     shop_id: Optional[int] = None,  # Filter by shop
-    user=requirePermission("product_view", "shop_admin"),
+    user=requirePermission(["product:view", "vendor-product:view"]),
 ):
     """
     Get products that are on sale with advanced filtering
@@ -1280,7 +1280,7 @@ def get_sale_products_optimized(
     is_active: bool = True,
     shop_id: Optional[int] = None,  # Filter by shop
     product_type: Optional[str] = None,  # Optional filter by product type
-    user=requirePermission("product_view", "shop_admin"),
+    user=requirePermission(["product:view", "vendor-product:view"]),
 ):
     """
     Optimized version of sale products query with advanced filtering
@@ -1800,7 +1800,7 @@ def get_new_arrivals(
     is_active: bool = True,
     days: int = 30,  # Products added in last X days
     shop_id: Optional[int] = None,  # Filter by shop
-    #user=requirePermission("product_view", "shop_admin"),
+    #user=requirePermission(["product:view", "shop_admin"]),
 ):
     """
     Get newly added products with advanced filtering and sorting options
@@ -1918,7 +1918,7 @@ def update_qty_price(
     id: int,
     request: UpdateQtyPriceRequest,
     session: GetSession,
-    user=requirePermission("product_create", "shop_admin"),
+    user=requirePermission(["product:update", "vendor-product:update"]),
 ):
     """
     Update product quantity and/or price with transaction logging
@@ -2107,7 +2107,7 @@ def remove_qty(
     id: int,
     request: RemoveQtyRequest,
     session: GetSession,
-    user=requirePermission("product_create", "shop_admin"),
+    user=requirePermission(["product:update", "vendor-product:update"]),
 ):
     """
     Remove quantity from product stock with transaction logging
@@ -2264,7 +2264,7 @@ def get_product_inventory(
     min_quantity: Optional[int] = Query(None, description="Filter by minimum quantity/stock"),
     max_quantity: Optional[int] = Query(None, description="Filter by maximum quantity/stock"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
-    user=requirePermission("product_view", "shop_admin"),
+    user=requirePermission(["product:view", "vendor-product:view"]),
 ):
     """
     Get product inventory with filters for:
