@@ -525,7 +525,7 @@ def get_user_shop_ids(user: dict) -> List[int]:
 def import_products_from_excel(
     session: GetSession,
     file: UploadFile = File(...),
-    user=requirePermission("product_create", "shop_admin"),
+    user=requirePermission(["product:create", "vendor-product:create", "import-product:create"]),
 ):
     """
     Import products from Excel file with shop validation and purchase tracking
@@ -709,7 +709,7 @@ def get_import_history(
     session: GetSession,
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
-    user=requirePermission("product_view", "shop_admin"),
+    user=requirePermission(["product:view", "vendor-product:view", "import-product:view"]),
 ):
     """
     Get product import history with pagination
@@ -773,7 +773,7 @@ def get_import_history(
 def get_import_history_detail(
     import_id: int,
     session: GetSession,
-    user=requirePermission("product_view", "shop_admin"),
+    user=requirePermission(["product:view", "vendor-product:view", "import-product:view"]),
 ):
     """
     Get detailed information about a specific import
@@ -856,7 +856,7 @@ def get_import_history_detail(
 def delete_import_history(
     import_id: int,
     session: GetSession,
-    user=requirePermission("product_delete", "shop_admin"),
+    user=requirePermission(["product:delete", "vendor-product:delete", "import-product:delete"]),
 ):
     """
     Delete import history record
@@ -895,7 +895,7 @@ def export_products_to_excel(
     low_stock: Optional[bool] = Query(None, description="Filter low stock products"),
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    user=requirePermission("product_view", "shop_admin"),
+    user=requirePermission(["product:view", "vendor-product:view", "import-product:view"]),
 ):
     """
     Export products to Excel with filters including purchase and sales data
@@ -1018,7 +1018,7 @@ def export_products_to_excel(
 @router.get("/user-shops")
 def get_user_shops_list(
     session: GetSession,
-    user=requirePermission("product_view", "shop_admin"),
+    user=requirePermission(["product:view", "vendor-product:view", "import-product:view"]),
 ):
     """
     Get list of shops associated with the user
@@ -1032,7 +1032,7 @@ def get_user_shops_list(
 @router.get("/import-template")
 def download_import_template(
     session: GetSession,
-    user=requirePermission("product_create", "shop_admin"),
+    user=requirePermission(["product:create", "vendor-product:create", "import-product:create"]),
 ):
     """
     Download Excel template for product import with shop selection and purchase tracking
