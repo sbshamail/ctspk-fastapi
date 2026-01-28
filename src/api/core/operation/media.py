@@ -38,11 +38,14 @@ async def uploadImage(files, user, thumbnail):
         else:
             try:
                 # Convert to WebP with unique filename
-                img = Image.open(file.file).convert("RGB")
+                
+                img = Image.open(file.file)
+                if img.mode != "RGBA":
+                    img = img.convert("RGBA")
                 base_name = os.path.splitext(unique_filename)[0]
                 output_filename = f"{base_name}.webp"
                 file_path = os.path.join(user_dir, output_filename)
-                img.save(file_path, "webp", quality=80, method=6)
+                img.save(file_path, "webp",lossless=True, quality=100, method=6)
                 ext = ".webp"  # update extension
             except UnidentifiedImageError:
                 raise api_response(
