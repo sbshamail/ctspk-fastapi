@@ -143,6 +143,43 @@ def apply_sort_filter(query, query_params_dict, Model, default_sort_field=None, 
     return query
 
 
+def get_unique_enhanced_products(session, products, return_dict=False):
+    """
+    Remove duplicate products by ID and return enhanced product data.
+    Maintains the original ordering while ensuring each product appears only once.
+
+    Args:
+        session: Database session
+        products: List of Product objects or product IDs
+        return_dict: If True, returns list of dicts, otherwise returns list of ProductRead objects
+
+    Returns:
+        List of unique enhanced products (either as ProductRead objects or dicts)
+    """
+    seen_ids = set()
+    enhanced_products = []
+
+    for product in products:
+        # Get product ID (handle both Product objects and raw IDs)
+        product_id = product.id if hasattr(product, 'id') else product
+
+        # Skip if we've already seen this product
+        if product_id in seen_ids:
+            continue
+
+        seen_ids.add(product_id)
+
+        # Get enhanced product data
+        enhanced_product = get_product_with_enhanced_data(session, product_id)
+        if enhanced_product:
+            if return_dict:
+                enhanced_products.append(enhanced_product.model_dump())
+            else:
+                enhanced_products.append(enhanced_product)
+
+    return enhanced_products
+
+
 def create_variations_for_product(
     session, product_id: int, variations_data: List[VariationData], base_sku: str
 ):
@@ -864,16 +901,8 @@ def get_limited_edition_products(
 
         products = session.exec(query).all()
 
-        # Remove duplicates by product id
-        seen_ids = set()
-        enhanced_products = []
-        for product in products:
-            if product.id in seen_ids:
-                continue
-            seen_ids.add(product.id)
-            enhanced_product = get_product_with_enhanced_data(session, product.id)
-            if enhanced_product:
-                enhanced_products.append(enhanced_product)
+        # Get unique enhanced products
+        enhanced_products = get_unique_enhanced_products(session, products)
 
         # Check if no products found
         if not enhanced_products:
@@ -964,16 +993,8 @@ def get_best_seller_products(
 
         products = session.exec(query).all()
 
-        # Remove duplicates by product id
-        seen_ids = set()
-        enhanced_products = []
-        for product in products:
-            if product.id in seen_ids:
-                continue
-            seen_ids.add(product.id)
-            enhanced_product = get_product_with_enhanced_data(session, product.id)
-            if enhanced_product:
-                enhanced_products.append(enhanced_product)
+        # Get unique enhanced products
+        enhanced_products = get_unique_enhanced_products(session, products)
 
         # Check if no products found
         if not enhanced_products:
@@ -1191,12 +1212,18 @@ def get_sale_products(
 
         # Combine and deduplicate products
         all_products = simple_products + variable_products
-        unique_products = {product.id: product for product in all_products}.values()
 
-        # Convert to list and limit results
-        sale_products = list(unique_products)[:limit]
+        # Get unique enhanced products (maintain order and remove duplicates)
+        seen_ids = set()
+        sale_products = []
+        for product in all_products:
+            if product.id not in seen_ids:
+                seen_ids.add(product.id)
+                sale_products.append(product)
+                if len(sale_products) >= limit:
+                    break
 
-        # Enhance product data
+        # Enhance product data with sale-specific information
         enhanced_products = []
         for product in sale_products:
             enhanced_product = get_product_with_enhanced_data(session, product.id)
@@ -1539,18 +1566,21 @@ def get_public_sale_products(
             .limit(limit)
         ).all()
         
-        # Combine results
+        # Combine results and get unique enhanced products
         all_products = simple_products + variable_products
-        unique_products = {product.id: product for product in all_products}.values()
-        sale_products = list(unique_products)[:limit]
-        
-        # Enhance data - FIX: Pass session parameter
-        enhanced_products = []
-        for product in sale_products:
-            # FIX: Pass the session parameter
-            enhanced_product = get_product_with_enhanced_data(session, product.id)
-            if enhanced_product:
-                enhanced_products.append(enhanced_product.model_dump())
+
+        # Get unique products maintaining order and limiting to requested amount
+        seen_ids = set()
+        unique_product_list = []
+        for product in all_products:
+            if product.id not in seen_ids:
+                seen_ids.add(product.id)
+                unique_product_list.append(product)
+                if len(unique_product_list) >= limit:
+                    break
+
+        # Enhance data
+        enhanced_products = get_unique_enhanced_products(session, unique_product_list, return_dict=True)
 
         # Check if no products found
         if not enhanced_products:
@@ -1880,16 +1910,8 @@ def get_new_arrivals(
 
         total_count = session.exec(count_query).first()
 
-        # Enhance product data - remove duplicates by product id
-        seen_ids = set()
-        enhanced_products = []
-        for product in products:
-            if product.id in seen_ids:
-                continue
-            seen_ids.add(product.id)
-            enhanced_product = get_product_with_enhanced_data(session, product.id)
-            if enhanced_product:
-                enhanced_products.append(enhanced_product.model_dump())
+        # Get unique enhanced products
+        enhanced_products = get_unique_enhanced_products(session, products, return_dict=True)
 
         # Check if no products found
         if not enhanced_products:
