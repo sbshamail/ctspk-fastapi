@@ -756,6 +756,7 @@ def get_trending_products(
                     Product.created_at >= threshold_date
                 )
             )
+            .distinct()
         )
 
         # Add shop filter
@@ -857,6 +858,7 @@ def get_limited_edition_products(
                     Product.quantity <= low_stock_threshold
                 )
             )
+            .distinct()
         )
 
         # Add shop filter
@@ -941,7 +943,7 @@ def get_best_seller_products(
         page = query_params_dict.get('page', 1)
         skip = (page - 1) * limit
 
-        query = select(Product).where(Product.is_active == is_active)
+        query = select(Product).where(Product.is_active == is_active).distinct()
 
         # Add shop filter
         if shop_id:
@@ -1138,6 +1140,7 @@ def get_sale_products(
                     Product.price > 0  # Ensure price is valid
                 )
             )
+            .distinct()
         )
 
         # Filter by shop_id parameter or user's shops
@@ -1320,7 +1323,7 @@ def get_sale_products_optimized(
         skip = (page - 1) * limit
 
         # Build the main query
-        query = select(Product).where(Product.is_active == is_active)
+        query = select(Product).where(Product.is_active == is_active).distinct()
 
         # Filter by shop_id parameter or user's shops
         if shop_id:
@@ -1329,7 +1332,7 @@ def get_sale_products_optimized(
             shop_ids = [s["id"] for s in user.get("shops", [])]
             if shop_ids:
                 query = query.where(Product.shop_id.in_(shop_ids))
-        
+
         # Filter by product type if specified
         if product_type:
             if product_type.upper() == "SIMPLE":
@@ -1506,7 +1509,7 @@ def get_public_sale_products(
                 Product.sale_price > 0,
                 Product.sale_price < Product.price
             )
-        )
+        ).distinct()
 
         # Add shop filter if provided
         if shop_id:
@@ -1628,7 +1631,7 @@ def get_sale_products_simple(
             Product.sale_price < Product.price
         )
 
-        simple_products_stmt = select(Product).where(simple_condition)
+        simple_products_stmt = select(Product).where(simple_condition).distinct()
 
         # Add shop filter
         if shop_id:
@@ -1701,7 +1704,7 @@ def get_sale_products_simple(
                 Product.id.in_(variable_product_ids)
             )
 
-            variable_products_stmt = select(Product).where(variable_condition)
+            variable_products_stmt = select(Product).where(variable_condition).distinct()
 
             # Add shop filter
             if shop_id:
@@ -1853,7 +1856,7 @@ def get_new_arrivals(
                 Product.is_active == is_active,
                 Product.created_at >= threshold_date
             )
-        )
+        ).distinct()
 
         # Add shop filter if provided
         if shop_id:
@@ -2370,6 +2373,7 @@ def get_product_inventory(
             .outerjoin(Category, Product.category_id == Category.id)
             .outerjoin(Manufacturer, Product.manufacturer_id == Manufacturer.id)
             .outerjoin(Shop, Product.shop_id == Shop.id)
+            .distinct()
         )
 
         # Apply shop filter only if filter_shop_ids is not None

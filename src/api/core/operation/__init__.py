@@ -100,6 +100,9 @@ def listop(
         objectArrayFilters=objectArrayFilters,
     )
 
+    # Ensure distinct results (joins from resolve_column can cause duplicates)
+    statement = statement.distinct()
+
     # Total count (before pagination)
     total = _exec(session, statement, Model)
     total_count = len(total)
