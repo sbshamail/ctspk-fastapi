@@ -100,16 +100,23 @@ def listop(
         objectArrayFilters=objectArrayFilters,
     )
 
-    # Ensure distinct results (joins from resolve_column can cause duplicates)
-    statement = statement.distinct()
-
-    # Total count (before pagination)
+    # Fetch all filtered results
     total = _exec(session, statement, Model)
+
+    # Deduplicate by id (joins from resolve_column can cause duplicate rows)
+    if hasattr(Model, 'id'):
+        seen = set()
+        unique = []
+        for item in total:
+            if item.id not in seen:
+                seen.add(item.id)
+                unique.append(item)
+        total = unique
+
     total_count = len(total)
 
-    # Now apply pagination (skip/limit)
-    paginated_stmt = statement.offset(skip).limit(limit)
-    results = _exec(session, paginated_stmt, Model)
+    # Apply pagination on deduplicated results
+    results = total[skip:skip + limit]
 
     print(results)
     return {"data": results, "total": total_count}

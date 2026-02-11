@@ -84,10 +84,15 @@ def _coerce_value_for_column(col_type, value, col_name: str):
         return str(value) if not isinstance(value, str) else value
 
 
-def resolve_column(Model, col: str, statement):  # nested object filter
+def resolve_column(Model, col: str, statement, joined=None):  # nested object filter
     """
     Given 'product.owner.role.title', return (attr, updated_statement).
+    Uses `joined` set to track already-joined relationships and avoid duplicate joins
+    which cause duplicate rows in results.
     """
+    if joined is None:
+        joined = set()
+
     parts = col.split(".")
     current_model = Model
     attr = None
@@ -96,9 +101,12 @@ def resolve_column(Model, col: str, statement):  # nested object filter
         mapper_attr = getattr(current_model, part)
 
         if hasattr(mapper_attr, "property") and hasattr(mapper_attr.property, "mapper"):
-            # It's a relationship -> join it
+            # It's a relationship -> join it only if not already joined
             related_model = mapper_attr.property.mapper.class_
-            statement = statement.join(mapper_attr, isouter=True)
+            join_key = f"{current_model.__name__}.{part}"
+            if join_key not in joined:
+                statement = statement.join(mapper_attr, isouter=True)
+                joined.add(join_key)
             current_model = related_model
         else:
             # It's a column
@@ -113,7 +121,7 @@ def resolve_column(Model, col: str, statement):  # nested object filter
 # -------------------------
 # string_array_filter
 # -------------------------
-def string_array_filter(statement: Select, Model, parsed_filters):
+def string_array_filter(statement: Select, Model, parsed_filters, joined=None):
     """
     parsed_filters expected format:
     [
@@ -125,6 +133,8 @@ def string_array_filter(statement: Select, Model, parsed_filters):
     - column (string) -> column must be a JSON/ARRAY column on model
     - values (list[str]) -> any match is accepted (OR)
     """
+    if joined is None:
+        joined = set()
     filters = []
     for entry in parsed_filters:
         if not isinstance(entry, (list, tuple)) or len(entry) < 2:
@@ -135,7 +145,7 @@ def string_array_filter(statement: Select, Model, parsed_filters):
         if not isinstance(values, (list, tuple)):
             values = [values]
 
-        attr, statement = resolve_column(Model, col_name, statement)
+        attr, statement = resolve_column(Model, col_name, statement, joined)
         col_type = _get_column_type(attr)
 
         ors = []
@@ -157,7 +167,7 @@ def string_array_filter(statement: Select, Model, parsed_filters):
 
 # object_array_filter
 # -------------------------
-def object_array_filter(statement: Select, Model, parsed_filters):
+def object_array_filter(statement: Select, Model, parsed_filters, joined=None):
     """
     parsed_filters expected examples (multiple forms supported):
 
@@ -188,6 +198,8 @@ def object_array_filter(statement: Select, Model, parsed_filters):
         we OR those (because any value match inside 'values' should pass)
     - Each top-level column entry becomes one AND group (you can pass multiple columns if needed)
     """
+    if joined is None:
+        joined = set()
     filters = []
 
     for entry in parsed_filters:
@@ -200,7 +212,7 @@ def object_array_filter(statement: Select, Model, parsed_filters):
         ]  # list of arrays like ["name","color"] or ["values", ["value","Red"], ...]
 
         try:
-            attr, statement = resolve_column(Model, col_name, statement)
+            attr, statement = resolve_column(Model, col_name, statement, joined)
         except Exception:
             continue
 
@@ -295,6 +307,9 @@ def applyFilters(
     stringArrayFilters: Optional[List[List[str]]] = None,
     objectArrayFilters: Optional[List[List[str]]] = None,
 ):
+    # Track joined relationships to avoid duplicate joins causing duplicate rows
+    joined = set()
+
     if otherFilters:
         # pass the current statement through the hook
         statement = otherFilters(statement, Model)
@@ -305,7 +320,7 @@ def applyFilters(
         # ]
         search_filters = []
         for col in searchFields:
-            attr, statement = resolve_column(Model, col, statement)
+            attr, statement = resolve_column(Model, col, statement, joined)
             search_filters.append(attr.ilike(f"%{searchTerm}%"))
         statement = statement.where(or_(*search_filters))
 
@@ -322,7 +337,7 @@ def applyFilters(
 
             filters = []
             for col, values in grouped.items():
-                attr, statement = resolve_column(Model, col, statement)
+                attr, statement = resolve_column(Model, col, statement, joined)
                 col_type = _get_column_type(attr)
 
                 coerced_values = [
@@ -351,7 +366,7 @@ def applyFilters(
         filters = []
         for col, value in customFilters:
             print(f"🔧 Processing customFilter: col={col}, value={value}, type={type(value)}")
-            attr, statement = resolve_column(Model, col, statement)
+            attr, statement = resolve_column(Model, col, statement, joined)
             # optional handling formats
             col_type = _get_column_type(attr)
             print(f"🔧 Column type for {col}: {col_type}")
@@ -442,7 +457,7 @@ def applyFilters(
                 parsed_sort = ast.literal_eval(sort)
 
             column_name, direction = parsed_sort
-            attr, statement = resolve_column(Model, column_name, statement)
+            attr, statement = resolve_column(Model, column_name, statement, joined)
             col_type = _get_column_type(attr)
 
             # Case-insensitive sorting for strings
@@ -469,7 +484,7 @@ def applyFilters(
                     if isinstance(string_array_raw, str)
                     else string_array_raw
                 )
-                statement = string_array_filter(statement, Model, parsed)
+                statement = string_array_filter(statement, Model, parsed, joined)
             except Exception as e:
                 return api_response(400, f"stringArrayFilter parse error: {e}")
     if objectArrayFilters:
@@ -482,7 +497,7 @@ def applyFilters(
                     if isinstance(object_array_raw, str)
                     else object_array_raw
                 )
-                statement = object_array_filter(statement, Model, parsed)
+                statement = object_array_filter(statement, Model, parsed, joined)
             except Exception as e:
                 return api_response(400, f"objectArrayFilter parse error: {e}")
 
