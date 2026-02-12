@@ -39,6 +39,17 @@ from src.api.core.transaction_logger import TransactionLogger
 router = APIRouter(prefix="/product", tags=["Product"])
 
 
+def distinct_products(products):
+    """Remove duplicate products by ID, preserving order."""
+    seen = set()
+    result = []
+    for p in products:
+        if p.id not in seen:
+            seen.add(p.id)
+            result.append(p)
+    return result
+
+
 # Pydantic schemas for new routes
 class UpdateQtyPriceRequest(BaseModel):
     quantity: Optional[int] = None
@@ -798,7 +809,7 @@ def get_trending_products(
             .limit(limit)
         )
 
-        products = session.exec(query).all()
+        products = distinct_products(session.exec(query).all())
 
         # Remove duplicates by product id
         seen_ids = set()
@@ -899,7 +910,7 @@ def get_limited_edition_products(
             .limit(limit)
         )
 
-        products = session.exec(query).all()
+        products = distinct_products(session.exec(query).all())
 
         # Get unique enhanced products
         enhanced_products = get_unique_enhanced_products(session, products)
@@ -991,7 +1002,7 @@ def get_best_seller_products(
             .limit(limit)
         )
 
-        products = session.exec(query).all()
+        products = distinct_products(session.exec(query).all())
 
         # Get unique enhanced products
         enhanced_products = get_unique_enhanced_products(session, products)
@@ -1057,7 +1068,7 @@ def get_stock_report(
                 if field:
                     query = query.order_by(field.asc())
 
-        products = session.exec(query).all()
+        products = distinct_products(session.exec(query).all())
 
         stock_report = []
         for product in products:
@@ -1160,11 +1171,11 @@ def get_sale_products(
             )
 
         # Get simple products on sale
-        simple_products = session.exec(
+        simple_products = distinct_products(session.exec(
             simple_products_query
             .offset(skip)
             .limit(limit)
-        ).all()
+        ).all())
 
         # Query for variable products that have variations on sale
         variable_products_query = (
@@ -1204,11 +1215,11 @@ def get_sale_products(
             )
 
         # Get variable products with sale variations
-        variable_products = session.exec(
+        variable_products = distinct_products(session.exec(
             variable_products_query
             .offset(skip)
             .limit(limit)
-        ).all()
+        ).all())
 
         # Combine and deduplicate products
         all_products = simple_products + variable_products
@@ -1397,12 +1408,12 @@ def get_sale_products_optimized(
         query = query.order_by(discount_case.desc())
         
         # Execute query
-        products = session.exec(
+        products = distinct_products(session.exec(
             query
             .offset(skip)
             .limit(limit)
-        ).all()
-        
+        ).all())
+
         # Enhance product data
         enhanced_products = []
         for product in products:
@@ -1523,12 +1534,12 @@ def get_public_sale_products(
                 )
             )
 
-        simple_products = session.exec(
+        simple_products = distinct_products(session.exec(
             simple_query
             .offset(skip)
             .limit(limit)
-        ).all()
-        
+        ).all())
+
         # Variable products with sale variations
         variable_query = (
             select(Product)
@@ -1560,12 +1571,12 @@ def get_public_sale_products(
                 )
             )
 
-        variable_products = session.exec(
+        variable_products = distinct_products(session.exec(
             variable_query
             .offset(skip)
             .limit(limit)
-        ).all()
-        
+        ).all())
+
         # Combine results and get unique enhanced products
         all_products = simple_products + variable_products
 
@@ -1671,7 +1682,7 @@ def get_sale_products_simple(
         )
 
         print("Executing simple products query...")
-        simple_products = session.exec(simple_products_stmt).all()
+        simple_products = distinct_products(session.exec(simple_products_stmt).all())
         print(f"Found {len(simple_products)} simple products on sale")
         
         # VARIABLE PRODUCTS - Separate query to avoid complex joins
@@ -1744,7 +1755,7 @@ def get_sale_products_simple(
             )
 
             print("Executing variable products query...")
-            variable_products = session.exec(variable_products_stmt).all()
+            variable_products = distinct_products(session.exec(variable_products_stmt).all())
             print(f"Retrieved {len(variable_products)} variable products")
         
         # Combine results manually - NO list() function calls
@@ -1890,11 +1901,11 @@ def get_new_arrivals(
         query = apply_sort_filter(query, query_params_dict, Product, "created_at", "desc")
         
         # Execute query
-        products = session.exec(
+        products = distinct_products(session.exec(
             query
             .offset(skip)
             .limit(limit)
-        ).all()
+        ).all())
 
         # Get total count for pagination
         count_query = select(func.count(Product.id)).where(
@@ -2479,7 +2490,14 @@ def get_product_inventory(
 
         # Execute main query with pagination
         query = query.offset(skip).limit(limit)
-        results = session.exec(query).all()
+        raw_results = session.exec(query).all()
+        # Deduplicate by product id
+        seen_inv = set()
+        results = []
+        for row in raw_results:
+            if row.id not in seen_inv:
+                seen_inv.add(row.id)
+                results.append(row)
 
         # Build response data
         inventory_list = []

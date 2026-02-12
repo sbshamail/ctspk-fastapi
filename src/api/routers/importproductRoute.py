@@ -933,8 +933,8 @@ def export_products_to_excel(
             query = query.where(Product.created_at <= end_datetime)
         
         # Execute query
-        products = session.exec(query).all()
-        
+        products = session.exec(query).unique().all()
+
         if not products:
             return api_response(404, "No products found matching the criteria")
         

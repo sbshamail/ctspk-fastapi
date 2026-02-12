@@ -178,7 +178,17 @@ def listRecords(
         if not Schema:
             return result
 
-        list_data = [Schema.model_validate(prod) for prod in result["data"]]
+        # Validate and deduplicate by id
+        seen_ids = set()
+        list_data = []
+        for prod in result["data"]:
+            validated = Schema.model_validate(prod)
+            if hasattr(validated, 'id') and validated.id in seen_ids:
+                continue
+            if hasattr(validated, 'id'):
+                seen_ids.add(validated.id)
+            list_data.append(validated)
+
         return api_response(
             200,
             f"data found" if list_data else "No Result found",
