@@ -549,11 +549,16 @@ def list(
     if custom_filters:
         query_params["customFilters"] = custom_filters
 
+    # Filter out products from inactive/disapproved shops
+    def active_shop_filter(statement, Model):
+        return statement.join(Shop, Model.shop_id == Shop.id).where(Shop.is_active == True)
+
     return listRecords(
         query_params=query_params,
         searchFields=searchFields,
         Model=Product,
         Schema=ProductRead,
+        otherFilters=active_shop_filter,
     )
 
 
@@ -639,16 +644,21 @@ def get_products_by_category(
     if custom_filters:
         query_params["customFilters"] = custom_filters
 
-    # Filter by category_ids (category and its descendants)
-    def category_filter(statement, Model):
-        return statement.where(Model.category_id.in_(category_ids))
+    # Filter by category_ids and exclude products from inactive/disapproved shops
+    def category_and_shop_filter(statement, Model):
+        return (
+            statement
+            .join(Shop, Model.shop_id == Shop.id)
+            .where(Shop.is_active == True)
+            .where(Model.category_id.in_(category_ids))
+        )
 
     return listRecords(
         query_params=query_params,
         searchFields=searchFields,
         Model=Product,
         Schema=ProductRead,
-        otherFilters=category_filter,
+        otherFilters=category_and_shop_filter,
     )
 
 
@@ -861,11 +871,13 @@ def get_limited_edition_products(
 
         query = (
             select(Product)
+            .join(Shop, Product.shop_id == Shop.id)
             .where(
                 and_(
                     Product.is_active == is_active,
                     Product.quantity > 0,
-                    Product.quantity <= low_stock_threshold
+                    Product.quantity <= low_stock_threshold,
+                    Shop.is_active == True
                 )
             )
         )
@@ -952,7 +964,16 @@ def get_best_seller_products(
         page = query_params_dict.get('page', 1)
         skip = (page - 1) * limit
 
-        query = select(Product).where(Product.is_active == is_active)
+        query = (
+            select(Product)
+            .join(Shop, Product.shop_id == Shop.id)
+            .where(
+                and_(
+                    Product.is_active == is_active,
+                    Shop.is_active == True
+                )
+            )
+        )
 
         # Add shop filter
         if shop_id:
@@ -1140,9 +1161,11 @@ def get_sale_products(
         # Build base query for simple products on sale
         simple_products_query = (
             select(Product)
+            .join(Shop, Product.shop_id == Shop.id)
             .where(
                 and_(
                     Product.is_active == is_active,
+                    Shop.is_active == True,
                     Product.product_type == ProductType.SIMPLE,
                     Product.sale_price > 0,
                     Product.sale_price < Product.price,
@@ -1180,10 +1203,12 @@ def get_sale_products(
         # Query for variable products that have variations on sale
         variable_products_query = (
             select(Product)
+            .join(Shop, Product.shop_id == Shop.id)
             .join(VariationOption, Product.id == VariationOption.product_id)
             .where(
                 and_(
                     Product.is_active == is_active,
+                    Shop.is_active == True,
                     Product.product_type == ProductType.VARIABLE,
                     VariationOption.sale_price.isnot(None),
                     VariationOption.sale_price != "",
@@ -1859,10 +1884,15 @@ def get_new_arrivals(
         skip = (page - 1) * limit
 
         # Build base query
-        query = select(Product).where(
-            and_(
-                Product.is_active == is_active,
-                Product.created_at >= threshold_date
+        query = (
+            select(Product)
+            .join(Shop, Product.shop_id == Shop.id)
+            .where(
+                and_(
+                    Product.is_active == is_active,
+                    Shop.is_active == True,
+                    Product.created_at >= threshold_date
+                )
             )
         )
 
@@ -1908,10 +1938,15 @@ def get_new_arrivals(
         ).all())
 
         # Get total count for pagination
-        count_query = select(func.count(Product.id)).where(
-            and_(
-                Product.is_active == is_active,
-                Product.created_at >= threshold_date
+        count_query = (
+            select(func.count(Product.id))
+            .join(Shop, Product.shop_id == Shop.id)
+            .where(
+                and_(
+                    Product.is_active == is_active,
+                    Shop.is_active == True,
+                    Product.created_at >= threshold_date
+                )
             )
         )
 
