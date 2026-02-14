@@ -151,6 +151,11 @@ def apply_sort_filter(query, query_params_dict, Model, default_sort_field=None, 
             query = query.order_by(column.asc())
         else:
             query = query.order_by(column.desc())
+
+    # Add secondary sort by id for deterministic pagination
+    if hasattr(Model, 'id'):
+        query = query.order_by(Model.id.asc())
+
     return query
 
 
@@ -770,9 +775,11 @@ def get_trending_products(
         # Using total_sold_quantity as a proxy for trending
         query = (
             select(Product)
+            .join(Shop, Product.shop_id == Shop.id)
             .where(
                 and_(
                     Product.is_active == is_active,
+                    Shop.is_active == True,
                     Product.total_sold_quantity > 0,
                     Product.created_at >= threshold_date
                 )
@@ -1194,6 +1201,7 @@ def get_sale_products(
             )
 
         # Get simple products on sale
+        simple_products_query = simple_products_query.order_by(Product.created_at.desc(), Product.id.asc())
         simple_products = distinct_products(session.exec(
             simple_products_query
             .offset(skip)
@@ -1240,6 +1248,7 @@ def get_sale_products(
             )
 
         # Get variable products with sale variations
+        variable_products_query = variable_products_query.order_by(Product.created_at.desc(), Product.id.asc())
         variable_products = distinct_products(session.exec(
             variable_products_query
             .offset(skip)
@@ -1356,7 +1365,16 @@ def get_sale_products_optimized(
         skip = (page - 1) * limit
 
         # Build the main query
-        query = select(Product).where(Product.is_active == is_active)
+        query = (
+            select(Product)
+            .join(Shop, Product.shop_id == Shop.id)
+            .where(
+                and_(
+                    Product.is_active == is_active,
+                    Shop.is_active == True
+                )
+            )
+        )
 
         # Filter by shop_id parameter or user's shops
         if shop_id:
@@ -1430,8 +1448,8 @@ def get_sale_products_optimized(
             else_=0
         ).label('discount_percent')
         
-        query = query.order_by(discount_case.desc())
-        
+        query = query.order_by(discount_case.desc(), Product.id.asc())
+
         # Execute query
         products = distinct_products(session.exec(
             query
@@ -1535,12 +1553,17 @@ def get_public_sale_products(
         skip = (page - 1) * limit
 
         # Simple products on sale
-        simple_query = select(Product).where(
-            and_(
-                Product.is_active == is_active,
-                Product.product_type == ProductType.SIMPLE,
-                Product.sale_price > 0,
-                Product.sale_price < Product.price
+        simple_query = (
+            select(Product)
+            .join(Shop, Product.shop_id == Shop.id)
+            .where(
+                and_(
+                    Product.is_active == is_active,
+                    Shop.is_active == True,
+                    Product.product_type == ProductType.SIMPLE,
+                    Product.sale_price > 0,
+                    Product.sale_price < Product.price
+                )
             )
         )
 
@@ -1559,6 +1582,7 @@ def get_public_sale_products(
                 )
             )
 
+        simple_query = simple_query.order_by(Product.created_at.desc(), Product.id.asc())
         simple_products = distinct_products(session.exec(
             simple_query
             .offset(skip)
@@ -1568,10 +1592,12 @@ def get_public_sale_products(
         # Variable products with sale variations
         variable_query = (
             select(Product)
+            .join(Shop, Product.shop_id == Shop.id)
             .join(VariationOption, Product.id == VariationOption.product_id)
             .where(
                 and_(
                     Product.is_active == is_active,
+                    Shop.is_active == True,
                     Product.product_type == ProductType.VARIABLE,
                     VariationOption.sale_price.isnot(None),
                     cast(VariationOption.sale_price, Float) > 0,
@@ -1596,6 +1622,7 @@ def get_public_sale_products(
                 )
             )
 
+        variable_query = variable_query.order_by(Product.created_at.desc(), Product.id.asc())
         variable_products = distinct_products(session.exec(
             variable_query
             .offset(skip)
@@ -1659,12 +1686,17 @@ def get_sale_products_simple(
         # SIMPLE PRODUCTS - Direct query without joins first
         simple_condition = and_(
             Product.is_active == is_active,
+            Shop.is_active == True,
             Product.product_type == ProductType.SIMPLE,
             Product.sale_price > 0,
             Product.sale_price < Product.price
         )
 
-        simple_products_stmt = select(Product).where(simple_condition)
+        simple_products_stmt = (
+            select(Product)
+            .join(Shop, Product.shop_id == Shop.id)
+            .where(simple_condition)
+        )
 
         # Add shop filter
         if shop_id:
@@ -1733,11 +1765,16 @@ def get_sale_products_simple(
         if variable_product_ids:
             variable_condition = and_(
                 Product.is_active == is_active,
+                Shop.is_active == True,
                 Product.product_type == ProductType.VARIABLE,
                 Product.id.in_(variable_product_ids)
             )
 
-            variable_products_stmt = select(Product).where(variable_condition)
+            variable_products_stmt = (
+                select(Product)
+                .join(Shop, Product.shop_id == Shop.id)
+                .where(variable_condition)
+            )
 
             # Add shop filter
             if shop_id:

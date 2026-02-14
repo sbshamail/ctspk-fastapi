@@ -475,6 +475,11 @@ def applyFilters(
                 400,
                 f"Invalid sort parameter: {e}",
             )
+
+    # Add secondary sort by id for deterministic pagination
+    if hasattr(Model, 'id'):
+        statement = statement.order_by(asc(Model.id))
+
     if stringArrayFilters:
         string_array_raw = stringArrayFilters
         if string_array_raw:
