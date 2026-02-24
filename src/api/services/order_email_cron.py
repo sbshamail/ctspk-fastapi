@@ -1,198 +1,149 @@
 # src/api/services/order_email_cron.py
 """
-Cron job service for sending order notification emails to shop owners
-Runs every 5 minutes to check for new orders and send emails
+Cron job: sends order notification emails every 5 minutes.
+Two emails per new order:
+  1. Shop-owner invoice  — per shop, showing only that shop's products.
+  2. Admin invoice       — sent to all is_root users, full order with all shops.
 """
 import schedule
 import time
 import threading
 from datetime import datetime, timedelta
 from sqlmodel import Session, select, and_
-from typing import List
 
 from src.lib.db_con import engine
-from src.api.models.order_model.orderModel import Order, OrderProduct
+from src.api.models.order_model.orderModel import Order
 from src.api.services.order_email_service import order_email_service
 
 
 class OrderEmailCron:
-    """Cron job for sending order emails to shop owners"""
+    """Cron job for sending order emails to shop owners and admin users."""
 
     def __init__(self):
         self.is_running = False
-        self.last_check_time = None
 
     def process_pending_order_emails(self):
         """
-        Process orders that need email notifications sent to shop owners
-
-        Logic:
-        1. Find orders created in the last 10 minutes that haven't had emails sent
-        2. For each order, send emails to all shop owners with products in the order
-        3. Mark order as email sent (using order metadata or separate tracking)
+        Find orders created in the last 10 minutes with pending/processing status
+        and send shop-owner + admin emails for any that haven't been emailed yet.
         """
         print(f"\n{'='*60}")
-        print(f"🔄 Order Email Cron Job Running at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"[order-email] cron running at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*60}")
 
         session = Session(engine)
         try:
-            # Calculate time range (last 10 minutes to catch any missed)
             time_threshold = datetime.now() - timedelta(minutes=10)
 
-            # Query for recent orders that need emails sent
-            # We'll use a simple approach: find orders from last 10 minutes
-            # In production, you'd want to track email_sent status in the database
-            query = select(Order).where(
-                and_(
-                    Order.created_at >= time_threshold,
-                    Order.order_status.in_(['order-pending', 'order-processing'])
-                )
-            ).order_by(Order.created_at.desc())
+            orders = session.exec(
+                select(Order).where(
+                    and_(
+                        Order.created_at >= time_threshold,
+                        Order.order_status.in_(['order-pending', 'order-processing',
+                                                'pending', 'processing'])
+                    )
+                ).order_by(Order.created_at.desc())
+            ).all()
 
-            orders = session.exec(query).all()
-
-            print(f"📊 Found {len(orders)} orders to process")
+            print(f"[order-email] {len(orders)} order(s) in window")
 
             if not orders:
-                print("✅ No new orders to process")
+                print("[order-email] nothing to process")
                 return
 
-            # Process each order
             for order in orders:
-                print(f"\n📦 Processing Order #{order.tracking_number}")
-                print(f"   Order ID: {order.id}")
-                print(f"   Created: {order.created_at}")
-                print(f"   Status: {order.order_status}")
+                print(f"\n[order-email] processing order #{order.tracking_number} (id={order.id})")
 
-                # Check if this order already has emails sent
-                # You can implement tracking using order metadata or a separate table
-                if self._has_email_been_sent(session, order):
-                    print(f"   ⏭️  Email already sent for this order, skipping...")
+                if self._email_already_sent(order):
+                    print(f"[order-email] already sent for #{order.tracking_number}, skipping")
                     continue
 
-                # Get unique shop IDs from order products
-                shop_ids = list(set([op.shop_id for op in order.order_products if op.shop_id]))
-                print(f"   🏪 Shops involved: {len(shop_ids)}")
+                shop_ids = list({op.shop_id for op in order.order_products if op.shop_id})
+                print(f"[order-email] {len(shop_ids)} shop(s) in order")
 
-                # Send emails to all shop owners
-                results = order_email_service.send_order_emails_to_all_shops(session, order)
+                # 1. Shop-owner emails
+                shop_results = order_email_service.send_order_emails_to_all_shops(session, order)
+                shop_ok = sum(1 for v in shop_results.values() if v)
+                print(f"[order-email] shop-owner emails: {shop_ok}/{len(shop_ids)} sent")
 
-                # Log results
-                success_count = sum(1 for success in results.values() if success)
-                print(f"   📧 Emails sent: {success_count}/{len(shop_ids)}")
+                # 2. Admin email
+                admin_ok = order_email_service.send_admin_email(session, order)
+                print(f"[order-email] admin email: {'sent' if admin_ok else 'failed/skipped'}")
 
-                for shop_id, success in results.items():
-                    status = "✅ Sent" if success else "❌ Failed"
-                    print(f"      Shop {shop_id}: {status}")
-
-                # Mark order as email sent
-                if success_count > 0:
-                    self._mark_email_as_sent(session, order)
-                    print(f"   ✅ Order marked as email sent")
+                # Mark as sent if at least one email succeeded
+                if shop_ok > 0 or admin_ok:
+                    self._mark_email_sent(session, order)
 
             session.commit()
-            print(f"\n{'='*60}")
-            print(f"✅ Cron job completed successfully")
-            print(f"{'='*60}\n")
+            print(f"\n[order-email] cron complete")
 
         except Exception as e:
-            print(f"\n❌ Error in order email cron job: {e}")
+            print(f"[order-email] ERROR: {e}")
             import traceback
             traceback.print_exc()
             session.rollback()
         finally:
             session.close()
 
-    def _has_email_been_sent(self, session: Session, order: Order) -> bool:
-        """
-        Check if email has already been sent for this order
+    # ─── Duplicate-prevention helpers ──────────────────────────────────────
 
-        This is a simple implementation using order metadata.
-        In production, you might want a separate tracking table.
-        """
-        # Check if order has metadata indicating email was sent
-        if hasattr(order, 'metadata') and order.metadata:
-            if isinstance(order.metadata, dict):
-                return order.metadata.get('shop_owner_email_sent', False)
+    def _email_already_sent(self, order: Order) -> bool:
+        """Return True if both shop-owner and admin emails have been sent."""
+        if hasattr(order, 'metadata') and isinstance(order.metadata, dict):
+            return order.metadata.get('order_email_sent', False)
+        # Fallback: treat orders older than 10 min as already processed
+        return order.created_at < (datetime.now() - timedelta(minutes=10))
 
-        # For now, we'll assume orders older than 10 minutes have been processed
-        # This prevents duplicate emails
-        time_threshold = datetime.now() - timedelta(minutes=10)
-        return order.created_at < time_threshold
-
-    def _mark_email_as_sent(self, session: Session, order: Order):
-        """
-        Mark order as having email sent
-
-        This is a simple implementation using order metadata.
-        In production, you might want a separate tracking table.
-        """
+    def _mark_email_sent(self, session: Session, order: Order):
+        """Record in order metadata that emails have been sent."""
         try:
-            # Update order metadata
-            if not hasattr(order, 'metadata') or order.metadata is None:
-                order.metadata = {}
-
-            if isinstance(order.metadata, dict):
-                order.metadata['shop_owner_email_sent'] = True
-                order.metadata['shop_owner_email_sent_at'] = datetime.now().isoformat()
-
+            meta = order.metadata if isinstance(getattr(order, 'metadata', None), dict) else {}
+            meta['order_email_sent'] = True
+            meta['order_email_sent_at'] = datetime.now().isoformat()
+            order.metadata = meta
             session.add(order)
             session.flush()
         except Exception as e:
-            print(f"Warning: Could not mark email as sent: {e}")
-            # Don't fail the entire process if we can't update metadata
+            print(f"[order-email] warning: could not mark email sent: {e}")
+
+    # ─── Scheduler lifecycle ───────────────────────────────────────────────
 
     def start_cron_job(self):
-        """Start the cron job in a background thread"""
+        """Start the cron job in a background daemon thread."""
         if self.is_running:
-            print("⚠️  Cron job is already running")
+            print("[order-email] cron already running")
             return
 
         self.is_running = True
-        print("🚀 Starting Order Email Cron Job")
-        print("   Schedule: Every 5 minutes")
+        print("[order-email] starting cron job (every 5 minutes)")
 
-        # Schedule the job every 5 minutes
         schedule.every(5).minutes.do(self.process_pending_order_emails)
 
-        # Run immediately on startup
+        # Run once immediately on startup
         self.process_pending_order_emails()
 
-        # Run scheduler in background thread
-        def run_scheduler():
+        def _run():
             while self.is_running:
                 schedule.run_pending()
-                time.sleep(30)  # Check every 30 seconds
+                time.sleep(30)
 
-        thread = threading.Thread(target=run_scheduler, daemon=True)
+        thread = threading.Thread(target=_run, daemon=True)
         thread.start()
-
-        print("✅ Order Email Cron Job started successfully")
-        print("   Thread is running in background")
+        print("[order-email] background thread started")
 
     def stop_cron_job(self):
-        """Stop the cron job"""
+        """Stop the scheduler."""
         self.is_running = False
         schedule.clear()
-        print("🛑 Order Email Cron Job stopped")
+        print("[order-email] cron stopped")
 
 
-# Create global instance
+# Global instance used by cron_startup.py
 order_email_cron = OrderEmailCron()
 
 
-# Entry point for manual execution
 if __name__ == "__main__":
     print("=" * 60)
-    print("Order Email Cron Job - Manual Execution")
+    print("Order Email Cron — Manual Run")
     print("=" * 60)
-
-    cron = OrderEmailCron()
-
-    # Run once
-    cron.process_pending_order_emails()
-
-    print("\n" + "=" * 60)
-    print("Manual execution completed")
-    print("=" * 60)
+    OrderEmailCron().process_pending_order_emails()
