@@ -31,6 +31,7 @@ from src.api.models.order_model.orderModel import (
     FulfillmentUserInfo,
     FreeShippingSource
 )
+from src.api.models.usersModel import User
 from src.api.models.product_model.productsModel import Product, ProductRead, ProductType
 from src.api.models.product_model.variationOptionModel import VariationOption
 from src.api.models.category_model import Category
@@ -1953,8 +1954,9 @@ def update(id: int, request: OrderUpdate, session: GetSession, user: requireSign
     order = session.get(Order, id)
     raiseExceptions((order, 404, "Order not found"))
 
-    # Track status changes for history
+    # Track changes before update
     old_order_status = order.order_status
+    old_fulfillment_id = order.fullfillment_id
 
     data = updateOp(order, request, session)
 
@@ -1984,6 +1986,33 @@ def update(id: int, request: OrderUpdate, session: GetSession, user: requireSign
     # Create shop earnings if order is completed
     create_shop_earning(session, order)
     session.commit()  # Commit shop earnings
+
+    # Send fulfillment assignment notification + email when fullfillment_id is newly assigned
+    new_fulfillment_id = request.fullfillment_id
+    if new_fulfillment_id and new_fulfillment_id != old_fulfillment_id:
+        try:
+            fulfillment_user = session.get(User, new_fulfillment_id)
+            if fulfillment_user:
+                NotificationHelper.notify_order_assigned_to_fulfillment(
+                    session=session,
+                    order_id=order.id,
+                    tracking_number=order.tracking_number,
+                    customer_id=order.customer_id,
+                    fulfillment_user_id=new_fulfillment_id
+                )
+                send_email(
+                    to_email=fulfillment_user.email,
+                    email_template_id=7,  # Fulfillment assignment template
+                    replacements={
+                        "fulfillment_name": fulfillment_user.name,
+                        "order_number": order.tracking_number,
+                        "order_id": order.id,
+                        "customer_name": order.customer_name,
+                    },
+                    session=session
+                )
+        except Exception as e:
+            Print(f"Failed to send fulfillment assignment notification/email: {e}")
 
     return api_response(
         200, "Order Updated Successfully", OrderReadNested.model_validate(order)
@@ -2174,13 +2203,11 @@ def update_status(
     create_shop_earning(session, order)
     session.commit()  # Commit shop earnings
 
-    # Send order status update email only for OUT_FOR_DELIVERY and ORDER_DELIVER statuses
+    # Send order status update email for OUT_FOR_DELIVERY and ORDER_DELIVER
     if request.order_status in [OrderStatusEnum.OUT_FOR_DELIVERY, OrderStatusEnum.ORDER_DELIVER]:
         try:
-            # Get user email if customer exists
             customer_email = None
             if order.customer_id:
-                from src.api.models.usersModel import User
                 customer = session.get(User, order.customer_id)
                 if customer:
                     customer_email = customer.email
@@ -2188,20 +2215,91 @@ def update_status(
             if customer_email or order.customer_contact:
                 send_email(
                     to_email=customer_email or order.customer_contact,
-                    email_template_id=6,  # Use appropriate template ID for order status update
+                    email_template_id=6,
                     replacements={
                         "customer_name": order.customer_name,
                         "tracking_number": order.tracking_number,
                         "order_number": order.tracking_number,
                         "order_id": order.id,
                         "order_status": order.order_status,
-                        "payment_status": order.payment_status or order.payment_status,
+                        "payment_status": order.payment_status,
                     },
                     session=session
                 )
         except Exception as e:
-            # Log email error but don't fail status update
             Print(f"Failed to send order status update email: {e}")
+
+    # Send cancellation/refund emails + notifications to customer, shop owners, and admin
+    if request.order_status in [OrderStatusEnum.CANCELLED, OrderStatusEnum.REFUNDED]:
+        try:
+            shop_ids = list(set([op.shop_id for op in order.order_products if op.shop_id]))
+            template_id = 8  # Order cancellation/refund template
+
+            # Email customer
+            customer_email = None
+            if order.customer_id:
+                customer = session.get(User, order.customer_id)
+                if customer:
+                    customer_email = customer.email
+            if customer_email or order.customer_contact:
+                send_email(
+                    to_email=customer_email or order.customer_contact,
+                    email_template_id=template_id,
+                    replacements={
+                        "customer_name": order.customer_name,
+                        "order_number": order.tracking_number,
+                        "order_id": order.id,
+                        "order_status": order.order_status,
+                    },
+                    session=session
+                )
+
+            # Email shop owners
+            for shop_id in shop_ids:
+                shop = session.get(Shop, shop_id)
+                if shop:
+                    shop_owner = session.get(User, shop.owner_id)
+                    if shop_owner:
+                        send_email(
+                            to_email=shop_owner.email,
+                            email_template_id=template_id,
+                            replacements={
+                                "customer_name": order.customer_name,
+                                "order_number": order.tracking_number,
+                                "order_id": order.id,
+                                "shop_name": shop.name,
+                                "order_status": order.order_status,
+                            },
+                            session=session
+                        )
+
+            # Email + notify admins
+            admin_users = session.exec(select(User).where(User.is_root == True)).all()
+            for admin in admin_users:
+                send_email(
+                    to_email=admin.email,
+                    email_template_id=template_id,
+                    replacements={
+                        "customer_name": order.customer_name,
+                        "order_number": order.tracking_number,
+                        "order_id": order.id,
+                        "order_status": order.order_status,
+                    },
+                    session=session
+                )
+
+            # Notifications to customer, shops, admins
+            if order.customer_id:
+                NotificationHelper.notify_order_cancelled(
+                    session=session,
+                    order_id=order.id,
+                    tracking_number=order.tracking_number,
+                    customer_id=order.customer_id,
+                    shop_ids=shop_ids,
+                    cancelled_by="admin"
+                )
+        except Exception as e:
+            Print(f"Failed to send cancellation/refund notifications: {e}")
 
     return api_response(
         200, "Order Status Updated Successfully", OrderRead.model_validate(order)
@@ -3255,12 +3353,11 @@ def cancel_order(
                     notes=f"Order {order.tracking_number} cancelled - stock restored"
                 )
 
-        # 7. Send cancellation notifications
-        if order.customer_id:
-            # Get unique shop IDs from order products
-            shop_ids = list(set([op.shop_id for op in order.order_products if op.shop_id]))
+        # 7. Send cancellation notifications + emails
+        shop_ids = list(set([op.shop_id for op in order.order_products if op.shop_id]))
+        cancelled_by = "admin" if is_admin else "customer"
 
-            cancelled_by = "admin" if is_admin else "customer"
+        if order.customer_id:
             NotificationHelper.notify_order_cancelled(
                 session=session,
                 order_id=order.id,
@@ -3269,6 +3366,62 @@ def cancel_order(
                 shop_ids=shop_ids,
                 cancelled_by=cancelled_by
             )
+
+        try:
+            # Email customer
+            customer_email = None
+            if order.customer_id:
+                customer = session.get(User, order.customer_id)
+                if customer:
+                    customer_email = customer.email
+            if customer_email or order.customer_contact:
+                send_email(
+                    to_email=customer_email or order.customer_contact,
+                    email_template_id=8,  # Order cancellation template
+                    replacements={
+                        "customer_name": order.customer_name,
+                        "order_number": order.tracking_number,
+                        "order_id": order.id,
+                        "cancelled_by": cancelled_by,
+                    },
+                    session=session
+                )
+
+            # Email shop owners
+            for shop_id in shop_ids:
+                shop = session.get(Shop, shop_id)
+                if shop:
+                    shop_owner = session.get(User, shop.owner_id)
+                    if shop_owner:
+                        send_email(
+                            to_email=shop_owner.email,
+                            email_template_id=8,
+                            replacements={
+                                "customer_name": order.customer_name,
+                                "order_number": order.tracking_number,
+                                "order_id": order.id,
+                                "shop_name": shop.name,
+                                "cancelled_by": cancelled_by,
+                            },
+                            session=session
+                        )
+
+            # Email admins
+            admin_users = session.exec(select(User).where(User.is_root == True)).all()
+            for admin in admin_users:
+                send_email(
+                    to_email=admin.email,
+                    email_template_id=8,
+                    replacements={
+                        "customer_name": order.customer_name,
+                        "order_number": order.tracking_number,
+                        "order_id": order.id,
+                        "cancelled_by": cancelled_by,
+                    },
+                    session=session
+                )
+        except Exception as e:
+            Print(f"Failed to send cancellation emails: {e}")
 
         Print(f"✅ Order {order_id} cancelled successfully")
         

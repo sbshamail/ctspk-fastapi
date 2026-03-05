@@ -21,7 +21,7 @@ router = APIRouter(prefix="/coupon", tags=["Coupon"])
 def create_coupon(
     request: CouponCreate,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("coupon:create"),
 ):
     print("📦 Incoming coupon:", request.model_dump())
 
@@ -39,7 +39,7 @@ def update_coupon(
     id: int,
     request: CouponUpdate,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("coupon:update"),
 ):
     coupon = session.get(Coupon, id)
     raiseExceptions((coupon, 404, "Coupon not found"))
@@ -98,7 +98,7 @@ def redeem_coupon(code: str, session: GetSession):
 def delete_coupon(
     id: int,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("coupon:delete"),
 ):
     coupon = session.get(Coupon, id)
     raiseExceptions((coupon, 404, "Coupon not found"))

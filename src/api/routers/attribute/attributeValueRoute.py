@@ -24,7 +24,7 @@ router = APIRouter(prefix="/attribute_value", tags=["Attribute Value"])
 def create_role(
     request: AttributeValueCreate,
     session: GetSession,
-    user=requirePermission("attribute"),
+    user=requirePermission("attribute:create"),
 ):
     attribute = AttributeValue(**request.model_dump())
     attribute.slug = uniqueSlugify(
@@ -43,7 +43,7 @@ def update_role(
     id: int,
     request: AttributeValueUpdate,
     session: GetSession,
-    user=requirePermission("attribute"),
+    user=requirePermission("attribute:update"),
 ):
     attribute = session.get(AttributeValue, id)  # Like findById
     raiseExceptions((attribute, 404, "Attribute not found"))
@@ -84,7 +84,7 @@ def get_role(id_slug: str, session: GetSession):
 def delete_role(
     id: int,
     session: GetSession,
-    user=requirePermission("attribute"),
+    user=requirePermission("attribute:delete"),
 ):
     attribute = session.get(attribute, id)
     raiseExceptions((attribute, 404, "attribute not found"))

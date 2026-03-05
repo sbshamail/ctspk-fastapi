@@ -15,7 +15,7 @@ router = APIRouter(prefix="/banner", tags=["Banner"])
 def create_role(
     request: BannerCreate,
     session: GetSession,
-    user=requirePermission("banner"),
+    user=requirePermission("banner:create"),
 ):
     banner = Banner(**request.model_dump())
     banner.slug = uniqueSlugify(
@@ -36,7 +36,7 @@ def update_role(
     id: int,
     request: BannerUpdate,
     session: GetSession,
-    user=requirePermission("banner"),
+    user=requirePermission("banner:update"),
 ):
     banner = session.get(Banner, id)  # Like findById
     raiseExceptions((banner, 404, "Banner not found"))
@@ -76,7 +76,7 @@ def get_role(
 def delete_role(
     id: int,
     session: GetSession,
-    user=requirePermission("banner"),
+    user=requirePermission("banner:delete"),
 ):
     banner = session.get(Banner, id)
     raiseExceptions((banner, 404, "Banner not found"))
@@ -111,7 +111,7 @@ def patch_banner_status(
     id: int,
     request: BannerActivate,
     session: GetSession,
-    user=requirePermission(["system:*"]),  # 🔒 both allowed
+    user=requirePermission(["banner:activate","banner:deactivate"]),  # 🔒 both allowed
 ):
     banner = session.get(Banner, id)
     raiseExceptions((banner, 404, "Banner not found"))

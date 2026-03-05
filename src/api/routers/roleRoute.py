@@ -99,7 +99,7 @@ def update_role(
 
 
 @router.get("/read/{id}")
-def get_role(id: int, session: GetSession, user=requirePermission(["role:delete"])):
+def get_role(id: int, session: GetSession, user=requirePermission(["role:view"])):
     role = session.get(Role, id)
     raiseExceptions((role, 404, "Role not found"))
     return api_response(200, "Role Found", RoleRead.model_validate(role))
@@ -109,7 +109,7 @@ def get_role(id: int, session: GetSession, user=requirePermission(["role:delete"
 def delete_role(
     id: int,
     session: GetSession,
-    user=requirePermission("role-delete"),
+    user=requirePermission("role:delete"),
 ):
     role = session.get(Role, id)
     raiseExceptions((role, 404, "Role not found"))
@@ -153,7 +153,7 @@ def list_roles(
     page: int = None,
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
-    user=requirePermission("role"),
+    user=requirePermission("role:view"),
 ):
     filters = {
         "searchTerm": searchTerm,

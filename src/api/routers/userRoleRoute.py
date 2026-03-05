@@ -20,7 +20,7 @@ router = APIRouter(prefix="/user", tags=["User"])
 def update_user(
     request: UserUpdate,
     session: GetSession,
-    user=requirePermission("user-update"),
+    user=requirePermission("user:update"),
 ):
     user_id = user.get("id")
     db_user = session.get(User, user_id)
@@ -49,7 +49,7 @@ def update_user_by_admin(
     user_id: int,
     request: UpdateUserByAdmin,
     session: GetSession,
-    user=requirePermission("user-update"),
+    user=requirePermission("user:update"),
 ):
     db_user = session.get(User, user_id)
     raiseExceptions((db_user, 404, "User not found"))
@@ -76,7 +76,7 @@ def update_user_by_admin(
 def get_user(
     id: int,
     session: GetSession,
-    user=requirePermission("user"),
+    user=requirePermission("user:*"),
 ):
     db_user = session.get(User, id)
     raiseExceptions((db_user, 404, "User not found"))
@@ -102,7 +102,7 @@ def update_user_status(
     id: int,
     is_active: bool,
     session: GetSession,
-    user=requirePermission("user-update"),
+    user=requirePermission(["user:activate","user:deactivate"]),
 ):
     db_user = session.get(User, id)
     raiseExceptions((db_user, 404, "User not found"))
@@ -128,7 +128,7 @@ def list_users(
     page: int = None,
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
-    user=requirePermission("user"),
+    user=requirePermission("user:*"),
 ):
     """
     List users with role filtering options:

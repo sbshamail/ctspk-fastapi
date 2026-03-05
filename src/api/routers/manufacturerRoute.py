@@ -28,7 +28,7 @@ router = APIRouter(prefix="/manufacturer", tags=["Manufacturer"])
 def create_role(
     request: ManufacturerCreate,
     session: GetSession,
-    user=requirePermission("manufacturer"),
+    user=requirePermission("vendor:create"),
 ):
     manufacturer = Manufacturer(**request.model_dump())
     manufacturer.slug = uniqueSlugify(
@@ -47,7 +47,7 @@ def update_role(
     id: int,
     request: ManufacturerUpdate,
     session: GetSession,
-    user=requirePermission("manufacturer"),
+    user=requirePermission("vendor:update"),
 ):
     manufacturer = session.get(Manufacturer, id)  # Like findById
     raiseExceptions((manufacturer, 404, "Manufacturer not found"))
@@ -86,7 +86,7 @@ def get_role(id_slug: str, session: GetSession):
 def delete_role(
     id: int,
     session: GetSession,
-    user=requirePermission("manufacturer"),
+    user=requirePermission("vendor:delete"),
 ):
     manufacturer = session.get(Manufacturer, id)
     raiseExceptions((manufacturer, 404, "Manufacturer not found"))
@@ -122,7 +122,7 @@ def patch_manufacturer_status(
     id: int,
     request: ManufacturerActivate,
     session: GetSession,
-    user=requirePermission(["system:*"]),  # 🔒 both allowed
+    user=requirePermission(["vendor:activate","vendor:deactivate"]),  # 🔒 both allowed
 ):
     manufacturer = session.get(Manufacturer, id)
     raiseExceptions((manufacturer, 404, "Manufacturer not found"))
@@ -142,7 +142,7 @@ def patch_manufacturer_approved(
     id: int,
     request: ManufacturerApproved,
     session: GetSession,
-    user=requirePermission(["system:*"]),  # 🔒 both allowed
+    user=requirePermission(["vendor:approve","vendor:reject"]),  # 🔒 both allowed
 ):
     manufacturer = session.get(Manufacturer, id)
     raiseExceptions((manufacturer, 404, "Manufacturer not found"))

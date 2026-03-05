@@ -226,7 +226,7 @@ def list_withdraw_requests(
     shop_id: Optional[int] = None,
     skip: int = 0,
     limit: int = Query(50, ge=1, le=100),
-    #user=requirePermission("withdraw:view_all")
+    #user=requirePermission("withdraw:view")
 ):
     """Admin: List all withdrawal requests with filters"""
     query = select(ShopWithdrawRequest)

@@ -37,7 +37,7 @@ def calculate_category_level(session, parent_id: Optional[int]) -> int:
 
 @router.post("/create")
 def create(
-    request: CategoryCreate, session: GetSession, user=requirePermission("category")
+    request: CategoryCreate, session: GetSession, user=requirePermission("category:create")
 ):
     """Create a new category with auto-level and root assignment."""
     # 1️⃣ Calculate hierarchical level
@@ -76,7 +76,7 @@ def update_category(
     id: int,
     request: CategoryUpdate,
     session: GetSession,
-    user=requirePermission("category"),
+    user=requirePermission("category:update"),
 ):
     """Update category safely, preserving tree structure."""
     category = session.get(Category, id)
@@ -145,7 +145,7 @@ def get(id_slug: str, session: GetSession):
 def delete(
     id: int,
     session: GetSession,
-    user=requirePermission("category-delete"),
+    user=requirePermission("category:delete"),
 ):
     category = session.get(Category, id)
     if category is None:
@@ -318,7 +318,7 @@ def patch_category_status(
     id: int,
     request: CategoryActivate,
     session: GetSession,
-    user=requirePermission(["system:*"]),  # 🔒 both allowed
+    user=requirePermission(["category:activate","category:deactivate"]),  # 🔒 both allowed
 ):
     category = session.get(Category, id)
     raiseExceptions((category, 404, "Product not found"))

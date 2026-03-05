@@ -6,6 +6,9 @@ from src.api.core.response import api_response, raiseExceptions
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.transaction_logger import TransactionLogger
 from src.api.core.notification_helper import NotificationHelper
+from src.api.core.email_helper import send_email
+from src.api.models.usersModel import User
+from src.api.models.shop_model.shopsModel import Shop
 from src.api.core.dependencies import (
     GetSession,
     ListQueryParams,
@@ -216,6 +219,60 @@ def create_return_request(
         shop_ids=shop_ids
     )
 
+    # Send emails for return request created
+    try:
+        # Email customer
+        customer = session.get(User, order.customer_id)
+        if customer:
+            send_email(
+                to_email=customer.email,
+                email_template_id=9,  # Return request created template
+                replacements={
+                    "customer_name": customer.name,
+                    "order_number": order.tracking_number,
+                    "return_id": return_request.id,
+                    "refund_amount": float(return_request.refund_amount),
+                    "reason": return_request.reason,
+                },
+                session=session
+            )
+
+        # Email shop owners
+        for shop_id in shop_ids:
+            shop = session.get(Shop, shop_id)
+            if shop:
+                shop_owner = session.get(User, shop.owner_id)
+                if shop_owner:
+                    send_email(
+                        to_email=shop_owner.email,
+                        email_template_id=9,
+                        replacements={
+                            "customer_name": order.customer_name,
+                            "order_number": order.tracking_number,
+                            "return_id": return_request.id,
+                            "shop_name": shop.name,
+                            "refund_amount": float(return_request.refund_amount),
+                        },
+                        session=session
+                    )
+
+        # Email admins
+        admin_users = session.exec(select(User).where(User.is_root == True)).all()
+        for admin in admin_users:
+            send_email(
+                to_email=admin.email,
+                email_template_id=9,
+                replacements={
+                    "customer_name": order.customer_name,
+                    "order_number": order.tracking_number,
+                    "return_id": return_request.id,
+                    "refund_amount": float(return_request.refund_amount),
+                },
+                session=session
+            )
+    except Exception as e:
+        print(f"Failed to send return request emails: {e}")
+
     return api_response(201, "Return request created successfully", ReturnRequestRead.model_validate(return_request))
 
 
@@ -332,6 +389,68 @@ def approve_return_request(
             refund_amount=float(return_request.refund_amount)
         )
 
+        # Notify admins (missing from notify_return_request_approved)
+        admin_users = session.exec(select(User).where(User.is_root == True)).all()
+        for admin in admin_users:
+            from src.api.core.notification_helper import NotificationHelper as NH
+            NH.create_notification(
+                session=session,
+                user_id=admin.id,
+                message=f"Return request <b>#{return_request.id}</b> for order <b>{order.tracking_number}</b> has been approved. Refund: <b>Rs.{return_request.refund_amount}</b>",
+                commit=False
+            )
+        session.commit()
+
+        # Send emails for return approved
+        try:
+            # Email customer
+            customer = session.get(User, return_request.user_id)
+            if customer:
+                send_email(
+                    to_email=customer.email,
+                    email_template_id=10,  # Return approved template
+                    replacements={
+                        "customer_name": customer.name,
+                        "order_number": order.tracking_number,
+                        "return_id": return_request.id,
+                        "refund_amount": float(return_request.refund_amount),
+                    },
+                    session=session
+                )
+
+            # Email shop owners
+            for shop_id in shop_ids:
+                shop = session.get(Shop, shop_id)
+                if shop:
+                    shop_owner = session.get(User, shop.owner_id)
+                    if shop_owner:
+                        send_email(
+                            to_email=shop_owner.email,
+                            email_template_id=10,
+                            replacements={
+                                "order_number": order.tracking_number,
+                                "return_id": return_request.id,
+                                "shop_name": shop.name,
+                                "refund_amount": float(return_request.refund_amount),
+                            },
+                            session=session
+                        )
+
+            # Email admins
+            for admin in admin_users:
+                send_email(
+                    to_email=admin.email,
+                    email_template_id=10,
+                    replacements={
+                        "order_number": order.tracking_number,
+                        "return_id": return_request.id,
+                        "refund_amount": float(return_request.refund_amount),
+                    },
+                    session=session
+                )
+        except Exception as e:
+            print(f"Failed to send return approved emails: {e}")
+
     # Process refund in background
     if background_tasks:
         background_tasks.add_task(process_refund, return_request.id)
@@ -369,7 +488,7 @@ def reject_return_request(
 
     session.commit()
 
-    # Send rejection notification
+    # Send rejection notification + email
     order = session.get(Order, return_request.order_id)
     if order:
         NotificationHelper.notify_return_request_rejected(
@@ -379,6 +498,23 @@ def reject_return_request(
             customer_id=return_request.user_id,
             reason=rejected_reason
         )
+
+        try:
+            customer = session.get(User, return_request.user_id)
+            if customer:
+                send_email(
+                    to_email=customer.email,
+                    email_template_id=11,  # Return rejected template
+                    replacements={
+                        "customer_name": customer.name,
+                        "order_number": order.tracking_number,
+                        "return_id": return_request.id,
+                        "rejected_reason": rejected_reason,
+                    },
+                    session=session
+                )
+        except Exception as e:
+            print(f"Failed to send return rejection email: {e}")
 
     return api_response(200, "Return request rejected", ReturnRequestRead.model_validate(return_request))
 

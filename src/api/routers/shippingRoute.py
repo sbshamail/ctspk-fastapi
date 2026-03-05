@@ -28,7 +28,7 @@ router = APIRouter(prefix="/shipping", tags=["Shipping"])
 def create_role(
     request: ShippingCreate,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("shipping:create"),
 ):
     # Debug print
    # print("📦 Incoming request:", request.model_dump())
@@ -51,7 +51,7 @@ def update_role(
     id: int,
     request: ShippingUpdate,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("shipping:update"),
 ):
     shipping = session.get(Shipping, id)  # Like findById
     raiseExceptions((shipping, 404, "Shipping not found"))
@@ -91,7 +91,7 @@ def get_role(id_slug: str, session: GetSession):
 def delete_role(
     id: int,
     session: GetSession,
-    user=requirePermission("system:*"),
+    user=requirePermission("shipping:delete"),
 ):
     shipping = session.get(Shipping, id)
     raiseExceptions((shipping, 404, "shipping not found"))
@@ -128,7 +128,7 @@ def patch_shipping_status(
     id: int,
     request: ShippingActivate,
     session: GetSession,
-    user=requirePermission(["system:*"]),  # 🔒 both allowed
+    user=requirePermission(["shipping:activate","shipping:deactivate"]),  # 🔒 both allowed
 ):
     shipping = session.get(Shipping, id)
     raiseExceptions((shipping, 404, "shipping not found"))

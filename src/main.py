@@ -69,6 +69,8 @@ from src.api.routers import (
     notificationRoute,
     # payment - commented out (not working on server)
     paymentRoute,
+    # reports / analytics
+    reportRoute,
 )
 
 
@@ -85,6 +87,16 @@ async def lifespan(app: FastAPI):
         start_all_cron_jobs()
     except Exception as e:
         print(f"[!] Warning: Could not start cron jobs: {e}")
+
+    # Seed email templates
+    try:
+        from src.api.core.seed_email_templates import seed_email_templates
+        from sqlmodel import Session
+
+        with Session(engine) as session:
+            seed_email_templates(session)
+    except Exception as e:
+        print(f"[!] Warning: Could not seed email templates: {e}")
 
     yield  # 👈 after this, FastAPI starts handling requests
 
@@ -191,5 +203,7 @@ app.include_router(settings.router)
 app.include_router(contactusRoute.router)
 # notification
 app.include_router(notificationRoute.router)
-# payment 
+# payment
 app.include_router(paymentRoute.router)
+# reports / analytics
+app.include_router(reportRoute.router)

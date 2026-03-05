@@ -43,7 +43,7 @@ router = APIRouter(prefix="/attribute", tags=["Attribute"])
 def create_attribute(
     request: AttributeCreate,
     session: GetSession,
-    user=requirePermission("attribute"),
+    user=requirePermission("attribute:create"),
 ):
     try:
         with session.begin():  # <-- Transaction starts here
@@ -90,7 +90,7 @@ def update_attribute(
     id: int,
     request: AttributeUpdate,
     session: GetSession,
-    user=requirePermission("attribute"),
+    user=requirePermission("attribute:update"),
 ):
     try:
         with session.begin():
@@ -202,7 +202,7 @@ def get_role(id_slug: str, session: GetSession):
 def delete_role(
     id: int,
     session: GetSession,
-    user=requirePermission("attribute"),
+    user=requirePermission("attribute:delete"),
 ):
     attribute = session.get(attribute, id)
     raiseExceptions((attribute, 404, "attribute not found"))

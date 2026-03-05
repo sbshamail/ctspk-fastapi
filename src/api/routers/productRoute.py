@@ -541,6 +541,9 @@ def list(
     session: GetSession,
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     is_feature: Optional[bool] = Query(None, description="Filter by feature status"),
+    qty_eq: Optional[int] = Query(None, description="Filter by exact quantity"),
+    qty_lt: Optional[int] = Query(None, description="Filter by quantity less than"),
+    qty_gt: Optional[int] = Query(None, description="Filter by quantity greater than"),
 ):
     query_params = vars(query_params)
     searchFields = ["name", "description", "category.name"]
@@ -554,9 +557,19 @@ def list(
     if custom_filters:
         query_params["customFilters"] = custom_filters
 
-    # Filter out products from inactive/disapproved shops
+    # Filter out soft-deleted products and products from inactive shops
     def active_shop_filter(statement, Model):
-        return statement.join(Shop, Model.shop_id == Shop.id).where(Shop.is_active == True)
+        active_shop_ids = select(Shop.id).where(Shop.is_active == True)
+        statement = statement.where(Model.deleted_at == None).where(
+            or_(Model.shop_id.is_(None), Model.shop_id.in_(active_shop_ids))
+        )
+        if qty_eq is not None:
+            statement = statement.where(Model.quantity == qty_eq)
+        if qty_lt is not None:
+            statement = statement.where(Model.quantity < qty_lt)
+        if qty_gt is not None:
+            statement = statement.where(Model.quantity > qty_gt)
+        return statement
 
     return listRecords(
         query_params=query_params,
@@ -959,7 +972,10 @@ def get_best_seller_products(
     query_params: ListQueryParams,
     is_active: bool = True,
     shop_id: Optional[int] = None,  # Filter by shop
-    days: Optional[int] = None  # Optional: best sellers in specific period
+    days: Optional[int] = None,  # Optional: best sellers in specific period
+    qty_eq: Optional[int] = Query(None, description="Filter by exact quantity"),
+    qty_lt: Optional[int] = Query(None, description="Filter by quantity less than"),
+    qty_gt: Optional[int] = Query(None, description="Filter by quantity greater than"),
 ):
     """
     Get best seller products based on total sold quantity with advanced filtering
@@ -1018,6 +1034,14 @@ def get_best_seller_products(
 
         # Apply numberRange filter
         query = apply_number_range_filter(query, query_params_dict, Product)
+
+        # Apply quantity filters
+        if qty_eq is not None:
+            query = query.where(Product.quantity == qty_eq)
+        if qty_lt is not None:
+            query = query.where(Product.quantity < qty_lt)
+        if qty_gt is not None:
+            query = query.where(Product.quantity > qty_gt)
 
         query = query.where(Product.total_sold_quantity > 0)
 
@@ -1150,6 +1174,9 @@ def get_sale_products(
     query_params: ListQueryParams,
     is_active: bool = True,  # Filter by active status
     shop_id: Optional[int] = None,  # Filter by shop
+    qty_eq: Optional[int] = Query(None, description="Filter by exact quantity"),
+    qty_lt: Optional[int] = Query(None, description="Filter by quantity less than"),
+    qty_gt: Optional[int] = Query(None, description="Filter by quantity greater than"),
     user=requirePermission(["product:view", "vendor-product:view"]),
 ):
     """
@@ -1200,6 +1227,14 @@ def get_sale_products(
                 )
             )
 
+        # Apply quantity filters
+        if qty_eq is not None:
+            simple_products_query = simple_products_query.where(Product.quantity == qty_eq)
+        if qty_lt is not None:
+            simple_products_query = simple_products_query.where(Product.quantity < qty_lt)
+        if qty_gt is not None:
+            simple_products_query = simple_products_query.where(Product.quantity > qty_gt)
+
         # Get simple products on sale
         simple_products_query = simple_products_query.order_by(Product.created_at.desc(), Product.id.asc())
         simple_products = distinct_products(session.exec(
@@ -1246,6 +1281,14 @@ def get_sale_products(
                     Product.sku.ilike(search)
                 )
             )
+
+        # Apply quantity filters for variable products
+        if qty_eq is not None:
+            variable_products_query = variable_products_query.where(Product.quantity == qty_eq)
+        if qty_lt is not None:
+            variable_products_query = variable_products_query.where(Product.quantity < qty_lt)
+        if qty_gt is not None:
+            variable_products_query = variable_products_query.where(Product.quantity > qty_gt)
 
         # Get variable products with sale variations
         variable_products_query = variable_products_query.order_by(Product.created_at.desc(), Product.id.asc())

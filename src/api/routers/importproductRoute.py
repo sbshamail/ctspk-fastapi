@@ -525,7 +525,7 @@ def get_user_shop_ids(user: dict) -> List[int]:
 def import_products_from_excel(
     session: GetSession,
     file: UploadFile = File(...),
-    user=requirePermission(["product:create", "vendor-product:create", "import-product:create"]),
+    user=requirePermission(["product:create", "vendor-product:create", "import-product:create","import:create"]),
 ):
     """
     Import products from Excel file with shop validation and purchase tracking
@@ -709,7 +709,7 @@ def get_import_history(
     session: GetSession,
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
-    user=requirePermission(["product:view", "vendor-product:view", "import-product:view"]),
+    user=requirePermission(["product:view", "vendor-product:view", "import-product:view","import:view"]),
 ):
     """
     Get product import history with pagination
