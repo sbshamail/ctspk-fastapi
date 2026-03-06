@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, desc, cast, Integer, text
+from sqlalchemy import func, desc, cast, Integer, Numeric, text
 from sqlmodel import select
 
 from src.api.core.response import api_response
@@ -182,7 +182,7 @@ def top_products(
             Product.id,
             Product.name,
             Product.sku,
-            func.sum(cast(OrderProduct.order_quantity, Integer)).label("units_sold"),
+            func.sum(cast(cast(OrderProduct.order_quantity, Numeric), Integer)).label("units_sold"),
             func.sum(OrderProduct.subtotal).label("revenue"),
             func.count(func.distinct(OrderProduct.order_id)).label("order_count"),
         )
@@ -232,7 +232,7 @@ def top_categories(
         select(
             Category.id,
             Category.name,
-            func.sum(cast(OrderProduct.order_quantity, Integer)).label("units_sold"),
+            func.sum(cast(cast(OrderProduct.order_quantity, Numeric), Integer)).label("units_sold"),
             func.sum(OrderProduct.subtotal).label("revenue"),
             func.count(func.distinct(OrderProduct.order_id)).label("order_count"),
         )

@@ -382,6 +382,68 @@ def process_withdraw_request(
     return api_response(200, "Withdrawal processed successfully",
                        WithdrawRequestRead.model_validate(withdraw_request))
 
+@router.get("/all-earnings")
+def get_all_earnings(
+    user: requireSignin,
+    session: GetSession,
+    shop_id: Optional[int] = Query(None, description="Filter by specific shop ID"),
+    settled: Optional[bool] = None,
+    skip: int = 0,
+    limit: int = Query(50, ge=1, le=100)
+):
+    """Get all shop earnings. Root sees all; shop owners see only their assigned shops."""
+    role_names = user.get("roles", [])
+    is_root = user.get("is_root", False) or "root" in role_names
+
+    if is_root:
+        # Root: see everything
+        query = select(ShopEarning)
+        count_query = select(func.count(ShopEarning.id))
+
+        if shop_id:
+            query = query.where(ShopEarning.shop_id == shop_id)
+            count_query = count_query.where(ShopEarning.shop_id == shop_id)
+    else:
+        # Shop owner or assigned user: find shops linked via owner_id
+        user_shops = session.exec(
+            select(Shop).where(Shop.owner_id == user.get("id"))
+        ).scalars().all()
+
+        if not user_shops:
+            return api_response(404, "No shops found for this user")
+
+        user_shop_ids = [shop.id for shop in user_shops]
+
+        if shop_id:
+            if shop_id not in user_shop_ids:
+                return api_response(403, "You don't have access to this shop")
+            query = select(ShopEarning).where(ShopEarning.shop_id == shop_id)
+            count_query = select(func.count(ShopEarning.id)).where(ShopEarning.shop_id == shop_id)
+        else:
+            query = select(ShopEarning).where(ShopEarning.shop_id.in_(user_shop_ids))
+            count_query = select(func.count(ShopEarning.id)).where(ShopEarning.shop_id.in_(user_shop_ids))
+
+    if settled is not None:
+        query = query.where(ShopEarning.is_settled == settled)
+        count_query = count_query.where(ShopEarning.is_settled == settled)
+
+    query = query.order_by(ShopEarning.created_at.desc())
+
+    earnings = session.exec(query.offset(skip).limit(limit)).scalars().all()
+    total = session.exec(count_query).scalar()
+
+    earnings_data = []
+    for earning in earnings:
+        earning_data = ShopEarningRead.model_validate(earning)
+        earning_data.remaining_balance = earning.shop_earning - earning.settled_amount
+        earning_data.order_tracking_number = earning.order.tracking_number if earning.order else None
+        shop = session.get(Shop, earning.shop_id)
+        earning_data.shop_name = shop.name if shop else None
+        earnings_data.append(earning_data)
+
+    return api_response(200, "Earnings retrieved", earnings_data, total)
+
+
 @router.get("/shop-earnings")
 def get_shop_earnings(
     user: requireSignin,
