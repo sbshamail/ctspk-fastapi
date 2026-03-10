@@ -2,13 +2,8 @@ from typing import Any, Optional, Union
 import json
 from decimal import Decimal
 
-from fastapi import HTTPException
-from fastapi.encoders import (
-    jsonable_encoder,
-)
-from fastapi.responses import (
-    JSONResponse,
-)
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 
 
 def format_monetary_values(obj, path_key=None):
@@ -66,17 +61,12 @@ def api_response(
     if total is not None:
         content["total"] = total
 
-    # Raise error if code >= 400
-    if code >= 400:
-        raise HTTPException(
-            status_code=code,
-            detail=detail,
-        )
-        # return JSONResponse(status_code=code, content=content)
+    headers = {"X-Content-Type-Options": "nosniff"}
 
     return JSONResponse(
         status_code=code,
         content=content,
+        headers=headers,
     )
 
 

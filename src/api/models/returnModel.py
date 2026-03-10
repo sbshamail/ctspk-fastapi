@@ -162,6 +162,14 @@ class ReturnItemRead(TimeStampReadModel):
     refund_amount: float
 
 
+class CustomerInfo(SQLModel):
+    id: int
+    name: str
+    email: str
+    phone_no: Optional[str] = None
+    avatar: Optional[Dict[str, Any]] = None
+
+
 class ReturnRequestRead(TimeStampReadModel):
     id: int
     order_id: int
@@ -178,6 +186,9 @@ class ReturnRequestRead(TimeStampReadModel):
     admin_notes: Optional[str] = None
     rejected_reason: Optional[str] = None
     items: List[ReturnItemRead] = []
+    # Enriched fields
+    tracking_number: Optional[str] = None
+    customer: Optional[CustomerInfo] = None
 
 
 class ReturnRequestUpdate(SQLModel):

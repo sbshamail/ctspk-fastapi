@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlmodel import SQLModel
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 from src.api.core.middleware.error_handling import register_exception_handlers
 # Import all models to ensure SQLAlchemy mapper is fully configured
 from src.api import models
@@ -114,6 +116,17 @@ async def lifespan(app: FastAPI):
 
 # Initialize the FastAPI app with the custom lifespan
 app = FastAPI(lifespan=lifespan, root_path="/api")
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Content-Type"] = "application/json"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 # Allow all origins
 app.add_middleware(
     CORSMiddleware,

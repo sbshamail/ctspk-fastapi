@@ -7,6 +7,7 @@ from src.api.core.operation import listRecords, updateOp
 from src.api.core.transaction_logger import TransactionLogger
 from src.api.core.notification_helper import NotificationHelper
 from src.api.core.email_helper import send_email
+from src.api.core.avatar_helper import get_user_avatar
 from src.api.models.usersModel import User
 from src.api.models.shop_model.shopsModel import Shop
 from src.api.core.dependencies import (
@@ -19,7 +20,7 @@ from src.api.models.returnModel import (
     ReturnRequest, ReturnRequestCreate, ReturnRequestRead, ReturnRequestUpdate,
     ReturnItem, ReturnItemCreate, ReturnItemRead,
     ReturnStatus, ReturnType, RefundStatus,
-    WalletTransaction, UserWallet
+    WalletTransaction, UserWallet, CustomerInfo
 )
 from src.api.models.transactionLogModel import TransactionLogCreate, TransactionType
 
@@ -673,23 +674,47 @@ def test_process_refund(
     )
 
 
+def _enrich_returns(returns_result, session):
+    """Add tracking_number and customer info to each return request."""
+    from src.api.models.order_model.orderModel import Order
+    raw = returns_result.get("data", []) if isinstance(returns_result, dict) else []
+    total = returns_result.get("total", 0) if isinstance(returns_result, dict) else 0
+    enriched = []
+    for rr in raw:
+        data = ReturnRequestRead.model_validate(rr)
+        order = session.get(Order, rr.order_id)
+        if order:
+            data.tracking_number = order.tracking_number
+        customer = session.get(User, rr.user_id)
+        if customer:
+            data.customer = CustomerInfo(
+                id=customer.id,
+                name=customer.name,
+                email=customer.email,
+                phone_no=customer.phone_no,
+                avatar=get_user_avatar(customer.image, customer.name),
+            )
+        enriched.append(data)
+    return api_response(200, "data found" if enriched else "No Result found", enriched, total)
+
+
 # ✅ GET MY RETURN REQUESTS
 @router.get("/my-returns", response_model=list[ReturnRequestRead])
 def get_my_returns(
     query_params: ListQueryParams,
     session: GetSession,
-    user:requireSignin
+    user: requireSignin
 ):
     query_params = vars(query_params)
     user_id = user.get("id")
 
-    return listRecords(
+    result = listRecords(
         query_params=query_params,
         searchFields=["reason"],
         Model=ReturnRequest,
-        Schema=ReturnRequestRead,
         otherFilters=lambda stmt, m: stmt.where(m.user_id == user_id),
     )
+    return _enrich_returns(result, session)
 
 
 # ✅ GET ALL RETURN REQUESTS (Admin or Shop Owner)
@@ -703,20 +728,18 @@ def list_all_returns(
     user_id = user.get("id")
     is_root = user.get("is_root", False)
 
-    # If user is root, show all returns
     if is_root:
-        return listRecords(
+        result = listRecords(
             query_params=query_params,
             searchFields=["reason"],
             Model=ReturnRequest,
-            Schema=ReturnRequestRead,
         )
+        return _enrich_returns(result, session)
 
     # Otherwise, filter by user's shops
     from src.api.models.shop_model.shopsModel import Shop
     from src.api.models.order_model.orderModel import Order, OrderProduct
 
-    # Get shops owned by the user
     shop_ids = session.execute(
         select(Shop.id).where(Shop.owner_id == user_id)
     ).scalars().all()
@@ -724,7 +747,6 @@ def list_all_returns(
     if not shop_ids:
         return api_response(404, "No shops found for this user")
 
-    # Get order IDs that have products from user's shops
     order_ids = session.execute(
         select(OrderProduct.order_id)
         .where(OrderProduct.shop_id.in_(shop_ids))
@@ -734,14 +756,13 @@ def list_all_returns(
     if not order_ids:
         return api_response(404, "No orders found for your shops")
 
-    # Filter returns by those order IDs
-    return listRecords(
+    result = listRecords(
         query_params=query_params,
         searchFields=["reason"],
         Model=ReturnRequest,
-        Schema=ReturnRequestRead,
         otherFilters=lambda stmt, m: stmt.where(m.order_id.in_(order_ids)),
     )
+    return _enrich_returns(result, session)
 
 
 # ✅ GET RETURN BY ID
@@ -758,7 +779,20 @@ def get_return_request(
     if return_request.user_id != user.get("id") and not user.has_permission("return:view_all"):
         return api_response(403, "Not authorized to view this return")
 
-    return api_response(200, "Return request found", ReturnRequestRead.model_validate(return_request))
+    from src.api.models.order_model.orderModel import Order
+    data = ReturnRequestRead.model_validate(return_request)
+    order = session.get(Order, return_request.order_id)
+    if order:
+        data.tracking_number = order.tracking_number
+    customer = session.get(User, return_request.user_id)
+    if customer:
+        data.customer = CustomerInfo(
+            id=customer.id,
+            name=customer.name,
+            email=customer.email,
+            phone_no=customer.phone_no,
+        )
+    return api_response(200, "Return request found", data)
 
 
 # ✅ UPDATE RETURN REQUEST (User can update photos/reason while pending)
