@@ -223,6 +223,8 @@ def create_return_request(
     try:
         # Email customer
         customer = session.get(User, order.customer_id)
+        return_reason = return_request.reason or "Not specified"
+        formatted_refund = f"Rs.{float(return_request.refund_amount):,.2f}"
         if customer:
             send_email(
                 to_email=customer.email,
@@ -231,8 +233,8 @@ def create_return_request(
                     "customer_name": customer.name,
                     "order_number": order.tracking_number,
                     "return_id": return_request.id,
-                    "refund_amount": float(return_request.refund_amount),
-                    "reason": return_request.reason,
+                    "refund_amount": formatted_refund,
+                    "reason": return_reason,
                 },
                 session=session
             )
@@ -251,7 +253,8 @@ def create_return_request(
                             "order_number": order.tracking_number,
                             "return_id": return_request.id,
                             "shop_name": shop.name,
-                            "refund_amount": float(return_request.refund_amount),
+                            "refund_amount": formatted_refund,
+                            "reason": return_reason,
                         },
                         session=session
                     )
@@ -266,7 +269,8 @@ def create_return_request(
                     "customer_name": order.customer_name,
                     "order_number": order.tracking_number,
                     "return_id": return_request.id,
-                    "refund_amount": float(return_request.refund_amount),
+                    "refund_amount": formatted_refund,
+                    "reason": return_reason,
                 },
                 session=session
             )
@@ -405,6 +409,7 @@ def approve_return_request(
         try:
             # Email customer
             customer = session.get(User, return_request.user_id)
+            formatted_refund_approved = f"Rs.{float(return_request.refund_amount):,.2f}"
             if customer:
                 send_email(
                     to_email=customer.email,
@@ -413,7 +418,7 @@ def approve_return_request(
                         "customer_name": customer.name,
                         "order_number": order.tracking_number,
                         "return_id": return_request.id,
-                        "refund_amount": float(return_request.refund_amount),
+                        "refund_amount": formatted_refund_approved,
                     },
                     session=session
                 )
@@ -431,7 +436,7 @@ def approve_return_request(
                                 "order_number": order.tracking_number,
                                 "return_id": return_request.id,
                                 "shop_name": shop.name,
-                                "refund_amount": float(return_request.refund_amount),
+                                "refund_amount": formatted_refund_approved,
                             },
                             session=session
                         )
@@ -444,7 +449,7 @@ def approve_return_request(
                     replacements={
                         "order_number": order.tracking_number,
                         "return_id": return_request.id,
-                        "refund_amount": float(return_request.refund_amount),
+                        "refund_amount": formatted_refund_approved,
                     },
                     session=session
                 )

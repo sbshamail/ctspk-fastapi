@@ -2008,6 +2008,8 @@ def update(id: int, request: OrderUpdate, session: GetSession, user: requireSign
                         "order_number": order.tracking_number,
                         "order_id": order.id,
                         "customer_name": order.customer_name,
+                        "order_total": f"Rs.{float(order.total):,.2f}" if order.total else "N/A",
+                        "order_status": order.order_status.value if order.order_status else "N/A",
                     },
                     session=session
                 )
@@ -3374,6 +3376,8 @@ def cancel_order(
                 customer = session.get(User, order.customer_id)
                 if customer:
                     customer_email = customer.email
+            cancel_reason = (request.reason if request and request.reason else "Not specified")
+            cancel_amount = f"Rs.{float(order.paid_total):,.2f}" if order.paid_total else "N/A"
             if customer_email or order.customer_contact:
                 send_email(
                     to_email=customer_email or order.customer_contact,
@@ -3383,6 +3387,8 @@ def cancel_order(
                         "order_number": order.tracking_number,
                         "order_id": order.id,
                         "cancelled_by": cancelled_by,
+                        "reason": cancel_reason,
+                        "paid_total": cancel_amount,
                     },
                     session=session
                 )
@@ -3402,6 +3408,8 @@ def cancel_order(
                                 "order_id": order.id,
                                 "shop_name": shop.name,
                                 "cancelled_by": cancelled_by,
+                                "reason": cancel_reason,
+                                "paid_total": cancel_amount,
                             },
                             session=session
                         )
@@ -3417,6 +3425,8 @@ def cancel_order(
                         "order_number": order.tracking_number,
                         "order_id": order.id,
                         "cancelled_by": cancelled_by,
+                        "reason": cancel_reason,
+                        "paid_total": cancel_amount,
                     },
                     session=session
                 )

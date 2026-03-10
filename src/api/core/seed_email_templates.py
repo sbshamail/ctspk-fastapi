@@ -103,13 +103,15 @@ TEMPLATES = [
         <h1 style="color:#ffffff;margin:0;font-size:22px;font-weight:700;">CTSPK</h1>
       </td></tr>
       <tr><td style="padding:30px;">
-        <h2 style="color:#1a1a2e;margin:0 0 16px;font-size:20px;">Fulfillment Assignment</h2>
+        <h2 style="color:#1a1a2e;margin:0 0 16px;font-size:20px;">New Order Assigned to You</h2>
         <p style="color:#444;font-size:15px;line-height:1.6;margin:0 0 12px;">Hi <strong>{{fulfillment_name}}</strong>,</p>
-        <p style="color:#444;font-size:15px;line-height:1.6;margin:0 0 12px;">Order <strong>{{order_number}}</strong> has been assigned to you for fulfillment.</p>
-        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f8f9fa;border-radius:8px;padding:16px;margin:16px 0;">
+        <p style="color:#444;font-size:15px;line-height:1.6;margin:0 0 12px;">A new order has been assigned to you for fulfillment by the admin. Please process it promptly.</p>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f0f4ff;border-radius:8px;border-left:4px solid #1a1a2e;padding:4px 0;margin:16px 0;">
           <tr><td style="padding:6px 16px;color:#555;font-size:14px;"><strong>Order ID:</strong> #{{order_id}}</td></tr>
           <tr><td style="padding:6px 16px;color:#555;font-size:14px;"><strong>Order Number:</strong> {{order_number}}</td></tr>
           <tr><td style="padding:6px 16px;color:#555;font-size:14px;"><strong>Customer:</strong> {{customer_name}}</td></tr>
+          <tr><td style="padding:6px 16px;color:#555;font-size:14px;"><strong>Order Total:</strong> {{order_total}}</td></tr>
+          <tr><td style="padding:6px 16px;color:#555;font-size:14px;"><strong>Order Status:</strong> {{order_status}}</td></tr>
         </table>
         <p style="color:#444;font-size:15px;line-height:1.6;margin:12px 0 0;">Please log in to the system to process this order promptly.</p>
       </td></tr>
@@ -468,27 +470,34 @@ TEMPLATES = [
 
 def seed_email_templates(session: Session) -> None:
     """
-    Insert email templates 7-11 if they do not already exist.
-    Safe to call multiple times — skips existing IDs.
+    Insert or update email templates 7-11.
+    Always syncs html_content, subject, and is_active so latest changes take effect.
     """
     for tpl in TEMPLATES:
         existing = session.get(Emailtemplate, tpl["id"])
         if existing:
-            print(f"[seed] Email template ID {tpl['id']} already exists — skipping.")
-            continue
-
-        record = Emailtemplate(
-            id=tpl["id"],
-            name=tpl["name"],
-            slug=tpl["slug"],
-            subject=tpl["subject"],
-            content=tpl["content"],
-            html_content=tpl["html_content"],
-            is_active=tpl["is_active"],
-            language=tpl["language"],
-        )
-        session.add(record)
-        print(f"[seed] Inserted email template ID {tpl['id']}: {tpl['name']}")
+            existing.name = tpl["name"]
+            existing.slug = tpl["slug"]
+            existing.subject = tpl["subject"]
+            existing.content = tpl["content"]
+            existing.html_content = tpl["html_content"]
+            existing.is_active = tpl["is_active"]
+            existing.language = tpl["language"]
+            session.add(existing)
+            print(f"[seed] Updated email template ID {tpl['id']}: {tpl['name']}")
+        else:
+            record = Emailtemplate(
+                id=tpl["id"],
+                name=tpl["name"],
+                slug=tpl["slug"],
+                subject=tpl["subject"],
+                content=tpl["content"],
+                html_content=tpl["html_content"],
+                is_active=tpl["is_active"],
+                language=tpl["language"],
+            )
+            session.add(record)
+            print(f"[seed] Inserted email template ID {tpl['id']}: {tpl['name']}")
 
     session.commit()
     print("[seed] Email template seeding complete.")
