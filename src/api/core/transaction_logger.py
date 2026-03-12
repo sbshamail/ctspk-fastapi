@@ -1,6 +1,7 @@
 # src/api/core/transaction_logger.py
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
+from src.api.core.utility import now_pk
 from decimal import Decimal
 from sqlmodel import Session, select, func, and_, or_
 import uuid
@@ -22,13 +23,13 @@ class TransactionLogger:
     
     def generate_reference_number(self, prefix: str = "TRN") -> str:
         """Generate unique reference number for transaction"""
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        timestamp = now_pk().strftime("%Y%m%d%H%M%S")
         random_suffix = uuid.uuid4().hex[:6].upper()
         return f"{prefix}-{timestamp}-{random_suffix}"
     
     def check_duplicate_transaction(self, log_data: TransactionLogCreate) -> bool:
         """Check if a similar transaction already exists (within 5 minutes)"""
-        five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+        five_minutes_ago = now_pk() - timedelta(minutes=5)
         
         conditions = [
             TransactionLog.transaction_type == log_data.transaction_type,
@@ -432,7 +433,7 @@ class TransactionLogger:
     def get_daily_transaction_summary(self, date: datetime = None) -> Dict[str, Any]:
         """Get daily transaction summary"""
         if not date:
-            date = datetime.utcnow().date()
+            date = now_pk().date()
         
         start_date = datetime.combine(date, datetime.min.time())
         end_date = datetime.combine(date, datetime.max.time())

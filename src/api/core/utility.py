@@ -1,7 +1,15 @@
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import json
 import re
 import unicodedata
+
+PKT = ZoneInfo("Asia/Karachi")
+
+
+def now_pk() -> datetime:
+    """Return current naive datetime in Asia/Karachi (PKT, UTC+5), stored as-is in DB."""
+    return datetime.now(PKT).replace(tzinfo=None)
 
 
 date_formats = [
@@ -29,10 +37,10 @@ def parse_date(date_str: str) -> datetime:
     for fmt in date_formats:
         try:
             dt = datetime.strptime(date_str, fmt)
-            return dt.replace(tzinfo=timezone.utc)
+            return dt.replace(tzinfo=PKT)
         except ValueError:
             continue
-    raise ValueError(f"Date '{date_str}' is not in a valid UTC format.")
+    raise ValueError(f"Date '{date_str}' is not in a valid format.")
 
 
 # slug = slugify("ACME Industries Inc.")

@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
+from src.api.core.utility import now_pk
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 from fastapi import APIRouter, Request, Response
@@ -138,7 +139,7 @@ def register_user(
     # Send welcome email notification with free shipping coupon if available
     try:
         # Query for active free shipping coupon
-        current_time = datetime.now(timezone.utc)
+        current_time = now_pk()
         free_shipping_coupon = session.execute(
             select(Coupon)
             .where(Coupon.type == CouponType.FREE_SHIPPING)
@@ -203,7 +204,7 @@ def register_user(
     access_token = create_access_token(user_data=user_data)
     refresh_token = create_access_token(user_data=user_data, refresh=True)
 
-    exp_time = datetime.now(timezone.utc) + timedelta(
+    exp_time = now_pk() + timedelta(
         minutes=ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
@@ -278,7 +279,7 @@ def login_user(
     access_token = create_access_token(user_data=user_data)
     refresh_token = create_access_token(user_data=user_data, refresh=True)
 
-    exp_time = datetime.now(timezone.utc) + timedelta(
+    exp_time = now_pk() + timedelta(
         minutes=ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
@@ -360,7 +361,7 @@ def refresh_token(
     access_token = create_access_token(user_data=user_data)
     new_refresh_token = create_access_token(user_data=user_data, refresh=True)
 
-    exp_time = datetime.now(timezone.utc) + timedelta(
+    exp_time = now_pk() + timedelta(
         minutes=ACCESS_TOKEN_EXPIRE_MINUTES
     )
 

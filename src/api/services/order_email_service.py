@@ -5,7 +5,7 @@ Uses the same invoice HTML design as the Go cron implementation.
 """
 import os
 from typing import List, Dict, Any
-from datetime import datetime
+from src.api.core.utility import now_pk
 from sqlmodel import Session, select
 
 from src.api.models.order_model.orderModel import Order, OrderProduct
@@ -23,7 +23,7 @@ class OrderEmailService:
     # ─── Shared helpers ────────────────────────────────────────────────────
 
     def _base_url(self) -> str:
-        return os.getenv('DOMAIN', os.getenv('BASE_URL', 'https://front.ghertak.com'))
+        return os.getenv('DOMAIN', os.getenv('BASE_URL', 'https://shop.ghertak.com'))
 
     def _format_address(self, address_data: Any) -> str:
         if not address_data:
@@ -202,7 +202,7 @@ class OrderEmailService:
         order_date = order.created_at.strftime("%B %d, %Y %I:%M %p") if order.created_at else "N/A"
         dashboard_link = f"{self._base_url()}/dashboard/orders/{order.id}"
         print_link = f"{self._base_url()}/dashboard/orders/{order.id}/invoice"
-        year = datetime.now().year
+        year = now_pk().year
 
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -340,7 +340,7 @@ table{{border-collapse:collapse}}
         order_date = order.created_at.strftime("%B %d, %Y %I:%M %p") if order.created_at else "N/A"
         dashboard_link = f"{self._base_url()}/dashboard/orders/{order.id}"
         print_link = f"{self._base_url()}/dashboard/orders/{order.id}/invoice"
-        year = datetime.now().year
+        year = now_pk().year
 
         summary_rows = self._admin_summary_rows(
             subtotal, discount, coupon_discount, delivery_fee, sales_tax, total

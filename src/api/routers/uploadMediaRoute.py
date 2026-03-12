@@ -1,7 +1,12 @@
 import json
+import mimetypes
 import os
 import re
 from sqlalchemy.exc import IntegrityError
+
+# Ensure .webp is registered on all platforms (missing from Windows registry by default)
+mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("image/avif", ".avif")
 
 from typing import List, Optional
 
@@ -156,31 +161,28 @@ def list(query_params: ListQueryParams, user: requireSignin):
 # ----------------------------
 # Get single image (GET)
 # ----------------------------
+def _file_response(file_path: str):
+    mime_type, _ = mimetypes.guess_type(file_path)
+    return FileResponse(file_path, media_type=mime_type or "application/octet-stream")
+
+
 @router.get("/{filename}")
 async def get_image(user: requireSignin, filename: str):
-    # Sanitize the filename for consistency
     sanitized_filename = sanitize_filename(filename)
-    
-    # build the user folder path
-    safe_email = str(user["id"])
-    user_dir = os.path.join(MEDIA_DIR, safe_email)
-
+    user_dir = os.path.join(MEDIA_DIR, str(user["id"]))
     file_path = os.path.join(user_dir, sanitized_filename)
-
     if not os.path.isfile(file_path):
         return api_response(404, "File not found")
-    return FileResponse(file_path)
+    return _file_response(file_path)
 
 
 @router.get("/{email}/{filename}")
-async def get_image(email: str, filename: str):
-    # Sanitize the filename for consistency
+async def get_image_by_email(email: str, filename: str):
     sanitized_filename = sanitize_filename(filename)
-    
     file_path = os.path.join(MEDIA_DIR, email, sanitized_filename)
     if not os.path.isfile(file_path):
-        api_response(404, "File not found")
-    return FileResponse(file_path)
+        return api_response(404, "File not found")
+    return _file_response(file_path)
 
 
 # ----------------------------

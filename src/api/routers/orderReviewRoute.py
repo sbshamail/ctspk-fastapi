@@ -1,5 +1,5 @@
 # src/api/routes/orderReview.py
-from datetime import datetime
+from src.api.core.utility import now_pk
 from typing import Optional
 from fastapi import APIRouter, Query
 from sqlmodel import select
@@ -181,7 +181,7 @@ def delete_order_review(
     order_id = review.order_id
 
     # Soft delete by setting deleted_at timestamp
-    review.deleted_at = datetime.utcnow()
+    review.deleted_at = now_pk()
     session.add(review)
 
     # Remove order_review_id from Order

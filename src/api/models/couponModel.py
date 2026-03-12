@@ -2,6 +2,7 @@
 from typing import Optional, Dict, Any,TYPE_CHECKING
 from enum import Enum
 from datetime import datetime
+from src.api.core.utility import now_pk
 from sqlalchemy import Column, JSON
 from sqlmodel import SQLModel, Field, Relationship
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
@@ -34,8 +35,8 @@ class Coupon(TimeStampedModel, table=True):
     type: CouponType = Field(default=CouponType.FIXED)
     amount: float = Field(default=0.0)
     minimum_cart_amount: float = Field(default=0.0)
-    active_from: datetime = Field(default_factory=datetime.utcnow)
-    expire_at: datetime = Field(default_factory=datetime.utcnow)
+    active_from: datetime = Field(default_factory=now_pk)
+    expire_at: datetime = Field(default_factory=now_pk)
     deleted_at: Optional[datetime] = None
 
     orders: Optional["Order"] = Relationship(back_populates="coupon")

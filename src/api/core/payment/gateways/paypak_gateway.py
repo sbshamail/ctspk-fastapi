@@ -1,7 +1,7 @@
 import hashlib
 import hmac
 import json
-from datetime import datetime
+from src.api.core.utility import now_pk
 from decimal import Decimal
 from typing import Optional, Dict, Any, Tuple
 import httpx
@@ -92,7 +92,7 @@ class PayPakGateway(BasePaymentGateway):
                 "customerPhone": customer_phone or "",
                 "description": description or f"Order #{order_id}",
                 "returnUrl": self.return_url,
-                "timestamp": datetime.now().strftime("%Y%m%d%H%M%S"),
+                "timestamp": now_pk().strftime("%Y%m%d%H%M%S"),
             }
 
             request_data["signature"] = self.generate_signature(request_data)

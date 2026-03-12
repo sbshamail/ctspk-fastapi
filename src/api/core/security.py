@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from src.api.core.utility import now_pk
 from typing import Dict, List, Optional
 from passlib.context import CryptContext
 from jose import JWTError, jwt
@@ -50,9 +51,9 @@ def create_access_token(
 ):
 
     if refresh:
-        expire = datetime.now(timezone.utc) + timedelta(days=30)
+        expire = now_pk() + timedelta(days=30)
     else:
-        expire = datetime.now(timezone.utc) + (
+        expire = now_pk() + (
             expires or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         )
     payload = {

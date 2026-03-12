@@ -2,7 +2,7 @@
 from typing import Optional
 from fastapi import APIRouter, Query
 from sqlalchemy import select, and_
-from datetime import datetime
+from src.api.core.utility import now_pk
 import re
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.operation import listRecords, updateOp
@@ -135,7 +135,7 @@ def create_notification(
 
     # Create notification
     notification = Notification(**request.model_dump())
-    notification.sent_at = datetime.utcnow()
+    notification.sent_at = now_pk()
 
     session.add(notification)
     session.commit()
@@ -287,7 +287,7 @@ def mark_as_read(
 
     # Mark as read with timestamp
     notification.is_read = True
-    notification.read_at = datetime.utcnow()
+    notification.read_at = now_pk()
 
     session.add(notification)
     session.commit()
@@ -325,7 +325,7 @@ def bulk_mark_as_read(
 
     # Mark all as read
     updated_count = 0
-    current_time = datetime.utcnow()
+    current_time = now_pk()
 
     for notification in notifications:
         if not notification.is_read:
@@ -363,7 +363,7 @@ def mark_all_as_read(
         return api_response(200, "No unread notifications to mark as read")
 
     # Mark all as read
-    current_time = datetime.utcnow()
+    current_time = now_pk()
     for notification in notifications:
         notification.is_read = True
         notification.read_at = current_time

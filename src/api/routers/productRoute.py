@@ -9,7 +9,8 @@ from src.api.models.product_model.variationOptionModel import (
     VariationOptionUpdate,
 )
 from src.api.core.middleware import handle_async_wrapper
-from src.api.core.utility import uniqueSlugify
+from src.api.core.utility import uniqueSlugify, now_pk
+from datetime import timedelta
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.response import api_response, raiseExceptions
 from src.api.utils.video_processor import VideoProcessor
@@ -815,8 +816,7 @@ def get_trending_products(
         skip = (page - 1) * limit
 
         # Calculate date threshold
-        from datetime import datetime, timedelta
-        threshold_date = datetime.now() - timedelta(days=days)
+        threshold_date = now_pk() - timedelta(days=days)
 
         # Query products with highest sales in recent period
         # Using total_sold_quantity as a proxy for trending
@@ -1066,8 +1066,7 @@ def get_best_seller_products(
 
         # If days parameter provided, filter by date
         if days:
-            from datetime import datetime, timedelta
-            threshold_date = datetime.now() - timedelta(days=days)
+            threshold_date = now_pk() - timedelta(days=days)
             query = query.where(Product.created_at >= threshold_date)
 
         # Apply searchTerm
@@ -2060,8 +2059,7 @@ def get_new_arrivals(
     """
     try:
         # Calculate date threshold for new arrivals
-        from datetime import datetime, timedelta
-        threshold_date = datetime.now() - timedelta(days=days)
+        threshold_date = now_pk() - timedelta(days=days)
 
         # Extract query params
         query_params_dict = vars(query_params)

@@ -3,7 +3,8 @@
 Background tasks for scheduled notifications and emails (wishlist/cart reminders, stock alerts)
 These should be run as cron jobs or scheduled tasks
 """
-from datetime import datetime, timedelta
+from datetime import timedelta
+from src.api.core.utility import now_pk
 from sqlmodel import Session, select
 from src.lib.db_con import engine
 from src.api.models.wishlistModel import Wishlist
@@ -22,7 +23,7 @@ def send_wishlist_reminders():
 
     with Session(engine) as session:
         # Get wishlist items older than 7 days
-        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        seven_days_ago = now_pk() - timedelta(days=7)
 
         wishlist_items = session.exec(
             select(Wishlist).where(
@@ -37,7 +38,7 @@ def send_wishlist_reminders():
             try:
                 product = session.get(Product, item.product_id)
                 if product:
-                    days_in_wishlist = (datetime.utcnow() - item.created_at).days
+                    days_in_wishlist = (now_pk() - item.created_at).days
 
                     # Send in-app notification
                     notification_helper.notify_wishlist_reminder(
@@ -74,7 +75,7 @@ def send_cart_reminders():
 
     with Session(engine) as session:
         # Get cart items older than 2 days, group by user
-        two_days_ago = datetime.utcnow() - timedelta(days=2)
+        two_days_ago = now_pk() - timedelta(days=2)
 
         # Get distinct users with old cart items
         cart_items = session.exec(

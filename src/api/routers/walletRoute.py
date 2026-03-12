@@ -1,7 +1,7 @@
 # src/api/routes/walletRoute.py
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from sqlalchemy import select
-from datetime import datetime
+from src.api.core.utility import now_pk
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.dependencies import (
     GetSession,
@@ -88,7 +88,7 @@ def transfer_to_bank(
             WalletTransaction.user_id == user_id,
             WalletTransaction.transaction_type == "credit",
             WalletTransaction.is_refund == True,
-            WalletTransaction.transfer_eligible_at <= datetime.utcnow(),
+            WalletTransaction.transfer_eligible_at <= now_pk(),
             WalletTransaction.transferred_to_bank == False
         )
     ).scalars().all()
@@ -112,7 +112,7 @@ def transfer_to_bank(
             
             if amount_to_transfer >= transaction.amount:
                 transaction.transferred_to_bank = True
-                transaction.transferred_at = datetime.utcnow()
+                transaction.transferred_at = now_pk()
                 amount_to_transfer -= transaction.amount
             else:
                 # Partial transfer (create new transaction for remaining)
@@ -122,7 +122,7 @@ def transfer_to_bank(
                 transaction.amount = amount_to_transfer
                 transaction.balance_after = user_wallet.balance
                 transaction.transferred_to_bank = True
-                transaction.transferred_at = datetime.utcnow()
+                transaction.transferred_at = now_pk()
                 
                 # Create new transaction for remaining amount
                 new_transaction = WalletTransaction(
@@ -178,7 +178,7 @@ def get_eligible_transfer_amount(
             WalletTransaction.user_id == user_id,
             WalletTransaction.transaction_type == "credit",
             WalletTransaction.is_refund == True,
-            WalletTransaction.transfer_eligible_at <= datetime.utcnow(),
+            WalletTransaction.transfer_eligible_at <= now_pk(),
             WalletTransaction.transferred_to_bank == False
         )
     ).scalars().all()
@@ -213,7 +213,7 @@ def check_transfer_eligibility():
             select(WalletTransaction).where(
                 WalletTransaction.transaction_type == "credit",
                 WalletTransaction.is_refund == True,
-                WalletTransaction.transfer_eligible_at <= datetime.utcnow(),
+                WalletTransaction.transfer_eligible_at <= now_pk(),
                 WalletTransaction.transferred_to_bank == False
             )
         ).all()

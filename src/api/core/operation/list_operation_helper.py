@@ -1,5 +1,5 @@
 import ast
-from datetime import datetime, timezone
+from src.api.core.utility import now_pk
 import json
 from typing import List, Optional
 from fastapi import HTTPException
@@ -428,7 +428,7 @@ def applyFilters(
             end_date = (
                 parse_date(dateRange[2])
                 if len(dateRange) > 2 and dateRange[2]
-                else datetime.now(timezone.utc)
+                else now_pk()
             )
 
             # If user didn't specify end time, set to 23:59:59

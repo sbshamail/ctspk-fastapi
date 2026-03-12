@@ -121,8 +121,8 @@ def build_shop_owner_html(order, shop, shop_products, customer_name, customer_em
     total = subtotal - discount + tax
     rows = generate_product_html(shop_products)
     order_date = order.created_at.strftime("%B %d, %Y %I:%M %p") if order.created_at else "N/A"
-    dashboard_link = f"{os.getenv('DOMAIN', 'https://front.ghertak.com')}/dashboard/orders/{order.id}"
-    print_link = f"{os.getenv('DOMAIN', 'https://front.ghertak.com')}/dashboard/orders/{order.id}/invoice"
+    dashboard_link = f"{os.getenv('DOMAIN', 'https:/shop.ghertak.com')}/dashboard/orders/{order.id}"
+    print_link = f"{os.getenv('DOMAIN', 'https://shop.ghertak.com')}/dashboard/orders/{order.id}/invoice"
     year = datetime.now().year
 
     return f"""<!DOCTYPE html>
@@ -254,8 +254,8 @@ def build_admin_html(order, shop_groups, customer_name, customer_email,
     wallet_amount_used = float(order.wallet_amount_used or 0) if hasattr(order, 'wallet_amount_used') else 0
     order_date = order.created_at.strftime("%B %d, %Y %I:%M %p") if order.created_at else "N/A"
     gateway = str(order.payment_gateway or "N/A")
-    dashboard_link = f"{os.getenv('DOMAIN', 'https://front.ghertak.com')}/dashboard/orders/{order.id}"
-    print_link = f"{os.getenv('DOMAIN', 'https://front.ghertak.com')}/dashboard/orders/{order.id}/invoice"
+    dashboard_link = f"{os.getenv('DOMAIN', 'https://shop.ghertak.com')}/dashboard/orders/{order.id}"
+    print_link = f"{os.getenv('DOMAIN', 'https://shop.ghertak.com')}/dashboard/orders/{order.id}/invoice"
     year = datetime.now().year
 
     # Per-shop sections

@@ -1,6 +1,6 @@
 from typing import Optional, Dict, Any, Tuple, List
 from decimal import Decimal
-from datetime import datetime
+from src.api.core.utility import now_pk
 import uuid
 
 from sqlmodel import Session, select
@@ -24,7 +24,7 @@ class PaymentHelper:
     @staticmethod
     def generate_transaction_id() -> str:
         """Generate unique transaction ID"""
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        timestamp = now_pk().strftime("%Y%m%d%H%M%S")
         unique_id = uuid.uuid4().hex[:8].upper()
         return f"TXN-{timestamp}-{unique_id}"
 
@@ -183,11 +183,11 @@ class PaymentHelper:
 
             # Update transaction
             transaction.gateway_response = result.gateway_response
-            transaction.updated_at = datetime.utcnow()
+            transaction.updated_at = now_pk()
 
             if result.success:
                 transaction.status = PaymentTransactionStatus.COMPLETED.value
-                transaction.completed_at = datetime.utcnow()
+                transaction.completed_at = now_pk()
                 transaction.gateway_transaction_id = (
                     result.gateway_transaction_id or transaction.gateway_transaction_id
                 )
@@ -294,13 +294,13 @@ class PaymentHelper:
                     # Update webhook data
                     transaction.webhook_received = True
                     transaction.webhook_data = result.parsed_data
-                    transaction.webhook_received_at = datetime.utcnow()
-                    transaction.updated_at = datetime.utcnow()
+                    transaction.webhook_received_at = now_pk()
+                    transaction.updated_at = now_pk()
 
                     # Update status based on webhook
                     if result.status == "completed":
                         transaction.status = PaymentTransactionStatus.COMPLETED.value
-                        transaction.completed_at = datetime.utcnow()
+                        transaction.completed_at = now_pk()
 
                         # Update order
                         order = session.get(Order, transaction.order_id)
@@ -384,7 +384,7 @@ class PaymentHelper:
 
             if result.success:
                 transaction.refunded_amount += refund_amount
-                transaction.updated_at = datetime.utcnow()
+                transaction.updated_at = now_pk()
 
                 if transaction.refunded_amount >= transaction.amount:
                     transaction.status = PaymentTransactionStatus.REFUNDED.value

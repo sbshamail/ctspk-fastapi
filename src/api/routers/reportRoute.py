@@ -1,7 +1,8 @@
 # src/api/routers/reportRoute.py
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import timedelta, datetime
+from src.api.core.utility import now_pk
 from typing import Optional
 
 from fastapi import APIRouter, Query
@@ -132,7 +133,7 @@ def sales_trend(
     # Default look-back if no dates given
     if not start_date and not end_date:
         lookback = {"day": 30, "week": 84, "month": 365}[period]
-        date_filters = [Order.created_at >= datetime.utcnow() - timedelta(days=lookback)]
+        date_filters = [Order.created_at >= now_pk() - timedelta(days=lookback)]
 
     period_label = func.date_trunc(period, Order.created_at).label("period")
 
@@ -349,7 +350,7 @@ def inventory_health(
     ).scalar()
 
     # Slow movers: products with no orders in the past N days
-    cutoff = datetime.utcnow() - timedelta(days=slow_mover_days)
+    cutoff = now_pk() - timedelta(days=slow_mover_days)
     sold_ids_q = select(func.distinct(OrderProduct.product_id)).join(
         Order, Order.id == OrderProduct.order_id
     ).where(Order.created_at >= cutoff)
@@ -476,7 +477,7 @@ def customer_metrics(
     date_filters = _order_date_filters(start_date, end_date)
     if not start_date and not end_date:
         lookback = {"day": 30, "week": 84, "month": 365}[period]
-        date_filters = [Order.created_at >= datetime.utcnow() - timedelta(days=lookback)]
+        date_filters = [Order.created_at >= now_pk() - timedelta(days=lookback)]
 
     # New registrations trend
     reg_period = func.date_trunc(period, User.created_at).label("period")
@@ -597,7 +598,7 @@ def export_sales_csv(
     date_filters = _order_date_filters(start_date, end_date)
     if not start_date and not end_date:
         lookback = {"day": 30, "week": 84, "month": 365}[period]
-        date_filters = [Order.created_at >= datetime.utcnow() - timedelta(days=lookback)]
+        date_filters = [Order.created_at >= now_pk() - timedelta(days=lookback)]
 
     period_label = func.date_trunc(period, Order.created_at).label("period")
     rows = session.execute(

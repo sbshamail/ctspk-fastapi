@@ -102,7 +102,7 @@ def payfast_create_payment(
     """
     import httpx
     import hashlib
-    from datetime import datetime
+    from src.api.core.utility import now_pk
     from src.config import (
         PAYFAST_MERCHANT_ID,
         PAYFAST_SECURED_KEY,
@@ -131,7 +131,7 @@ def payfast_create_payment(
         "SUCCESS_URL": PAYFAST_RETURN_URL,
         "FAILURE_URL": PAYFAST_CANCEL_URL,
         "BASKET_ID": request.orderId,
-        "ORDER_DATE": datetime.now().strftime("%Y%m%d%H%M%S"),
+        "ORDER_DATE": now_pk().strftime("%Y%m%d%H%M%S"),
         "CHECKOUT_URL": f"{PAYFAST_RETURN_URL}?token={request.orderId}",
         "SECURED_KEY": PAYFAST_SECURED_KEY,
     }
@@ -486,19 +486,19 @@ def log_ipn_request(ipn_data: dict, error: str = None, request_info: dict = None
     """
     import os
     import json
-    from datetime import datetime
+    from src.api.core.utility import now_pk
 
     # Create logs directory if it doesn't exist
     logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "logs")
     os.makedirs(logs_dir, exist_ok=True)
 
     # Create filename with current date
-    current_date = datetime.now().strftime("%Y-%m-%d")
+    current_date = now_pk().strftime("%Y-%m-%d")
     log_filename = f"ipn_log_{current_date}.log"
     log_path = os.path.join(logs_dir, log_filename)
 
     # Prepare log entry
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = now_pk().strftime("%Y-%m-%d %H:%M:%S")
     log_entry = {
         "timestamp": timestamp,
         "request_info": request_info or {},

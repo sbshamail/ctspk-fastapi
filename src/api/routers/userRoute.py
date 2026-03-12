@@ -10,6 +10,7 @@ from src.api.core.email_service import send_verification_email,send_password_res
 from src.api.core.operation import listop
 from src.api.core.avatar_helper import get_user_avatar
 import datetime
+from src.api.core.utility import now_pk
 from src.api.core.security import hash_password
 from src.api.core import updateOp, requireSignin
 from src.api.core.dependencies import GetSession, requirePermission, requireAdmin
@@ -218,7 +219,7 @@ def get_user(
         from src.api.models.couponModel import Coupon, CouponType
         from datetime import datetime, timedelta, timezone
         from src.api.core.email_helper import send_email
-        current_time = datetime.now(timezone.utc)
+        current_time = now_pk()
         free_shipping_coupon = session.execute(
             select(Coupon)
             .where(Coupon.type == CouponType.FREE_SHIPPING)
@@ -514,7 +515,7 @@ def forgot_password(
     verification_code = str(random.randint(100000, 999999))
     
     # Set expiration time (15 minutes from now)
-    expires_at = datetime.datetime.now() + datetime.timedelta(minutes=300)
+    expires_at = now_pk() + datetime.timedelta(minutes=300)
     print(f"verification_code:{verification_code}")
     print(f"expires_at:{expires_at}")
     
@@ -555,14 +556,14 @@ def verify_code(
             and_(
                 User.email == request.email,
                 User.password_reset_code == request.verification_code,
-                User.password_reset_code_expires > datetime.datetime.now()
+                User.password_reset_code_expires > now_pk()
             )
         )
     ).first()
     #,
-    #            User.password_reset_code_expires > datetime.datetime.now()
+    #            User.password_reset_code_expires > now_pk()
     print(f"db_user:{db_user}")
-    print(f"date:{datetime.datetime.now()}")
+    print(f"date:{now_pk()}")
     if not db_user:
         return api_response(400, "Invalid or expired verification code")
     
@@ -581,7 +582,7 @@ def reset_password(
         and_(
             User.email == request.email,
             User.password_reset_code == request.verification_code,
-            User.password_reset_code_expires > datetime.datetime.now()
+            User.password_reset_code_expires > now_pk()
         )
     )
     db_user = session.exec(statement).first()

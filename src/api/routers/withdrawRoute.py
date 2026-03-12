@@ -3,7 +3,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import select, func
 from typing import Optional
 from decimal import Decimal
-from datetime import datetime
+from src.api.core.utility import now_pk
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.operation import listop
 from src.api.core.dependencies import GetSession, requirePermission, requireSignin
@@ -274,7 +274,7 @@ def approve_withdraw_request(
 
     withdraw_request.status = WithdrawStatus.APPROVED
     withdraw_request.processed_by = user.get("id")
-    withdraw_request.processed_at = datetime.now()
+    withdraw_request.processed_at = now_pk()
 
     session.commit()
 
@@ -305,7 +305,7 @@ def reject_withdraw_request(
     withdraw_request.status = WithdrawStatus.REJECTED
     withdraw_request.rejection_reason = rejection_reason
     withdraw_request.processed_by = user.get("id")
-    withdraw_request.processed_at = datetime.now()
+    withdraw_request.processed_at = now_pk()
 
     session.commit()
 
@@ -363,7 +363,7 @@ def process_withdraw_request(
         # Mark as fully settled if settled_amount >= shop_earning
         if earning.settled_amount >= earning.shop_earning:
             earning.is_settled = True
-            earning.settled_at = datetime.now()
+            earning.settled_at = now_pk()
 
         session.add(earning)
 

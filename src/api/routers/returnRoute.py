@@ -1,7 +1,8 @@
 # src/api/routes/returnRoute.py
 from fastapi import APIRouter, BackgroundTasks
 from sqlalchemy import select, func
-from datetime import datetime, timedelta
+from datetime import timedelta
+from src.api.core.utility import now_pk
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.transaction_logger import TransactionLogger
@@ -55,7 +56,7 @@ def create_return_request(
     order_date = order.created_at
     if order.order_status_history and order.order_status_history.order_completed_date:
         order_date = order.order_status_history.order_completed_date
-    if (datetime.utcnow() - order_date).days > return_period_days:
+    if (now_pk() - order_date).days > return_period_days:
         return api_response(400, "Return period has expired")
 
     # ✅ CHECK IF PRODUCTS ARE ALREADY RETURNED
@@ -584,7 +585,7 @@ def process_refund(return_id: int):
                 balance_after=new_balance,
                 description=f"Refund for return #{return_request.id}",
                 is_refund=True,
-                transfer_eligible_at=datetime.utcnow() + timedelta(days=15),
+                transfer_eligible_at=now_pk() + timedelta(days=15),
                 return_request_id=return_request.id
             )
             session.add(wallet_transaction)

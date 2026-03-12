@@ -8,7 +8,8 @@ Two emails per new order:
 import schedule
 import time
 import threading
-from datetime import datetime, timedelta
+from datetime import timedelta
+from src.api.core.utility import now_pk
 from sqlmodel import Session, select, and_
 
 from src.lib.db_con import engine
@@ -28,12 +29,12 @@ class OrderEmailCron:
         and send shop-owner + admin emails for any that haven't been emailed yet.
         """
         print(f"\n{'='*60}")
-        print(f"[order-email] cron running at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"[order-email] cron running at {now_pk().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*60}")
 
         session = Session(engine)
         try:
-            time_threshold = datetime.now() - timedelta(minutes=10)
+            time_threshold = now_pk() - timedelta(minutes=10)
 
             orders = session.exec(
                 select(Order).where(
@@ -92,14 +93,14 @@ class OrderEmailCron:
         if hasattr(order, 'metadata') and isinstance(order.metadata, dict):
             return order.metadata.get('order_email_sent', False)
         # Fallback: treat orders older than 10 min as already processed
-        return order.created_at < (datetime.now() - timedelta(minutes=10))
+        return order.created_at < (now_pk() - timedelta(minutes=10))
 
     def _mark_email_sent(self, session: Session, order: Order):
         """Record in order metadata that emails have been sent."""
         try:
             meta = order.metadata if isinstance(getattr(order, 'metadata', None), dict) else {}
             meta['order_email_sent'] = True
-            meta['order_email_sent_at'] = datetime.now().isoformat()
+            meta['order_email_sent_at'] = now_pk().isoformat()
             order.metadata = meta
             session.add(order)
             session.flush()

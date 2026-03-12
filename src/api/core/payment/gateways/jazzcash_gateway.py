@@ -1,7 +1,8 @@
 import hashlib
 import hmac
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
+from src.api.core.utility import now_pk
 from decimal import Decimal
 from typing import Optional, Dict, Any, Tuple
 import httpx
@@ -76,7 +77,7 @@ class JazzCashGateway(BasePaymentGateway):
     ) -> PaymentInitiationResult:
         """Initiate JazzCash payment"""
         try:
-            now = datetime.now()
+            now = now_pk()
             expiry_date = (now + timedelta(hours=1)).strftime("%Y%m%d%H%M%S")
 
             request_data = {

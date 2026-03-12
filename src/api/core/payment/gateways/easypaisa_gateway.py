@@ -1,6 +1,7 @@
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
+from src.api.core.utility import now_pk
 from decimal import Decimal
 from typing import Optional, Dict, Any, Tuple
 import httpx
@@ -61,7 +62,7 @@ class EasyPaisaGateway(BasePaymentGateway):
     ) -> PaymentInitiationResult:
         """Initiate EasyPaisa payment"""
         try:
-            expiry_date = (datetime.now() + timedelta(hours=1)).strftime(
+            expiry_date = (now_pk() + timedelta(hours=1)).strftime(
                 "%Y%m%d %H%M%S"
             )
 

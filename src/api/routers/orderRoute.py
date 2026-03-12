@@ -52,7 +52,8 @@ from src.api.core.dependencies import (
     requireSignin,
     isAuthenticated,
 )
-from datetime import datetime, timezone
+from datetime import datetime
+from src.api.core.utility import now_pk
 import uuid
 from decimal import Decimal
 from src.api.core.transaction_logger import TransactionLogger
@@ -75,7 +76,7 @@ router = APIRouter(prefix="/order", tags=["Order"])
 
 def generate_tracking_number():
     """Generate unique tracking number"""
-    now = datetime.now()
+    now = now_pk()
     return f"GTISB-{now:%Y-%m-%d}-{uuid.uuid4().hex[:8].upper()}"
 
 def save_default_addresses_from_order(
@@ -428,7 +429,7 @@ def update_order_status_history(session, order_id: int, status_field: str):
         session.flush()  # Flush to get the ID
 
     # Now set the attribute on the model instance
-    setattr(order_status, status_field, datetime.now())
+    setattr(order_status, status_field, now_pk())
     session.add(order_status)
 
 
@@ -512,8 +513,9 @@ def validate_tax_shipping_coupon(
 
     # Get free shipping settings (with defaults)
     free_shipping_enabled = False
-    free_shipping_amount_cap = 0
-    minimum_order_amount = 0
+    free_shipping_amount = 0       # order must reach this to qualify for free shipping
+    minimum_order_amount = 0       # minimum order amount (always enforced)
+    max_shipping_amount_off = 0    # max discount cap on shipping fee
 
     options = None
     if settings:
@@ -522,29 +524,32 @@ def validate_tax_shipping_coupon(
         elif isinstance(settings, dict):
             options = settings.get('options')
 
+    def _to_float(val):
+        try:
+            return float(val or 0)
+        except (ValueError, TypeError):
+            return 0.0
+
     if options:
-        free_shipping_enabled = options.get('freeShipping', False)
-        # Only get cap and minimum amount if free shipping is enabled
-        if free_shipping_enabled:
-            # Handle string values from settings (e.g., "3000" instead of 3000)
-            try:
-                free_shipping_amount_cap = float(options.get('freeShippingAmount', 0) or 0)
-            except (ValueError, TypeError):
-                free_shipping_amount_cap = 0
-            try:
-                minimum_order_amount = float(options.get('minimumOrderAmount', 0) or 0)
-            except (ValueError, TypeError):
-                minimum_order_amount = 0
+        free_shipping_enabled = bool(options.get('freeShipping', False))
+        free_shipping_amount   = _to_float(options.get('freeShippingAmount', 0))
+        minimum_order_amount   = _to_float(options.get('minimumOrderAmount', 0))
+        max_shipping_amount_off = _to_float(options.get('maximumShippingAmountOff', 0))
 
-    # Check minimum order amount requirement ONLY if free shipping is enabled
-    if free_shipping_enabled and minimum_order_amount > 0 and order_amount < minimum_order_amount:
-        return False, f"Minimum order amount is {minimum_order_amount}", calculation_data
+    # Always enforce minimum order amount (independent of free shipping)
+    if minimum_order_amount > 0 and order_amount < minimum_order_amount:
+        return False, f"Minimum order amount is {minimum_order_amount} without shipping fee", calculation_data
 
-    # Apply settings-based free shipping (with CAP) if enabled
+    # Apply settings-based free shipping when enabled and order qualifies
     settings_free_shipping_applied = False
-    if free_shipping_enabled and original_shipping > 0 and free_shipping_amount_cap > 0:
-        # Apply capped shipping discount
-        shipping_discount = min(original_shipping, free_shipping_amount_cap)
+    if (
+        free_shipping_enabled
+        and original_shipping > 0
+        and free_shipping_amount > 0
+        and order_amount >= free_shipping_amount
+    ):
+        # Discount is capped by maximumShippingAmountOff (0 = no cap = full discount)
+        shipping_discount = min(original_shipping, max_shipping_amount_off) if max_shipping_amount_off > 0 else original_shipping
         calculation_data['shipping_amount'] = original_shipping - shipping_discount
         calculation_data['free_shipping_source'] = FreeShippingSource.SETTINGS.value
         settings_free_shipping_applied = True
@@ -556,7 +561,7 @@ def validate_tax_shipping_coupon(
             return False, "Coupon not found", calculation_data
 
         # Check if coupon is active
-        now = datetime.now()
+        now = now_pk()
         if now < coupon.active_from or now > coupon.expire_at:
             return False, "Coupon is not active", calculation_data
 
@@ -574,9 +579,8 @@ def validate_tax_shipping_coupon(
         elif coupon.type == CouponType.FREE_SHIPPING:
             # Only apply coupon free shipping if settings-based free shipping wasn't already applied
             if not settings_free_shipping_applied and original_shipping > 0:
-                # Apply capped shipping discount (respects freeShippingAmount cap)
-                max_discount = free_shipping_amount_cap if free_shipping_amount_cap > 0 else original_shipping
-                shipping_discount = min(original_shipping, max_discount)
+                # Discount capped by maximumShippingAmountOff (0 = no cap = full discount)
+                shipping_discount = min(original_shipping, max_shipping_amount_off) if max_shipping_amount_off > 0 else original_shipping
                 calculation_data['shipping_amount'] = original_shipping - shipping_discount
                 calculation_data['free_shipping_source'] = FreeShippingSource.COUPON.value
             # Note: coupon_discount stays 0.0 for FREE_SHIPPING coupons
@@ -901,7 +905,7 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
     session.add(order)
     
     # Create initial order status history
-    order_status = OrderStatus(order_id=order.id, order_pending_date=datetime.now())
+    order_status = OrderStatus(order_id=order.id, order_pending_date=now_pk())
     session.add(order_status)
     
     # Update inventory using the proper update_product_inventory function
@@ -1526,7 +1530,7 @@ def create_order_from_cart(
     session.add(order)
     
     # ✅ 11. Create initial order status history
-    order_status = OrderStatus(order_id=order.id, order_pending_date=datetime.now())
+    order_status = OrderStatus(order_id=order.id, order_pending_date=now_pk())
     session.add(order_status)
     
     # ✅ 12. CLEAR USER'S CART after successful order creation
@@ -1871,7 +1875,7 @@ def create_order(request: OrderCreate, session: GetSession, user: isAuthenticate
     session.add(order)
     
     # Create initial order status history
-    order_status = OrderStatus(order_id=order.id, order_pending_date=datetime.now())
+    order_status = OrderStatus(order_id=order.id, order_pending_date=now_pk())
     session.add(order_status)
 
     # Save default addresses to user's address table if is_default is set
@@ -3440,7 +3444,7 @@ def cancel_order(
             order_id=order_id,
             status="cancelled",
             products_restocked=products_restocked,
-            cancelled_at=datetime.now(),
+            cancelled_at=now_pk(),
             cancelled_by=user_id
         )
         
@@ -3594,7 +3598,7 @@ def admin_cancel_order(
             order_id=order_id,
             status="cancelled",
             products_restocked=products_restocked,
-            cancelled_at=datetime.now(),
+            cancelled_at=now_pk(),
             cancelled_by=user_id
         )
         

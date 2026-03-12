@@ -1,6 +1,7 @@
 # src/api/models/notificationModel.py
 from typing import TYPE_CHECKING, Optional
 from datetime import datetime
+from src.api.core.utility import now_pk
 from sqlmodel import SQLModel, Field, Relationship
 from src.api.models.baseModel import TimeStampedModel, TimeStampReadModel
 
@@ -16,7 +17,7 @@ class Notification(TimeStampedModel, table=True):
     message: str = Field(max_length=1000)  # Max 1000 characters
     is_read: bool = Field(default=False, index=True)
     read_at: Optional[datetime] = Field(default=None)  # When notification was read
-    sent_at: datetime = Field(default_factory=datetime.utcnow, index=True)  # When notification was sent
+    sent_at: datetime = Field(default_factory=now_pk, index=True)  # When notification was sent
 
     # Relationship
     user: Optional["User"] = Relationship()

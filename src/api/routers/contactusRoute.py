@@ -4,7 +4,7 @@ import smtplib
 import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime
+from src.api.core.utility import now_pk
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.operation import listRecords, updateOp
 from src.api.core.dependencies import (
@@ -129,7 +129,7 @@ def send_contact_email(name: str, email: str, subject: str, message: str, catego
                                                         Submitted:
                                                     </td>
                                                     <td style="color: #2d3748; font-size: 14px; padding: 12px 0;">
-                                                        {datetime.now().strftime("%B %d, %Y at %I:%M %p")}
+                                                        {now_pk().strftime("%B %d, %Y at %I:%M %p")}
                                                     </td>
                                                 </tr>
                                             </table>
@@ -169,7 +169,7 @@ def send_contact_email(name: str, email: str, subject: str, message: str, catego
                                     This is an automated message from your website contact form.
                                 </p>
                                 <p style="margin: 0; color: #a0aec0; font-size: 12px;">
-                                    &copy; {datetime.now().year} Ghertak. All rights reserved.
+                                    &copy; {now_pk().year} Ghertak. All rights reserved.
                                 </p>
                             </td>
                         </tr>
@@ -189,7 +189,7 @@ def send_contact_email(name: str, email: str, subject: str, message: str, catego
     Email: {email}
     Subject: {subject}
     {f'Category: {category}' if category else ''}
-    Submitted: {datetime.now().strftime("%B %d, %Y at %I:%M %p")}
+    Submitted: {now_pk().strftime("%B %d, %Y at %I:%M %p")}
 
     Message:
     {message}

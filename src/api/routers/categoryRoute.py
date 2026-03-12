@@ -1,5 +1,5 @@
 import ast
-from datetime import datetime, timezone
+from src.api.core.utility import now_pk
 from typing import Optional
 from fastapi import APIRouter, Query
 from sqlalchemy import select
@@ -108,7 +108,7 @@ def update_category(
     # Slug update if name changed
     if request.name:
         category.slug = uniqueSlugify(session, Category, request.name)
-        category.updated_at = datetime.now(timezone.utc)
+        category.updated_at = now_pk()
 
     session.add(category)
     session.commit()

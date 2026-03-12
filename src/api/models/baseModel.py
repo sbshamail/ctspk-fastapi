@@ -1,11 +1,12 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Any, Dict
 from pydantic import BaseModel, ConfigDict, model_serializer
 from sqlmodel import Field, SQLModel
+from src.api.core.utility import now_pk
 
 
 class TimeStampedModel(SQLModel):
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=now_pk)
     updated_at: Optional[datetime] = None
 
 

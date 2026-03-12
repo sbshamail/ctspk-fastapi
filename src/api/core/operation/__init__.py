@@ -1,5 +1,5 @@
 from sqlalchemy.exc import DataError
-from datetime import datetime, timezone
+from src.api.core.utility import now_pk
 from fastapi import Query
 from sqlalchemy import ScalarResult
 from sqlmodel import Session, SQLModel, select
@@ -31,7 +31,7 @@ def updateOp(
         for key, value in data.items():
             setattr(instance, key, value)
     if hasattr(instance, "updated_at"):
-        instance.updated_at = datetime.now(timezone.utc)
+        instance.updated_at = now_pk()
     session.add(instance)
 
     return instance

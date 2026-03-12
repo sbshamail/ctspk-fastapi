@@ -1,6 +1,7 @@
 # src/api/models/transactionLogModel.py
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from datetime import datetime
+from src.api.core.utility import now_pk
 from sqlmodel import SQLModel, Field, Relationship, Column, JSON, Enum
 from enum import Enum as PyEnum
 from decimal import Decimal
@@ -40,7 +41,7 @@ class TransactionLog(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     transaction_type: str = Field(index=True)  # Using string for flexibility
-    transaction_date: datetime = Field(default_factory=datetime.utcnow, index=True)
+    transaction_date: datetime = Field(default_factory=now_pk, index=True)
     
     # Reference fields
     product_id: Optional[int] = Field(foreign_key="products.id", index=True, default=None)
@@ -81,7 +82,7 @@ class TransactionLog(SQLModel, table=True):
     requires_review: bool = Field(default=False)
     
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=now_pk)
     updated_at: Optional[datetime] = None
     
     # Relationships

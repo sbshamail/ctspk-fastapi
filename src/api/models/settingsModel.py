@@ -47,6 +47,7 @@ class GeneralSettingsUpdate(SQLModel):
     freeShipping: Optional[bool] = None
     freeShippingAmount: Optional[int] = None
     minimumOrderAmount: Optional[int] = None
+    maximumShippingAmountOff: Optional[int] = None
 
 
 class DeliveryTimeSlot(SQLModel):

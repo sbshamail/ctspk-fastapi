@@ -8,7 +8,7 @@ from src.api.models.notificationModel import Notification
 from src.api.models.usersModel import User
 from src.api.models.shop_model.shopsModel import Shop
 from src.api.models.shop_model.userShopModel import UserShop
-from datetime import datetime
+from src.api.core.utility import now_pk
 
 
 class NotificationHelper:
@@ -37,7 +37,7 @@ class NotificationHelper:
             notification = Notification(
                 user_id=user_id,
                 message=message,
-                sent_at=datetime.utcnow(),
+                sent_at=now_pk(),
                 is_read=False
             )
             session.add(notification)

@@ -1,7 +1,7 @@
 # src/api/routes/coupon.py
 from fastapi import APIRouter
 from sqlalchemy import select
-from datetime import datetime
+from src.api.core.utility import now_pk
 from sqlmodel import select
 from src.api.core.response import api_response, raiseExceptions
 from src.api.core.operation import listRecords, updateOp
@@ -74,7 +74,7 @@ def redeem_coupon(code: str, session: GetSession):
     if not coupon:
         return api_response(404, "Coupon not found")
     
-    current_time = datetime.utcnow()
+    current_time = now_pk()
     
     # Check if coupon is currently active
     if coupon.active_from > current_time:

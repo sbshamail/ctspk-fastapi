@@ -1,7 +1,7 @@
 import hashlib
 import hmac
 import json
-from datetime import datetime
+from src.api.core.utility import now_pk
 from decimal import Decimal
 from typing import Optional, Dict, Any, Tuple
 from urllib.parse import quote
@@ -96,7 +96,7 @@ class PayFastGateway(BasePaymentGateway):
                 "SUCCESS_URL": self.return_url,
                 "FAILURE_URL": self.cancel_url,
                 "BASKET_ID": str(order_id),
-                "ORDER_DATE": datetime.now().strftime("%Y%m%d%H%M%S"),
+                "ORDER_DATE": now_pk().strftime("%Y%m%d%H%M%S"),
                 "CHECKOUT_URL": f"{self.return_url}?token={transaction_id}",
             }
 

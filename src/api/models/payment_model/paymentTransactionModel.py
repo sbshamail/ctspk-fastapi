@@ -1,5 +1,6 @@
 from typing import Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime
+from src.api.core.utility import now_pk
 from decimal import Decimal
 from enum import Enum as PyEnum
 from sqlalchemy import Column, JSON, Text, Numeric
@@ -100,7 +101,7 @@ class PaymentTransaction(SQLModel, table=True):
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))
 
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=now_pk)
     updated_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
     expires_at: Optional[datetime] = Field(default=None)

@@ -1,5 +1,5 @@
 # src/api/routes/review.py
-from datetime import datetime
+from src.api.core.utility import now_pk
 from fastapi import APIRouter
 from sqlalchemy import select, func
 from src.api.core.response import api_response, raiseExceptions
@@ -225,7 +225,7 @@ def delete_review(
     order_id = review.order_id
 
     # Soft delete by setting deleted_at timestamp
-    review.deleted_at = datetime.utcnow()
+    review.deleted_at = now_pk()
     session.commit()
 
     # Remove review_id from OrderProduct

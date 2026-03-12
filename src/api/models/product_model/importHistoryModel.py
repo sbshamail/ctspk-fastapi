@@ -1,6 +1,7 @@
 # src/api/models/product_model/importHistoryModel.py
 from sqlmodel import SQLModel, Field, JSON, DateTime
 from datetime import datetime
+from src.api.core.utility import now_pk
 from typing import Optional, List, Dict, Any
 
 class ProductImportHistory(SQLModel, table=True):
@@ -18,5 +19,5 @@ class ProductImportHistory(SQLModel, table=True):
     imported_products: Optional[List[Dict[str, Any]]] = Field(default=[], sa_type=JSON)
     shop_id: int = Field(foreign_key="shops.id")
     imported_by: int = Field(foreign_key="users.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=now_pk)
     completed_at: Optional[datetime] = None

@@ -5,7 +5,7 @@ import uuid
 from fastapi import APIRouter, UploadFile, File, Depends, Query, HTTPException
 from sqlmodel import Session, select, desc, func, or_
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone
+from src.api.core.utility import now_pk
 
 from src.api.core.dependencies import GetSession, requirePermission
 from src.api.core.response import api_response, raiseExceptions
@@ -59,7 +59,7 @@ class ProductImportService:
         if status:
             import_history.status = status
             if status == "completed":
-                import_history.completed_at = datetime.now(timezone.utc)
+                import_history.completed_at = now_pk()
                 
         if errors is not None:
             import_history.import_errors = errors
@@ -1001,7 +1001,7 @@ def export_products_to_excel(
         output.seek(0)
         
         # Generate filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_pk().strftime("%Y%m%d_%H%M%S")
         filename = f"products_export_{timestamp}.xlsx"
         
         # Return file response
