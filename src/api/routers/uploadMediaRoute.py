@@ -117,22 +117,18 @@ async def upload_images(
         session.rollback()
         errors.append(f"Final commit failed: {str(e)}")
 
-    # Prepare response
-    response_data = []
+    # All files failed
+    if not saved_records and errors:
+        return api_response(400, errors[0] if len(errors) == 1 else "; ".join(errors))
 
-    # Generate appropriate message
-    message_parts = []
-    if saved_records:
-        message_parts.append(f"Uploaded {len(saved_records)} new files")
-        response_data = [UserMediaRead.model_validate(m) for m in saved_records]
+    response_data = [UserMediaRead.model_validate(m) for m in saved_records]
+
+    # Partial success
     if errors:
-        message_parts.append(f"{len(errors)} errors occurred")
+        message = f"Uploaded {len(saved_records)} file(s), {len(errors)} failed: {'; '.join(errors)}"
+        return api_response(207, message, response_data)
 
-    message = ", ".join(message_parts) if message_parts else "No files processed"
-
-    status_code = 200 if not errors else 207  # 207 Multi-Status if there are errors
-
-    return api_response(status_code, message, response_data)
+    return api_response(200, f"Uploaded {len(saved_records)} file(s) successfully", response_data)
 
 
 # ✅ READ (single)

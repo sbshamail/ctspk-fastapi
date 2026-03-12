@@ -1,6 +1,5 @@
 import os
 import uuid
-from src.api.core.response import api_response
 from PIL import Image, UnidentifiedImageError
 
 
@@ -48,20 +47,14 @@ async def uploadImage(files, user, thumbnail):
                 img.save(file_path, "webp",lossless=True, quality=100, method=6)
                 ext = ".webp"  # update extension
             except UnidentifiedImageError:
-                raise api_response(
-                    400,
-                    f"File type {ext} is not a supported image format.",
-                )
+                raise ValueError(f"File type {ext} is not a supported image format.")
 
         # check size
         size_bytes = os.path.getsize(file_path)
         if size_bytes > MAX_SIZE:
             os.remove(file_path)
             size_mb = round(size_bytes / (1024 * 1024), 2)
-            return api_response(
-                400,
-                f"{file.filename} is still larger than 1 MB after optimization ({size_mb} MB)",
-            )
+            raise ValueError(f"{file.filename} is larger than 1 MB after optimization ({size_mb} MB)")
 
         # Use user ID in URLs
         user_id = str(user["id"])
