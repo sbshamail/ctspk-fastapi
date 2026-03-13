@@ -12,7 +12,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(
         1440,
     )
 )
-DOMAIN = os.getenv("DOMAIN", "https://api.ctspk.com")
+DOMAIN = os.getenv("DOMAIN", "https://api.ghertak.com")
 
 # =============================================================================
 # Payment Gateway Configurations

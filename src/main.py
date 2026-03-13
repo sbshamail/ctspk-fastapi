@@ -132,9 +132,6 @@ app.add_middleware(
     allow_origins=[
         "https://admin-ctspk.vercel.app",
         "https://ctspk-frontend.vercel.app",
-        "https://front.ctspk.com",
-        "https://ctspk.com",
-        "https://seller.ctspk.com",
         "https://seller.ghertak.com",
         "http://seller.ghertak.com",
         "https://front.ghertak.com",

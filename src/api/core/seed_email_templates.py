@@ -116,7 +116,7 @@ TEMPLATES = [
         <p style="color:#444;font-size:15px;line-height:1.6;margin:12px 0 0;">Please log in to the system to process this order promptly.</p>
       </td></tr>
       <tr><td style="background:#f8f9fa;padding:16px 30px;text-align:center;font-size:12px;color:#888;">
-        &copy; CTSPK. All rights reserved.
+        &copy; GHERTAK. All rights reserved.
       </td></tr>
     </table>
   </td></tr>
@@ -201,7 +201,7 @@ TEMPLATES = [
         <p style="color:#666;font-size:14px;line-height:1.6;margin:12px 0 0;">If you have any questions or believe this is a mistake, please contact our support team immediately.</p>
       </td></tr>
       <tr><td style="background:#f8f9fa;padding:16px 30px;text-align:center;font-size:12px;color:#888;">
-        &copy; CTSPK. All rights reserved.
+        &copy; GHERTAK. All rights reserved.
       </td></tr>
     </table>
   </td></tr>
@@ -287,7 +287,7 @@ TEMPLATES = [
         <p style="color:#666;font-size:14px;line-height:1.6;margin:12px 0 0;">Our team will review your request within 2–3 business days and notify you of the decision.</p>
       </td></tr>
       <tr><td style="background:#f8f9fa;padding:16px 30px;text-align:center;font-size:12px;color:#888;">
-        &copy; CTSPK. All rights reserved.
+        &copy; GHERTAK. All rights reserved.
       </td></tr>
     </table>
   </td></tr>
@@ -372,7 +372,7 @@ TEMPLATES = [
         <p style="color:#666;font-size:14px;line-height:1.6;margin:12px 0 0;">The refund will be credited to your wallet. Please allow up to 15 business days for the credit to appear.</p>
       </td></tr>
       <tr><td style="background:#f8f9fa;padding:16px 30px;text-align:center;font-size:12px;color:#888;">
-        &copy; CTSPK. All rights reserved.
+        &copy; GHERTAK. All rights reserved.
       </td></tr>
     </table>
   </td></tr>
@@ -457,7 +457,7 @@ TEMPLATES = [
         <p style="color:#666;font-size:14px;line-height:1.6;margin:12px 0 0;">If you believe this decision was made in error, please contact our support team with supporting documents.</p>
       </td></tr>
       <tr><td style="background:#f8f9fa;padding:16px 30px;text-align:center;font-size:12px;color:#888;">
-        &copy; CTSPK. All rights reserved.
+        &copy; GHERTAK. All rights reserved.
       </td></tr>
     </table>
   </td></tr>
