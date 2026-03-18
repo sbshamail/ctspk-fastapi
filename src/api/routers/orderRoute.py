@@ -1,9 +1,10 @@
 # src/api/routes/orderRoute.py
+from datetime import datetime, timedelta
 import ast
+import json
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Query, HTTPException
-from sqlalchemy import func, select
-from sqlalchemy import update as sql_update
+from sqlalchemy import func, select,text,update as sql_update
 from sqlmodel import SQLModel, Field, Relationship
 from src.api.models.cart_model.cartModel import Cart
 from src.api.core.utility import Print, uniqueSlugify
@@ -4010,3 +4011,474 @@ def get_my_not_completed_orders(
         enhanced_orders.append(order_data)
 
     return api_response(200, "Not-completed orders retrieved", enhanced_orders, len(enhanced_orders))
+
+@router.get("/myrecentorderproducts")
+def get_my_recent_order_products(
+    user: requireSignin,
+    session: GetSession,
+    dateRange: Optional[str] = None,
+    numberRange: Optional[str] = None,
+    searchTerm: str = None,
+    columnFilters: Optional[str] = Query(None),
+    order_status: Optional[OrderStatusEnum] = None,
+    payment_status: Optional[PaymentStatusEnum] = None,
+    shop_id: Optional[int] = None,
+    product_type: Optional[OrderItemType] = None,
+    limit_days: Optional[int] = Query(30, description="Number of days to look back for recent orders (default: 30)"),
+    qty_eq: Optional[int] = Query(None, description="Filter by exact quantity"),
+    qty_lt: Optional[int] = Query(None, description="Filter by quantity less than"),
+    qty_gt: Optional[int] = Query(None, description="Filter by quantity greater than"),
+    category_is_active: Optional[bool] = Query(None, description="Filter by category active status"),
+    manufacturer_is_active: Optional[bool] = Query(None, description="Filter by manufacturer active status"),
+    manufacturer_is_approved: Optional[bool] = Query(None, description="Filter by manufacturer approved status"),
+    sort: Optional[str] = Query(None, description="Sort by column. Example: ['created_at','desc'] or ['product_name','asc']"),
+    page: int = None,
+    skip: int = 0,
+    limit: int = Query(50, ge=1, le=200, description="Number of products to return (default: 50)"),
+):
+    """
+    Get products from the authenticated user's recent orders with full product details.
+    """
+    
+    try:
+        # Get user ID from the dictionary
+        if not isinstance(user, dict):
+            return api_response(401, "Invalid user object")
+        
+        user_id = user.get('id')
+        if not user_id:
+            return api_response(401, "User ID not found")
+        
+        print(f"✅ User ID: {user_id}")
+        
+        # Calculate date threshold for recent orders
+        threshold_date = None
+        if not dateRange and limit_days:
+            from datetime import datetime, timedelta
+            threshold_date = datetime.now() - timedelta(days=limit_days)
+            threshold_date_str = threshold_date.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Build WHERE clause for orders
+        order_where = f"customer_id = {user_id}"
+        
+        # Apply date range filter
+        if dateRange:
+            try:
+                import ast
+                date_range = ast.literal_eval(dateRange) if isinstance(dateRange, str) else dateRange
+                if len(date_range) >= 3:
+                    start_date = date_range[1]
+                    end_date = date_range[2]
+                    if start_date and end_date:
+                        order_where += f" AND created_at BETWEEN '{start_date} 00:00:00' AND '{end_date} 23:59:59'"
+            except Exception as e:
+                print(f"Error parsing dateRange: {e}")
+        elif threshold_date:
+            order_where += f" AND created_at >= '{threshold_date_str}'"
+        
+        # Apply order status filter
+        if order_status:
+            order_where += f" AND order_status = '{order_status.value}'"
+        
+        # Apply payment status filter
+        if payment_status:
+            order_where += f" AND payment_status = '{payment_status.value}'"
+        
+        # Get orders
+        orders_query = f"SELECT * FROM orders WHERE {order_where} ORDER BY created_at DESC"
+        print(f"Orders query: {orders_query}")
+        
+        orders_result = session.exec(text(orders_query)).all()
+        
+        # Convert orders to list of dicts
+        orders = []
+        for row in orders_result:
+            if hasattr(row, '_mapping'):
+                orders.append(dict(row._mapping))
+            else:
+                orders.append(dict(row))
+        
+        print(f"Found {len(orders)} orders")
+        
+        if not orders:
+            return api_response(200, "No recent orders found", [], 0)
+        
+        # Get order IDs
+        order_ids = [str(order['id']) for order in orders if order.get('id')]
+        order_ids_str = ','.join(order_ids)
+        
+        # Build WHERE clause for order products
+        conditions = [f"op.order_id IN ({order_ids_str})"]
+        
+        # Apply shop filter
+        if shop_id:
+            conditions.append(f"op.shop_id = {shop_id}")
+        
+        # Apply product type filter
+        if product_type:
+            conditions.append(f"op.item_type = '{product_type.value}'")
+        
+        # Apply quantity filters
+        if qty_eq is not None:
+            conditions.append(f"CAST(op.order_quantity AS DECIMAL) = {qty_eq}")
+        if qty_lt is not None:
+            conditions.append(f"CAST(op.order_quantity AS DECIMAL) < {qty_lt}")
+        if qty_gt is not None:
+            conditions.append(f"CAST(op.order_quantity AS DECIMAL) > {qty_gt}")
+        
+        # Apply searchTerm
+        if searchTerm:
+            conditions.append(f"""(COALESCE(p.name, '') ILIKE '%{searchTerm}%' OR COALESCE(p.description, '') ILIKE '%{searchTerm}%' OR COALESCE(p.sku, '') ILIKE '%{searchTerm}%')""")
+        
+        # Apply category_is_active filter
+        if category_is_active is not None:
+            bool_value = "TRUE" if category_is_active else "FALSE"
+            conditions.append(f"(c.id IS NULL OR c.is_active = {bool_value})")
+        
+        # Apply manufacturer filters
+        if manufacturer_is_active is not None:
+            bool_value = "TRUE" if manufacturer_is_active else "FALSE"
+            conditions.append(f"(m.id IS NULL OR m.is_active = {bool_value})")
+        
+        if manufacturer_is_approved is not None:
+            bool_value = "TRUE" if manufacturer_is_approved else "FALSE"
+            conditions.append(f"(m.id IS NULL OR m.is_approved = {bool_value})")
+        
+        # Apply numberRange filter
+        if numberRange:
+            try:
+                import ast
+                number_range = ast.literal_eval(numberRange) if isinstance(numberRange, str) else numberRange
+                column_name = number_range[0]
+                min_val = number_range[1] if len(number_range) > 1 else None
+                max_val = number_range[2] if len(number_range) > 2 else None
+                
+                if min_val is not None and max_val is not None:
+                    conditions.append(f"op.{column_name} BETWEEN {min_val} AND {max_val}")
+                elif min_val is not None:
+                    conditions.append(f"op.{column_name} >= {min_val}")
+                elif max_val is not None:
+                    conditions.append(f"op.{column_name} <= {max_val}")
+            except Exception as e:
+                print(f"Error parsing numberRange: {e}")
+        
+        # Combine all conditions with AND
+        op_where = " AND ".join(conditions) if conditions else "1=1"
+        
+        # Build ORDER BY clause
+        order_by = "ORDER BY o.created_at DESC"  # Default
+        
+        if sort:
+            try:
+                import ast
+                sort_param = ast.literal_eval(sort) if isinstance(sort, str) else sort
+                column_name, direction = sort_param[0], sort_param[1]
+                
+                if column_name == "product_name":
+                    order_by = f"ORDER BY p.name {direction} NULLS LAST"
+                elif column_name == "shop_name":
+                    order_by = f"ORDER BY s.name {direction} NULLS LAST"
+                elif column_name == "order_date":
+                    order_by = f"ORDER BY o.created_at {direction} NULLS LAST"
+                elif column_name == "quantity":
+                    order_by = f"ORDER BY CAST(op.order_quantity AS DECIMAL) {direction} NULLS LAST"
+                elif column_name in ["unit_price", "subtotal", "item_discount", "item_tax"]:
+                    order_by = f"ORDER BY op.{column_name} {direction} NULLS LAST"
+            except Exception as e:
+                print(f"Error parsing sort: {e}")
+        
+        # Get total count
+        count_query = f"""
+            SELECT COUNT(DISTINCT op.id) as total
+            FROM order_product op
+            LEFT JOIN products p ON op.product_id = p.id
+            LEFT JOIN categories c ON p.category_id = c.id
+            LEFT JOIN manufacturers m ON p.manufacturer_id = m.id
+            WHERE {op_where}
+        """
+        
+        print(f"Count query: {count_query}")
+        
+        count_result = session.exec(text(count_query)).first()
+        total_products = count_result[0] if count_result else 0
+        
+        # Main query with all product attributes
+        main_query = f"""
+            SELECT 
+                -- Order product details
+                op.id as order_product_id,
+                op.order_id,
+                op.product_id,
+                op.variation_option_id,
+                op.order_quantity,
+                op.unit_price as order_unit_price,
+                op.sale_price as order_sale_price,
+                op.subtotal,
+                op.item_discount,
+                op.item_tax,
+                op.admin_commission,
+                op.item_type,
+                op.variation_data,
+                op.product_snapshot,
+                op.variation_snapshot,
+                op.shop_id,
+                op.review_id,
+                op.is_returned,
+                op.returned_quantity,
+                
+                -- Order details
+                o.tracking_number as order_tracking_number,
+                o.created_at as order_date,
+                o.order_status,
+                o.payment_status,
+                
+                -- Product details (all attributes from products table)
+                p.id,
+                p.name,
+                p.slug,
+                p.description,
+                p.price,
+                p.sale_price,
+                p.max_price,
+                p.min_price,
+                p.purchase_price,
+                p.weight,
+                p.image,
+                p.gallery,
+                p.is_active,
+                p.is_feature,
+                p.quantity,
+                p.status,
+                p.product_type,
+                p.unit,
+                p.dimension_unit,
+                p.sku,
+                p.bar_code,
+                p.height,
+                p.width,
+                p.length,
+                p.warranty,
+                p.meta_title,
+                p.meta_description,
+                p.return_policy,
+                p.shipping_info,
+                p.tags,
+                p.attributes,
+                p.total_purchased_quantity,
+                p.total_sold_quantity,
+                p.rating,
+                p.review_count,
+                
+                -- Category details
+                c.id as category_id,
+                c.name as category_name,
+                c.slug as category_slug,
+                c.root_id as category_root_id,
+                c.parent_id as category_parent_id,
+                
+                -- Shop details
+                s.id as shop_id,
+                s.name as shop_name,
+                s.slug as shop_slug,
+                
+                -- Manufacturer details
+                p.manufacturer_id,
+                
+                -- Variation details (if any)
+                vo.id as variation_id,
+                vo.title as variation_title,
+                vo.options as variation_options,
+                vo.sku as variation_sku,
+                vo.image as variation_image,
+                vo.price as variation_price,
+                vo.sale_price as variation_sale_price,
+                vo.quantity as variation_quantity
+                
+            FROM order_product op
+            LEFT JOIN orders o ON op.order_id = o.id
+            LEFT JOIN products p ON op.product_id = p.id
+            LEFT JOIN categories c ON p.category_id = c.id
+            LEFT JOIN shops s ON op.shop_id = s.id
+            LEFT JOIN manufacturers m ON p.manufacturer_id = m.id
+            LEFT JOIN variation_options vo ON op.variation_option_id = vo.id
+            WHERE {op_where}
+            {order_by}
+            LIMIT {limit} OFFSET {skip}
+        """
+        
+        print(f"Main query: {main_query}")
+        
+        results = session.exec(text(main_query)).all()
+        
+        # Build response data
+        products_data = []
+        
+        for row in results:
+            if hasattr(row, '_mapping'):
+                row_dict = dict(row._mapping)
+            else:
+                row_dict = dict(row)
+            
+            # Parse JSON fields
+            image = row_dict.get('image')
+            if image and isinstance(image, str):
+                try:
+                    import json
+                    image = json.loads(image)
+                except:
+                    pass
+            
+            gallery = row_dict.get('gallery')
+            if gallery and isinstance(gallery, str):
+                try:
+                    import json
+                    gallery = json.loads(gallery)
+                except:
+                    pass
+            
+            tags = row_dict.get('tags')
+            if tags and isinstance(tags, str):
+                try:
+                    import json
+                    tags = json.loads(tags)
+                except:
+                    pass
+            
+            attributes = row_dict.get('attributes')
+            if attributes and isinstance(attributes, str):
+                try:
+                    import json
+                    attributes = json.loads(attributes)
+                except:
+                    pass
+            
+            # Build variation options list
+            variation_options = []
+            if row_dict.get('variation_id'):
+                variation_options.append({
+                    "id": row_dict.get('variation_id'),
+                    "title": row_dict.get('variation_title'),
+                    "price": str(row_dict.get('variation_price')) if row_dict.get('variation_price') else None,
+                    "sale_price": str(row_dict.get('variation_sale_price')) if row_dict.get('variation_sale_price') else None,
+                    "quantity": row_dict.get('variation_quantity', 0),
+                    "options": row_dict.get('variation_options'),
+                    "image": row_dict.get('variation_image'),
+                    "sku": row_dict.get('variation_sku'),
+                    "is_active": True
+                })
+            
+            # Build category object
+            category = {
+                "id": row_dict.get('category_id'),
+                "name": row_dict.get('category_name'),
+                "slug": row_dict.get('category_slug'),
+                "root_id": row_dict.get('category_root_id'),
+                "parent_id": row_dict.get('category_parent_id')
+            } if row_dict.get('category_id') else None
+            
+            # Build shop object
+            shop = {
+                "id": row_dict.get('shop_id'),
+                "name": row_dict.get('shop_name')
+            } if row_dict.get('shop_id') else None
+            
+            # Calculate total quantity (product quantity + variation quantities)
+            total_quantity = row_dict.get('quantity', 0) or 0
+            if variation_options:
+                for var in variation_options:
+                    total_quantity += var.get('quantity', 0)
+            
+            product_data = {
+                # Order context (keeping this for reference)
+                "order_product_id": row_dict.get('order_product_id'),
+                "order_id": row_dict.get('order_id'),
+                "order_tracking_number": row_dict.get('order_tracking_number'),
+                "order_date": str(row_dict.get('order_date')) if row_dict.get('order_date') else None,
+                "order_status": row_dict.get('order_status'),
+                "payment_status": row_dict.get('payment_status'),
+                
+                # Purchase details from order
+                "purchase_quantity": float(row_dict.get('order_quantity', 0)) if row_dict.get('order_quantity') else 0,
+                "purchase_unit_price": float(row_dict.get('order_unit_price', 0)) if row_dict.get('order_unit_price') else 0,
+                "purchase_sale_price": float(row_dict.get('order_sale_price', 0)) if row_dict.get('order_sale_price') else None,
+                "purchase_subtotal": float(row_dict.get('subtotal', 0)) if row_dict.get('subtotal') else 0,
+                
+                # Full product details (matching your desired format)
+                "id": row_dict.get('id'),
+                "name": row_dict.get('name'),
+                "slug": row_dict.get('slug'),
+                "description": row_dict.get('description'),
+                "price": str(row_dict.get('price')) if row_dict.get('price') else None,
+                "sale_price": str(row_dict.get('sale_price')) if row_dict.get('sale_price') else None,
+                "max_price": str(row_dict.get('max_price')) if row_dict.get('max_price') else None,
+                "min_price": str(row_dict.get('min_price')) if row_dict.get('min_price') else None,
+                "purchase_price": str(row_dict.get('purchase_price')) if row_dict.get('purchase_price') else None,
+                "weight": float(row_dict.get('weight')) if row_dict.get('weight') else None,
+                "image": image,
+                "gallery": gallery,
+                "is_active": row_dict.get('is_active', False),
+                "is_feature": row_dict.get('is_feature'),
+                "quantity": row_dict.get('quantity', 0) or 0,
+                "status": row_dict.get('status'),
+                "product_type": row_dict.get('product_type'),
+                "unit": row_dict.get('unit'),
+                "dimension_unit": row_dict.get('dimension_unit'),
+                "sku": row_dict.get('sku'),
+                "bar_code": row_dict.get('bar_code'),
+                "height": float(row_dict.get('height')) if row_dict.get('height') else None,
+                "width": float(row_dict.get('width')) if row_dict.get('width') else None,
+                "length": float(row_dict.get('length')) if row_dict.get('length') else None,
+                "warranty": row_dict.get('warranty'),
+                "meta_title": row_dict.get('meta_title'),
+                "meta_description": row_dict.get('meta_description'),
+                "return_policy": row_dict.get('return_policy'),
+                "shipping_info": row_dict.get('shipping_info'),
+                "tags": tags,
+                "attributes": attributes,
+                "variation_options": variation_options,
+                "total_purchased_quantity": row_dict.get('total_purchased_quantity', 0) or 0,
+                "total_sold_quantity": row_dict.get('total_sold_quantity', 0) or 0,
+                "current_stock_value": None,  # Calculate if needed
+                "rating": float(row_dict.get('rating', 0)) if row_dict.get('rating') else 0,
+                "review_count": row_dict.get('review_count', 0) or 0,
+                "total_quantity": total_quantity,
+                "variations_count": len(variation_options),
+                
+                # Related objects
+                "category": category,
+                "shop": shop,
+                "manufacturer_id": row_dict.get('manufacturer_id'),
+                
+                # Variation details from order (if applicable)
+                "variation_option_id": row_dict.get('variation_option_id'),
+                "variation_details": {
+                    "id": row_dict.get('variation_id'),
+                    "title": row_dict.get('variation_title'),
+                    "options": row_dict.get('variation_options'),
+                    "sku": row_dict.get('variation_sku'),
+                    "image": row_dict.get('variation_image'),
+                } if row_dict.get('variation_id') else None,
+                
+                # Additional order product info
+                "item_discount": float(row_dict.get('item_discount', 0)) if row_dict.get('item_discount') else 0,
+                "item_tax": float(row_dict.get('item_tax', 0)) if row_dict.get('item_tax') else 0,
+                "admin_commission": float(row_dict.get('admin_commission', 0)) if row_dict.get('admin_commission') else 0,
+                "review_id": row_dict.get('review_id'),
+                "is_returned": row_dict.get('is_returned', False),
+                "returned_quantity": row_dict.get('returned_quantity', 0),
+            }
+            
+            products_data.append(product_data)
+        
+        return api_response(
+            200,
+            f"Found {len(products_data)} products from {len(orders)} orders",
+            products_data,
+            total_products
+        )
+        
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return api_response(500, f"Error: {str(e)}")

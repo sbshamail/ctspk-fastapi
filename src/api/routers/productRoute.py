@@ -1240,6 +1240,8 @@ def get_stock_report(
     
     # Add this new route in productRoute.py
 
+# In your productRoute.py file, update the get_sale_products function
+
 @router.get("/sales")
 def get_sale_products(
     session: GetSession,
@@ -1252,13 +1254,14 @@ def get_sale_products(
     category_is_active: Optional[bool] = Query(None, description="Filter by category active status"),
     manufacturer_is_active: Optional[bool] = Query(None, description="Filter by manufacturer active status"),
     manufacturer_is_approved: Optional[bool] = Query(None, description="Filter by manufacturer approved status"),
-    user=requirePermission(["product:view", "vendor-product:view"]),
+    # REMOVED: user=requirePermission(["product:view", "vendor-product:view"]),
 ):
     """
     Get products that are on sale with advanced filtering
     - For simple products: sale_price > 0 and sale_price < price
     - For variable products: variation options with sale_price > 0 and sale_price < price
     - Includes is_active filter
+    - PUBLIC ACCESS - No authentication required
     """
     try:
         # Extract query params
@@ -1266,35 +1269,45 @@ def get_sale_products(
         limit = query_params_dict.get('limit', 50)
         page = query_params_dict.get('page', 1)
         skip = (page - 1) * limit
-
-        # Build base query for simple products on sale
-        simple_products_query = (
-            select(Product)
-            .join(Shop, Product.shop_id == Shop.id)
-            .where(
-                and_(
-                    Product.is_active == is_active,
-                    Shop.is_active == True,
-                    Product.product_type == ProductType.SIMPLE,
-                    Product.sale_price > 0,
-                    Product.sale_price < Product.price,
-                    Product.price > 0  # Ensure price is valid
-                )
-            )
+        
+        print(f"Fetching sale products: is_active={is_active}, limit={limit}, page={page}")
+        
+        # SIMPLE PRODUCTS - Direct query without joins first
+        simple_condition = and_(
+            Product.is_active == is_active,
+            Shop.is_active == True,
+            Product.product_type == ProductType.SIMPLE,
+            Product.sale_price > 0,
+            Product.sale_price < Product.price
         )
 
-        # Filter by shop_id parameter or user's shops
+        simple_products_stmt = (
+            select(Product)
+            .join(Shop, Product.shop_id == Shop.id)
+            .where(simple_condition)
+        )
+
+        # Add shop filter if provided
         if shop_id:
-            simple_products_query = simple_products_query.where(Product.shop_id == shop_id)
-        else:
-            shop_ids = [s["id"] for s in user.get("shops", [])]
-            if shop_ids:
-                simple_products_query = simple_products_query.where(Product.shop_id.in_(shop_ids))
+            simple_products_stmt = simple_products_stmt.where(Product.shop_id == shop_id)
+
+        # Apply columnFilters
+        if query_params_dict.get('columnFilters'):
+            import ast
+            column_filters = ast.literal_eval(query_params_dict['columnFilters'])
+            for col_filter in column_filters:
+                field_name, field_value = col_filter[0], col_filter[1]
+                if hasattr(Product, field_name):
+                    field = getattr(Product, field_name)
+                    if isinstance(field_value, list):
+                        simple_products_stmt = simple_products_stmt.where(field.in_(field_value))
+                    else:
+                        simple_products_stmt = simple_products_stmt.where(field == field_value)
 
         # Apply searchTerm
         if query_params_dict.get('searchTerm'):
             search = f"%{query_params_dict['searchTerm']}%"
-            simple_products_query = simple_products_query.where(
+            simple_products_stmt = simple_products_stmt.where(
                 or_(
                     Product.name.ilike(search),
                     Product.description.ilike(search),
@@ -1302,69 +1315,99 @@ def get_sale_products(
                 )
             )
 
+        # Apply numberRange filter
+        simple_products_stmt = apply_number_range_filter(simple_products_stmt, query_params_dict, Product)
+
         # Apply quantity filters
         if qty_eq is not None:
-            simple_products_query = simple_products_query.where(Product.quantity == qty_eq)
+            simple_products_stmt = simple_products_stmt.where(Product.quantity == qty_eq)
         if qty_lt is not None:
-            simple_products_query = simple_products_query.where(Product.quantity < qty_lt)
+            simple_products_stmt = simple_products_stmt.where(Product.quantity < qty_lt)
         if qty_gt is not None:
-            simple_products_query = simple_products_query.where(Product.quantity > qty_gt)
+            simple_products_stmt = simple_products_stmt.where(Product.quantity > qty_gt)
 
-        # Apply category/manufacturer filters
+        # Apply category_is_active filter
         if category_is_active is not None:
             active_cat_ids = select(Category.id).where(Category.is_active == category_is_active)
-            simple_products_query = simple_products_query.where(Product.category_id.in_(active_cat_ids))
+            simple_products_stmt = simple_products_stmt.where(Product.category_id.in_(active_cat_ids))
+
+        # Apply manufacturer filters
         if manufacturer_is_active is not None:
             mfr_ids = select(Manufacturer.id).where(Manufacturer.is_active == manufacturer_is_active)
-            simple_products_query = simple_products_query.where(
+            simple_products_stmt = simple_products_stmt.where(
                 or_(Product.manufacturer_id.is_(None), Product.manufacturer_id.in_(mfr_ids))
             )
+
         if manufacturer_is_approved is not None:
             mfr_ids = select(Manufacturer.id).where(Manufacturer.is_approved == manufacturer_is_approved)
-            simple_products_query = simple_products_query.where(
+            simple_products_stmt = simple_products_stmt.where(
                 or_(Product.manufacturer_id.is_(None), Product.manufacturer_id.in_(mfr_ids))
             )
 
-        # Get simple products on sale
-        simple_products_query = simple_products_query.order_by(Product.created_at.desc(), Product.id.asc())
-        simple_products = distinct_products(session.exec(
-            simple_products_query
+        # Apply sort filter
+        simple_products_stmt = apply_sort_filter(simple_products_stmt, query_params_dict, Product, "created_at", "desc")
+
+        simple_products_stmt = (
+            simple_products_stmt
             .offset(skip)
             .limit(limit)
-        ).all())
+        )
 
-        # Query for variable products that have variations on sale
-        variable_products_query = (
+        print("Executing simple products query...")
+        simple_products = distinct_products(session.exec(simple_products_stmt).all())
+        print(f"Found {len(simple_products)} simple products on sale")
+        
+        # VARIABLE PRODUCTS - Using subquery approach to avoid DISTINCT ON error
+        # First get product IDs that have sale variations
+        sale_product_ids_subq = (
+            select(VariationOption.product_id)
+            .where(
+                and_(
+                    VariationOption.sale_price.isnot(None),
+                    VariationOption.sale_price != "",
+                    cast(VariationOption.sale_price, Float) > 0,
+                    cast(VariationOption.sale_price, Float) < cast(VariationOption.price, Float)
+                )
+            )
+            .distinct()
+            .subquery()
+        )
+        
+        # Then get the actual products
+        variable_products_stmt = (
             select(Product)
             .join(Shop, Product.shop_id == Shop.id)
-            .join(VariationOption, Product.id == VariationOption.product_id)
             .where(
                 and_(
                     Product.is_active == is_active,
                     Shop.is_active == True,
                     Product.product_type == ProductType.VARIABLE,
-                    VariationOption.sale_price.isnot(None),
-                    VariationOption.sale_price != "",
-                    cast(VariationOption.sale_price, Float) > 0,
-                    cast(VariationOption.sale_price, Float) < cast(VariationOption.price, Float),
-                    cast(VariationOption.price, Float) > 0
+                    Product.id.in_(select(sale_product_ids_subq))
                 )
             )
-            .distinct(Product.id)  # Avoid duplicate products
         )
 
-        # Filter by shop_id parameter or user's shops
+        # Add shop filter if provided
         if shop_id:
-            variable_products_query = variable_products_query.where(Product.shop_id == shop_id)
-        else:
-            shop_ids = [s["id"] for s in user.get("shops", [])]
-            if shop_ids:
-                variable_products_query = variable_products_query.where(Product.shop_id.in_(shop_ids))
+            variable_products_stmt = variable_products_stmt.where(Product.shop_id == shop_id)
 
-        # Apply searchTerm for variable products
+        # Apply columnFilters
+        if query_params_dict.get('columnFilters'):
+            import ast
+            column_filters = ast.literal_eval(query_params_dict['columnFilters'])
+            for col_filter in column_filters:
+                field_name, field_value = col_filter[0], col_filter[1]
+                if hasattr(Product, field_name):
+                    field = getattr(Product, field_name)
+                    if isinstance(field_value, list):
+                        variable_products_stmt = variable_products_stmt.where(field.in_(field_value))
+                    else:
+                        variable_products_stmt = variable_products_stmt.where(field == field_value)
+
+        # Apply searchTerm
         if query_params_dict.get('searchTerm'):
             search = f"%{query_params_dict['searchTerm']}%"
-            variable_products_query = variable_products_query.where(
+            variable_products_stmt = variable_products_stmt.where(
                 or_(
                     Product.name.ilike(search),
                     Product.description.ilike(search),
@@ -1372,40 +1415,51 @@ def get_sale_products(
                 )
             )
 
-        # Apply quantity filters for variable products
-        if qty_eq is not None:
-            variable_products_query = variable_products_query.where(Product.quantity == qty_eq)
-        if qty_lt is not None:
-            variable_products_query = variable_products_query.where(Product.quantity < qty_lt)
-        if qty_gt is not None:
-            variable_products_query = variable_products_query.where(Product.quantity > qty_gt)
+        # Apply numberRange filter
+        variable_products_stmt = apply_number_range_filter(variable_products_stmt, query_params_dict, Product)
 
-        # Apply category/manufacturer filters for variable products
+        # Apply quantity filters
+        if qty_eq is not None:
+            variable_products_stmt = variable_products_stmt.where(Product.quantity == qty_eq)
+        if qty_lt is not None:
+            variable_products_stmt = variable_products_stmt.where(Product.quantity < qty_lt)
+        if qty_gt is not None:
+            variable_products_stmt = variable_products_stmt.where(Product.quantity > qty_gt)
+
+        # Apply category_is_active filter
         if category_is_active is not None:
             active_cat_ids = select(Category.id).where(Category.is_active == category_is_active)
-            variable_products_query = variable_products_query.where(Product.category_id.in_(active_cat_ids))
+            variable_products_stmt = variable_products_stmt.where(Product.category_id.in_(active_cat_ids))
+
+        # Apply manufacturer filters
         if manufacturer_is_active is not None:
             mfr_ids = select(Manufacturer.id).where(Manufacturer.is_active == manufacturer_is_active)
-            variable_products_query = variable_products_query.where(
+            variable_products_stmt = variable_products_stmt.where(
                 or_(Product.manufacturer_id.is_(None), Product.manufacturer_id.in_(mfr_ids))
             )
+
         if manufacturer_is_approved is not None:
             mfr_ids = select(Manufacturer.id).where(Manufacturer.is_approved == manufacturer_is_approved)
-            variable_products_query = variable_products_query.where(
+            variable_products_stmt = variable_products_stmt.where(
                 or_(Product.manufacturer_id.is_(None), Product.manufacturer_id.in_(mfr_ids))
             )
 
-        # Get variable products with sale variations
-        variable_products_query = variable_products_query.order_by(Product.created_at.desc(), Product.id.asc())
-        variable_products = distinct_products(session.exec(
-            variable_products_query
+        # Apply sort filter - now we can order normally without DISTINCT ON issues
+        variable_products_stmt = apply_sort_filter(variable_products_stmt, query_params_dict, Product, "created_at", "desc")
+
+        variable_products_stmt = (
+            variable_products_stmt
             .offset(skip)
             .limit(limit)
-        ).all())
+        )
 
+        print("Executing variable products query...")
+        variable_products = distinct_products(session.exec(variable_products_stmt).all())
+        print(f"Found {len(variable_products)} variable products with sale variations")
+        
         # Combine and deduplicate products
         all_products = simple_products + variable_products
-
+        
         # Get unique enhanced products (maintain order and remove duplicates)
         seen_ids = set()
         sale_products = []
@@ -1474,7 +1528,7 @@ def get_sale_products(
         # Check if no products found
         if not enhanced_products:
             return api_response(
-                404,
+                200,  # Changed to 200 to match other public endpoints
                 "No sale products found",
                 [],
                 0
@@ -1489,8 +1543,9 @@ def get_sale_products(
 
     except Exception as e:
         print(f"Error fetching sale products: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return api_response(500, f"Error fetching sale products: {str(e)}")
-
 
 # Alternative version with better performance using subqueries
 @router.get("/sales-optimized")
