@@ -99,3 +99,6 @@ class ShopReadWithEarnings(ShopRead):
     total_settled: Decimal = Decimal("0.00")  # Total settled_amount
     total_admin_commission: Decimal = Decimal("0.00")  # Total admin_commission
     available_balance: Decimal = Decimal("0.00")  # total_earnings - total_settled
+    total_active_products: int = 0
+    total_inactive_products: int = 0
+    total_orders: int = 0

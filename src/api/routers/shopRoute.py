@@ -14,6 +14,9 @@ from src.api.models.shop_model import (
     ShopVerifyByAdmin,
 )
 from src.api.models.withdrawModel import ShopEarning
+from src.api.models.product_model.productsModel import Product
+from src.api.models.order_model.orderModel import OrderProduct
+from sqlalchemy import or_
 
 from src.api.models.role_model.userRoleModel import UserRole
 from src.api.models.role_model.roleModel import Role
@@ -218,8 +221,28 @@ def my_shops(
         earnings_result = session.exec(earnings_stmt).first()
         total_earnings = Decimal(str(earnings_result[0])) if earnings_result[0] else Decimal("0.00")
         total_settled = Decimal(str(earnings_result[1])) if earnings_result[1] else Decimal("0.00")
-        total_admin_commission = Decimal(str(earnings_result[2])) if earnings_result[2] else Decimal("0.00")
+        
+        # Get total admin commission using OrderProduct
+        admin_comm_stmt = select(func.coalesce(func.sum(OrderProduct.admin_commission), 0)).where(OrderProduct.shop_id == shop.id)
+        admin_comm_result = session.exec(admin_comm_stmt).first()
+        total_admin_commission = Decimal(str(admin_comm_result)) if admin_comm_result else Decimal("0.00")
+        
         available_balance = total_earnings - total_settled
+
+        # Get total active and inactive products
+        active_products_stmt = select(func.count(Product.id)).where(
+            Product.shop_id == shop.id, Product.status == "publish", Product.is_active == True
+        )
+        total_active_products = session.exec(active_products_stmt).first() or 0
+
+        inactive_products_stmt = select(func.count(Product.id)).where(
+            Product.shop_id == shop.id, or_(Product.status != "publish", Product.is_active == False)
+        )
+        total_inactive_products = session.exec(inactive_products_stmt).first() or 0
+
+        # Get total orders
+        orders_stmt = select(func.count(func.distinct(OrderProduct.order_id))).where(OrderProduct.shop_id == shop.id)
+        total_orders = session.exec(orders_stmt).first() or 0
 
         # Create shop response with earnings
         shop_data = ShopReadWithEarnings.model_validate(shop)
@@ -227,6 +250,9 @@ def my_shops(
         shop_data.total_settled = total_settled
         shop_data.total_admin_commission = total_admin_commission
         shop_data.available_balance = available_balance
+        shop_data.total_active_products = total_active_products
+        shop_data.total_inactive_products = total_inactive_products
+        shop_data.total_orders = total_orders
 
         shops_with_earnings.append(shop_data)
 
@@ -255,3 +281,62 @@ def patch_shop_status(
     session.refresh(updated)
 
     return api_response(200, "Shop status updated successfully", ShopRead.model_validate(updated))
+@router.get("/read-with-earnings/{id_slug}", response_model=ShopReadWithEarnings)
+def get_shop_with_earnings(
+    id_slug: str, 
+    session: GetSession,
+    user: requireSignin  # Optional: if you want to restrict to owners/admins
+):
+    # Check if it's an integer ID
+    if id_slug.isdigit():
+        shop = session.get(Shop, int(id_slug))
+    else:
+        # Otherwise treat as slug
+        shop = session.exec(select(Shop).where(Shop.slug.ilike(id_slug))).first()
+    
+    raiseExceptions((shop, 404, "Shop not found"))
+    
+    # Get earnings summary for this shop
+    earnings_stmt = select(
+        func.coalesce(func.sum(ShopEarning.shop_earning), 0),
+        func.coalesce(func.sum(ShopEarning.settled_amount), 0),
+        func.coalesce(func.sum(ShopEarning.admin_commission), 0)
+    ).where(ShopEarning.shop_id == shop.id)
+
+    earnings_result = session.exec(earnings_stmt).first()
+    total_earnings = Decimal(str(earnings_result[0])) if earnings_result[0] else Decimal("0.00")
+    total_settled = Decimal(str(earnings_result[1])) if earnings_result[1] else Decimal("0.00")
+    
+    # Get total admin commission using OrderProduct
+    admin_comm_stmt = select(func.coalesce(func.sum(OrderProduct.admin_commission), 0)).where(OrderProduct.shop_id == shop.id)
+    admin_comm_result = session.exec(admin_comm_stmt).first()
+    total_admin_commission = Decimal(str(admin_comm_result)) if admin_comm_result else Decimal("0.00")
+    
+    available_balance = total_earnings - total_settled
+
+    # Get total active and inactive products
+    active_products_stmt = select(func.count(Product.id)).where(
+        Product.shop_id == shop.id, Product.status == "publish", Product.is_active == True
+    )
+    total_active_products = session.exec(active_products_stmt).first() or 0
+
+    inactive_products_stmt = select(func.count(Product.id)).where(
+        Product.shop_id == shop.id, or_(Product.status != "publish", Product.is_active == False)
+    )
+    total_inactive_products = session.exec(inactive_products_stmt).first() or 0
+
+    # Get total orders
+    orders_stmt = select(func.count(func.distinct(OrderProduct.order_id))).where(OrderProduct.shop_id == shop.id)
+    total_orders = session.exec(orders_stmt).first() or 0
+
+    # Create shop response with earnings
+    shop_data = ShopReadWithEarnings.model_validate(shop)
+    shop_data.total_earnings = total_earnings
+    shop_data.total_settled = total_settled
+    shop_data.total_admin_commission = total_admin_commission
+    shop_data.available_balance = available_balance
+    shop_data.total_active_products = total_active_products
+    shop_data.total_inactive_products = total_inactive_products
+    shop_data.total_orders = total_orders
+
+    return api_response(200, "Shop found with earnings", shop_data)

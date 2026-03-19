@@ -66,8 +66,13 @@ def generate_product_html(products) -> str:
         )
         sale_badge = ""
         if p.sale_price and float(p.sale_price) < unit_price:
-            sale_badge = f'<br><span style="font-size:11px;color:#dc3545;text-decoration:line-through;">Rs.{unit_price:.2f}</span>'
+            sale_badge = f'<br><span style="font-size:11px;color:#dc3545;text-decoration:line-through;">Rs.{unit_price:,.2f}</span>'
             unit_price = float(p.sale_price)
+
+        try:
+            qty_str = f"{int(float(p.order_quantity)):,}"
+        except (ValueError, TypeError):
+            qty_str = str(p.order_quantity)
 
         rows += f"""
 <tr style="background:{row_bg};">
@@ -83,9 +88,9 @@ def generate_product_html(products) -> str:
       </td>
     </tr></table>
   </td>
-  <td style="padding:10px 8px;border-bottom:1px solid #e9ecef;text-align:center;font-size:13px;color:#4a5568;vertical-align:middle;"><strong>{p.order_quantity}</strong></td>
-  <td style="padding:10px 8px;border-bottom:1px solid #e9ecef;text-align:right;font-size:13px;color:#4a5568;vertical-align:middle;">Rs.{unit_price:.2f}{sale_badge}</td>
-  <td style="padding:10px 8px;border-bottom:1px solid #e9ecef;text-align:right;font-weight:700;font-size:14px;color:#667eea;vertical-align:middle;">Rs.{subtotal:.2f}</td>
+  <td style="padding:10px 8px;border-bottom:1px solid #e9ecef;text-align:center;font-size:13px;color:#4a5568;vertical-align:middle;"><strong>{qty_str}</strong></td>
+  <td style="padding:10px 8px;border-bottom:1px solid #e9ecef;text-align:right;font-size:13px;color:#4a5568;vertical-align:middle;">Rs.{unit_price:,.2f}{sale_badge}</td>
+  <td style="padding:10px 8px;border-bottom:1px solid #e9ecef;text-align:right;font-weight:700;font-size:14px;color:#667eea;vertical-align:middle;">Rs.{subtotal:,.2f}</td>
 </tr>"""
     return rows
 
@@ -100,14 +105,14 @@ def _wallet_html(total: float, wallet_amount_used: float, gateway: str) -> str:
     if remainder > 0.005:
         remainder_row = (
             f"<tr><td style='font-size:14px;color:#4a5568;padding:4px 0;'>Paid via {gw}</td>"
-            f"<td style='font-size:14px;font-weight:700;color:#4a5568;text-align:right;padding:4px 0;'>Rs.{remainder:.2f}</td></tr>"
+            f"<td style='font-size:14px;font-weight:700;color:#4a5568;text-align:right;padding:4px 0;'>Rs.{remainder:,.2f}</td></tr>"
         )
     return (
         f'<div style="margin-top:16px;background:#f0fff4;border:1px solid #9ae6b4;border-radius:8px;padding:16px 20px;">'
         f'<div style="font-size:13px;font-weight:700;color:#276749;margin-bottom:10px;">&#128179; Payment Breakdown</div>'
         f'<table width="100%" cellpadding="0" cellspacing="0">'
         f"<tr><td style='font-size:14px;color:#4a5568;padding:4px 0;'>Paid via Wallet</td>"
-        f"<td style='font-size:14px;font-weight:700;color:#38a169;text-align:right;padding:4px 0;'>Rs.{wallet_amount_used:.2f}</td></tr>"
+        f"<td style='font-size:14px;font-weight:700;color:#38a169;text-align:right;padding:4px 0;'>Rs.{wallet_amount_used:,.2f}</td></tr>"
         f"{remainder_row}"
         f"</table></div>"
     )
@@ -187,12 +192,12 @@ table{{border-collapse:collapse}}
 
     <!-- Totals -->
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;font-size:14px;">
-      <tr><td style="padding:7px 0;color:#718096;">Subtotal</td><td style="padding:7px 0;text-align:right;font-weight:600;">Rs.{subtotal:.2f}</td></tr>
-      {"<tr><td style='padding:7px 0;color:#38a169;'>Discount</td><td style='padding:7px 0;text-align:right;font-weight:600;color:#38a169;'>-Rs."+f"{discount:.2f}</td></tr>" if discount > 0 else ""}
-      {"<tr><td style='padding:7px 0;color:#718096;'>Tax</td><td style='padding:7px 0;text-align:right;font-weight:600;'>Rs."+f"{tax:.2f}</td></tr>" if tax > 0 else ""}
+      <tr><td style="padding:7px 0;color:#718096;">Subtotal</td><td style="padding:7px 0;text-align:right;font-weight:600;">Rs.{subtotal:,.2f}</td></tr>
+      {"<tr><td style='padding:7px 0;color:#38a169;'>Discount</td><td style='padding:7px 0;text-align:right;font-weight:600;color:#38a169;'>-Rs."+f"{discount:,.2f}</td></tr>" if discount > 0 else ""}
+      {"<tr><td style='padding:7px 0;color:#718096;'>Tax</td><td style='padding:7px 0;text-align:right;font-weight:600;'>Rs."+f"{tax:,.2f}</td></tr>" if tax > 0 else ""}
       <tr style="border-top:2px solid #667eea;">
         <td style="padding-top:12px;font-size:18px;font-weight:800;color:#1a1a2e;">Your Total</td>
-        <td style="padding-top:12px;text-align:right;font-size:18px;font-weight:800;color:#667eea;">Rs.{total:.2f}</td>
+        <td style="padding-top:12px;text-align:right;font-size:18px;font-weight:800;color:#667eea;">Rs.{total:,.2f}</td>
       </tr>
     </table>
 
@@ -268,7 +273,7 @@ def build_admin_html(order, shop_groups, customer_name, customer_email,
     <thead>
       <tr style="background:#667eea;">
         <td colspan="4" style="padding:10px 14px;color:#fff;font-weight:700;font-size:14px;">
-          &#127978; {group_name} &nbsp;&mdash;&nbsp; <span style="font-weight:400;font-size:13px;">Subtotal: Rs.{sub:.2f}</span>
+          &#127978; {group_name} &nbsp;&mdash;&nbsp; <span style="font-weight:400;font-size:13px;">Subtotal: Rs.{sub:,.2f}</span>
         </td>
       </tr>
       <tr style="background:#f0edff;">
@@ -282,7 +287,7 @@ def build_admin_html(order, shop_groups, customer_name, customer_email,
     <tfoot>
       <tr style="background:#f7fafc;">
         <td colspan="3" style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#4a5568;">Shop Subtotal:</td>
-        <td style="padding:10px 14px;text-align:right;font-size:14px;font-weight:800;color:#667eea;">Rs.{sub:.2f}</td>
+        <td style="padding:10px 14px;text-align:right;font-size:14px;font-weight:800;color:#667eea;">Rs.{sub:,.2f}</td>
       </tr>
     </tfoot>
   </table>
@@ -340,12 +345,12 @@ table{{border-collapse:collapse}}
     <!-- Summary -->
     <div style="font-size:16px;font-weight:700;color:#1a1a2e;border-bottom:3px solid #667eea;padding-bottom:8px;margin:28px 0 16px;">&#128181; Order Summary</div>
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7fafc;border:1px solid #e2e8f0;border-radius:8px;">
-      <tr><td style="padding:10px 20px;font-size:14px;color:#4a5568;border-bottom:1px solid #e2e8f0;">Subtotal</td><td style="padding:10px 20px;font-size:14px;text-align:right;color:#4a5568;border-bottom:1px solid #e2e8f0;">Rs.{subtotal:.2f}</td></tr>
-      {"<tr><td style='padding:10px 20px;font-size:14px;color:#38a169;border-bottom:1px solid #e2e8f0;'>Discount</td><td style='padding:10px 20px;font-size:14px;text-align:right;color:#38a169;border-bottom:1px solid #e2e8f0;'>-Rs."+f"{discount:.2f}</td></tr>" if discount > 0 else ""}
-      {"<tr><td style='padding:10px 20px;font-size:14px;color:#38a169;border-bottom:1px solid #e2e8f0;'>Coupon Discount</td><td style='padding:10px 20px;font-size:14px;text-align:right;color:#38a169;border-bottom:1px solid #e2e8f0;'>-Rs."+f"{coupon_discount:.2f}</td></tr>" if coupon_discount > 0 else ""}
-      {"<tr><td style='padding:10px 20px;font-size:14px;color:#4a5568;border-bottom:1px solid #e2e8f0;'>Shipping Fee</td><td style='padding:10px 20px;font-size:14px;text-align:right;color:#4a5568;border-bottom:1px solid #e2e8f0;'>Rs."+f"{delivery_fee:.2f}</td></tr>" if delivery_fee > 0 else ""}
-      {"<tr><td style='padding:10px 20px;font-size:14px;color:#4a5568;border-bottom:1px solid #e2e8f0;'>Tax</td><td style='padding:10px 20px;font-size:14px;text-align:right;color:#4a5568;border-bottom:1px solid #e2e8f0;'>Rs."+f"{sales_tax:.2f}</td></tr>" if sales_tax > 0 else ""}
-      <tr><td style="padding:16px 20px;font-size:20px;font-weight:800;color:#1a1a2e;border-top:3px solid #667eea;">Grand Total</td><td style="padding:16px 20px;font-size:22px;font-weight:800;text-align:right;color:#667eea;border-top:3px solid #667eea;">Rs.{total:.2f}</td></tr>
+      <tr><td style="padding:10px 20px;font-size:14px;color:#4a5568;border-bottom:1px solid #e2e8f0;">Subtotal</td><td style="padding:10px 20px;font-size:14px;text-align:right;color:#4a5568;border-bottom:1px solid #e2e8f0;">Rs.{subtotal:,.2f}</td></tr>
+      {"<tr><td style='padding:10px 20px;font-size:14px;color:#38a169;border-bottom:1px solid #e2e8f0;'>Discount</td><td style='padding:10px 20px;font-size:14px;text-align:right;color:#38a169;border-bottom:1px solid #e2e8f0;'>-Rs."+f"{discount:,.2f}</td></tr>" if discount > 0 else ""}
+      {"<tr><td style='padding:10px 20px;font-size:14px;color:#38a169;border-bottom:1px solid #e2e8f0;'>Coupon Discount</td><td style='padding:10px 20px;font-size:14px;text-align:right;color:#38a169;border-bottom:1px solid #e2e8f0;'>-Rs."+f"{coupon_discount:,.2f}</td></tr>" if coupon_discount > 0 else ""}
+      {"<tr><td style='padding:10px 20px;font-size:14px;color:#4a5568;border-bottom:1px solid #e2e8f0;'>Shipping Fee</td><td style='padding:10px 20px;font-size:14px;text-align:right;color:#4a5568;border-bottom:1px solid #e2e8f0;'>Rs."+f"{delivery_fee:,.2f}</td></tr>" if delivery_fee > 0 else ""}
+      {"<tr><td style='padding:10px 20px;font-size:14px;color:#4a5568;border-bottom:1px solid #e2e8f0;'>Tax</td><td style='padding:10px 20px;font-size:14px;text-align:right;color:#4a5568;border-bottom:1px solid #e2e8f0;'>Rs."+f"{sales_tax:,.2f}</td></tr>" if sales_tax > 0 else ""}
+      <tr><td style="padding:16px 20px;font-size:20px;font-weight:800;color:#1a1a2e;border-top:3px solid #667eea;">Grand Total</td><td style="padding:16px 20px;font-size:22px;font-weight:800;text-align:right;color:#667eea;border-top:3px solid #667eea;">Rs.{total:,.2f}</td></tr>
     </table>
     {_wallet_html(total, wallet_amount_used, str(order.payment_gateway or ""))}
 
@@ -467,7 +472,7 @@ def main():
             shipping_addr, billing_addr
         )
         subject = f"[TEST][Admin] Full Invoice — Order #{order.tracking_number}"
-        plain = f"[TEST] Admin invoice for order #{order.tracking_number}\nTotal: Rs.{float(order.amount or 0):.2f}"
+        plain = f"[TEST] Admin invoice for order #{order.tracking_number}\nTotal: Rs.{float(order.amount or 0):,.2f}"
 
         print(f"Sending admin email to {args.to} ...")
         ok = helper._send_email_sync(to_email=args.to, subject=subject,

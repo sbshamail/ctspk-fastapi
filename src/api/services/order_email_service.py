@@ -84,9 +84,14 @@ class OrderEmailService:
             if sale_price and sale_price > 0 and sale_price < unit_price:
                 sale_badge = (
                     f'<br><span style="font-size:11px;color:#dc3545;text-decoration:line-through;">'
-                    f'Rs.{unit_price:.2f}</span>'
+                    f'Rs.{unit_price:,.2f}</span>'
                 )
                 unit_price = sale_price
+
+            try:
+                qty_str = f"{int(float(p.order_quantity)):,}"
+            except (ValueError, TypeError):
+                qty_str = str(p.order_quantity)
 
             rows += f"""
 <tr style="background:{row_bg};">
@@ -104,11 +109,11 @@ class OrderEmailService:
     </tr></table>
   </td>
   <td style="padding:10px 8px;border-bottom:1px solid #e9ecef;text-align:center;font-size:13px;
-             color:#4a5568;vertical-align:middle;"><strong>{p.order_quantity}</strong></td>
+             color:#4a5568;vertical-align:middle;"><strong>{qty_str}</strong></td>
   <td style="padding:10px 8px;border-bottom:1px solid #e9ecef;text-align:right;font-size:13px;
-             color:#4a5568;vertical-align:middle;">Rs.{unit_price:.2f}{sale_badge}</td>
+             color:#4a5568;vertical-align:middle;">Rs.{unit_price:,.2f}{sale_badge}</td>
   <td style="padding:10px 8px;border-bottom:1px solid #e9ecef;text-align:right;font-weight:700;
-             font-size:14px;color:#667eea;vertical-align:middle;">Rs.{subtotal:.2f}</td>
+             font-size:14px;color:#667eea;vertical-align:middle;">Rs.{subtotal:,.2f}</td>
 </tr>"""
         return rows
 
@@ -125,7 +130,7 @@ class OrderEmailService:
             remainder_row = (
                 f"<tr><td style='font-size:14px;color:#4a5568;padding:4px 0;'>Paid via {gw}</td>"
                 f"<td style='font-size:14px;font-weight:700;color:#4a5568;"
-                f"text-align:right;padding:4px 0;'>Rs.{remainder:.2f}</td></tr>"
+                f"text-align:right;padding:4px 0;'>Rs.{remainder:,.2f}</td></tr>"
             )
         return (
             f'<div style="margin-top:16px;background:#f0fff4;border:1px solid #9ae6b4;'
@@ -135,7 +140,7 @@ class OrderEmailService:
             f'<table width="100%" cellpadding="0" cellspacing="0">'
             f"<tr><td style='font-size:14px;color:#4a5568;padding:4px 0;'>Paid via Wallet</td>"
             f"<td style='font-size:14px;font-weight:700;color:#38a169;"
-            f"text-align:right;padding:4px 0;'>Rs.{wallet_amount_used:.2f}</td></tr>"
+            f"text-align:right;padding:4px 0;'>Rs.{wallet_amount_used:,.2f}</td></tr>"
             f"{remainder_row}"
             f"</table></div>"
         )
@@ -144,17 +149,17 @@ class OrderEmailService:
 
     @staticmethod
     def _shop_totals_rows(subtotal: float, discount: float, tax: float, total: float) -> str:
-        rows = f'<tr><td class="lbl">Subtotal</td><td class="val">Rs.{subtotal:.2f}</td></tr>'
+        rows = f'<tr><td class="lbl">Subtotal</td><td class="val">Rs.{subtotal:,.2f}</td></tr>'
         if discount > 0:
             rows += (
                 f'<tr><td class="lbl" style="color:#38a169;">Discount</td>'
-                f'<td class="val" style="color:#38a169;">-Rs.{discount:.2f}</td></tr>'
+                f'<td class="val" style="color:#38a169;">-Rs.{discount:,.2f}</td></tr>'
             )
         if tax > 0:
-            rows += f'<tr><td class="lbl">Tax</td><td class="val">Rs.{tax:.2f}</td></tr>'
+            rows += f'<tr><td class="lbl">Tax</td><td class="val">Rs.{tax:,.2f}</td></tr>'
         rows += (
             f'<tr class="grand-row"><td>Your Total</td>'
-            f'<td style="text-align:right;color:#667eea;">Rs.{total:.2f}</td></tr>'
+            f'<td style="text-align:right;color:#667eea;">Rs.{total:,.2f}</td></tr>'
         )
         return rows
 
@@ -170,20 +175,20 @@ class OrderEmailService:
         tg = 'style="padding:10px 20px;font-size:14px;color:#38a169;border-bottom:1px solid #e2e8f0;"'
         tgr = 'style="padding:10px 20px;font-size:14px;text-align:right;color:#38a169;border-bottom:1px solid #e2e8f0;"'
 
-        rows = f"<tr><td {tn}>Subtotal</td><td {tr}>Rs.{subtotal:.2f}</td></tr>"
+        rows = f"<tr><td {tn}>Subtotal</td><td {tr}>Rs.{subtotal:,.2f}</td></tr>"
         if discount > 0:
-            rows += f"<tr><td {tg}>Discount</td><td {tgr}>-Rs.{discount:.2f}</td></tr>"
+            rows += f"<tr><td {tg}>Discount</td><td {tgr}>-Rs.{discount:,.2f}</td></tr>"
         if coupon_discount > 0:
-            rows += f"<tr><td {tg}>Coupon Discount</td><td {tgr}>-Rs.{coupon_discount:.2f}</td></tr>"
+            rows += f"<tr><td {tg}>Coupon Discount</td><td {tgr}>-Rs.{coupon_discount:,.2f}</td></tr>"
         if delivery_fee > 0:
-            rows += f"<tr><td {tn}>Shipping Fee</td><td {tr}>Rs.{delivery_fee:.2f}</td></tr>"
+            rows += f"<tr><td {tn}>Shipping Fee</td><td {tr}>Rs.{delivery_fee:,.2f}</td></tr>"
         if sales_tax > 0:
-            rows += f"<tr><td {tn}>Tax</td><td {tr}>Rs.{sales_tax:.2f}</td></tr>"
+            rows += f"<tr><td {tn}>Tax</td><td {tr}>Rs.{sales_tax:,.2f}</td></tr>"
         rows += (
             f'<tr><td style="padding:16px 20px;font-size:20px;font-weight:800;color:#1a1a2e;'
             f'border-top:3px solid #667eea;">Grand Total</td>'
             f'<td style="padding:16px 20px;font-size:22px;font-weight:800;text-align:right;'
-            f'color:#667eea;border-top:3px solid #667eea;">Rs.{total:.2f}</td></tr>'
+            f'color:#667eea;border-top:3px solid #667eea;">Rs.{total:,.2f}</td></tr>'
         )
         return rows
 
@@ -357,7 +362,7 @@ table{{border-collapse:collapse}}
     <thead>
       <tr style="background:#667eea;">
         <td colspan="4" style="padding:10px 14px;color:#fff;font-weight:700;font-size:14px;">
-          &#127978; {group_name} &nbsp;&mdash;&nbsp; <span style="font-weight:400;font-size:13px;">Subtotal: Rs.{sub:.2f}</span>
+          &#127978; {group_name} &nbsp;&mdash;&nbsp; <span style="font-weight:400;font-size:13px;">Subtotal: Rs.{sub:,.2f}</span>
         </td>
       </tr>
       <tr style="background:#f0edff;">
@@ -371,7 +376,7 @@ table{{border-collapse:collapse}}
     <tfoot>
       <tr style="background:#f7fafc;">
         <td colspan="3" style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#4a5568;">Shop Subtotal:</td>
-        <td style="padding:10px 14px;text-align:right;font-size:14px;font-weight:800;color:#667eea;">Rs.{sub:.2f}</td>
+        <td style="padding:10px 14px;text-align:right;font-size:14px;font-weight:800;color:#667eea;">Rs.{sub:,.2f}</td>
       </tr>
     </tfoot>
   </table>
@@ -551,7 +556,7 @@ table{{border-collapse:collapse}}
             total = float(order.paid_total or order.total or order.amount or 0)
             plain = (
                 f"[Admin] New order #{order.tracking_number}\n"
-                f"Customer: {customer_name}\nTotal: Rs.{total:.2f}\n"
+                f"Customer: {customer_name}\nTotal: Rs.{total:,.2f}\n"
                 f"Status: {order.order_status} | Payment: {order.payment_status}\n"
                 f"View: {self._base_url()}/dashboard/orders/{order.id}"
             )

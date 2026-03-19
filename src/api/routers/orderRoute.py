@@ -2923,9 +2923,251 @@ def get_customer_orders(
     orders = result["data"]
     return api_response(200, "Customer orders found", orders, result["total"])
 
-
-# Product Sales Report
 @router.get("/sales-report")
+def get_sales_report(
+    session: GetSession,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    shop_id: Optional[int] = None,  # Now filters by shop in order products
+    product_id: Optional[int] = None,
+    user: requireSignin = None,
+):
+    """Get sales report with product-wise sales data"""
+    try:
+        # Get user info
+        user_id = user.get("id")
+        is_root = user.get("is_root", False)
+
+        # Get user's shop IDs from user_shop table (for non-root users)
+        user_shop_ids = []
+        if not is_root:
+            user_shop_results = session.exec(
+                select(UserShop.shop_id).where(UserShop.user_id == user_id)
+            ).all()
+            user_shop_ids = [s if isinstance(s, int) else s[0] for s in user_shop_results]
+
+            # If user has no shops assigned and is not root, deny access
+            if not user_shop_ids:
+                return api_response(403, "You don't have any shops assigned")
+
+        # Validate shop_id access if specific shop requested
+        if shop_id and not is_root:
+            if shop_id not in user_shop_ids:
+                return api_response(403, "You don't have access to this shop")
+
+        # ===== COUNT 1: Total active shops (without any filters) =====
+        total_active_shops_query = select(func.count(Shop.id)).where(Shop.is_active == True)
+        
+        # For non-root users, only count shops they have access to
+        if not is_root and user_shop_ids:
+            total_active_shops_query = total_active_shops_query.where(Shop.id.in_(user_shop_ids))
+        
+        total_active_shops = session.exec(total_active_shops_query).scalar() or 0
+
+        # ===== COUNT 2: Shops with sales in the given interval =====
+        # Build query to get order IDs for completed orders within date range
+        order_query = select(Order.id).where(Order.order_status == OrderStatusEnum.COMPLETED)
+
+        # Apply date filters for interval shops count
+        interval_shop_date_conditions = []
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            interval_shop_date_conditions.append(Order.created_at >= start_dt)
+
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
+            interval_shop_date_conditions.append(Order.created_at <= end_dt)
+
+        for condition in interval_shop_date_conditions:
+            order_query = order_query.where(condition)
+
+        # Get order IDs for interval
+        order_ids_result = session.exec(order_query).all()
+        interval_order_ids = [row if isinstance(row, int) else row[0] for row in order_ids_result]
+
+        # Count distinct shops that have sales in the interval
+        shops_with_sales_query = select(func.count(OrderProduct.shop_id.distinct())).where(
+            OrderProduct.order_id.in_(interval_order_ids) if interval_order_ids else False
+        )
+        
+        # Apply user shop access filter
+        if not is_root and user_shop_ids:
+            shops_with_sales_query = shops_with_sales_query.where(
+                OrderProduct.shop_id.in_(user_shop_ids)
+            )
+        
+        shops_with_sales_in_interval = 0
+        if interval_order_ids:  # Only execute if there are orders
+            shops_with_sales_in_interval = session.exec(shops_with_sales_query).scalar() or 0
+
+        # ===== COUNT 3: Distinct customers in the selected date period =====
+        distinct_customers_query = select(func.count(Order.customer_id.distinct())).where(
+            Order.order_status == OrderStatusEnum.COMPLETED
+        )
+
+        # Apply date filters
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            distinct_customers_query = distinct_customers_query.where(Order.created_at >= start_dt)
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
+            distinct_customers_query = distinct_customers_query.where(Order.created_at <= end_dt)
+
+        # Apply shop filter based on user access
+        if shop_id:
+            # If specific shop is selected, get orders from that shop
+            shop_order_ids = session.exec(
+                select(OrderProduct.order_id)
+                .where(OrderProduct.shop_id == shop_id)
+                .distinct()
+            ).all()
+            shop_order_ids = [row if isinstance(row, int) else row[0] for row in shop_order_ids]
+            if shop_order_ids:
+                distinct_customers_query = distinct_customers_query.where(Order.id.in_(shop_order_ids))
+            else:
+                distinct_customers_query = distinct_customers_query.where(False)
+        elif not is_root and user_shop_ids:
+            # Non-root users: only count customers from their shops
+            shop_order_ids = session.exec(
+                select(OrderProduct.order_id)
+                .where(OrderProduct.shop_id.in_(user_shop_ids))
+                .distinct()
+            ).all()
+            shop_order_ids = [row if isinstance(row, int) else row[0] for row in shop_order_ids]
+            if shop_order_ids:
+                distinct_customers_query = distinct_customers_query.where(Order.id.in_(shop_order_ids))
+            else:
+                distinct_customers_query = distinct_customers_query.where(False)
+
+        # Execute customer count query
+        distinct_customers = session.exec(distinct_customers_query).scalar() or 0
+
+        # ===== MAIN REPORT DATA =====
+        # Build query to get order IDs for completed orders (for main report)
+        main_order_query = select(Order.id).where(Order.order_status == OrderStatusEnum.COMPLETED)
+
+        # Apply date filters for main report
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            main_order_query = main_order_query.where(Order.created_at >= start_dt)
+
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
+            main_order_query = main_order_query.where(Order.created_at <= end_dt)
+
+        # Get order IDs for main report
+        main_order_ids_result = session.exec(main_order_query).all()
+        main_order_ids = [row if isinstance(row, int) else row[0] for row in main_order_ids_result]
+
+        if not main_order_ids:
+            return api_response(200, "Sales report generated", {
+                "period": {"start_date": start_date, "end_date": end_date},
+                "summary": {
+                    "total_orders": 0,
+                    "total_products_sold": 0,
+                    "total_revenue": 0,
+                    "total_active_shops": total_active_shops,
+                    "shops_with_sales_in_interval": 0,
+                    "distinct_customers": 0,
+                },
+                "product_sales": [],
+            })
+
+        # Query order products for main report
+        op_query = select(OrderProduct).where(OrderProduct.order_id.in_(main_order_ids))
+
+        # Apply shop filter based on user access
+        if shop_id:
+            # Specific shop requested (already validated above)
+            op_query = op_query.where(OrderProduct.shop_id == shop_id)
+        elif not is_root:
+            # Non-root users: filter by their shops only
+            op_query = op_query.where(OrderProduct.shop_id.in_(user_shop_ids))
+        # Root users without shop_id filter see all shops
+
+        # Apply product filter if provided
+        if product_id:
+            op_query = op_query.where(OrderProduct.product_id == product_id)
+
+        order_products = session.exec(op_query).scalars().all()
+
+        sales_data = {}
+        total_revenue = 0
+        total_products_sold = 0
+        user_order_ids = set()  # Track unique orders containing user's shop products
+        unique_shops_in_report = set()  # Track unique shops in the report data
+
+        for order_product in order_products:
+            prod_id = order_product.product_id
+            quantity = float(order_product.order_quantity)
+            revenue = order_product.subtotal
+
+            # Track unique order IDs and shop IDs
+            user_order_ids.add(order_product.order_id)
+            if order_product.shop_id:
+                unique_shops_in_report.add(order_product.shop_id)
+
+            if prod_id not in sales_data:
+                product = session.get(Product, prod_id)
+                shop = (
+                    session.get(Shop, order_product.shop_id)
+                    if order_product.shop_id
+                    else None
+                )
+                sales_data[prod_id] = {
+                    "product_id": prod_id,
+                    "product_name": product.name if product else "Unknown",
+                    "product_sku": product.sku if product else "Unknown",
+                    "shop_id": order_product.shop_id,
+                    "shop_name": shop.name if shop else "Unknown",
+                    "total_quantity_sold": 0,
+                    "total_revenue": 0,
+                    "average_price": 0,
+                }
+
+            sales_data[prod_id]["total_quantity_sold"] += quantity
+            sales_data[prod_id]["total_revenue"] += revenue
+            total_products_sold += quantity
+            total_revenue += revenue
+
+        # Calculate average prices
+        for product_data in sales_data.values():
+            if product_data["total_quantity_sold"] > 0:
+                product_data["average_price"] = (
+                    product_data["total_revenue"] / product_data["total_quantity_sold"]
+                )
+
+        report = {
+            "period": {"start_date": start_date, "end_date": end_date},
+            "summary": {
+                "total_orders": len(user_order_ids),
+                "total_products_sold": total_products_sold,
+                "total_revenue": total_revenue,
+                "total_active_shops": total_active_shops,  # Total active shops (unfiltered)
+                "shops_with_sales_in_interval": shops_with_sales_in_interval,  # Shops with sales in date range
+                "shops_in_report_data": len(unique_shops_in_report),  # Shops that appear in the actual report data
+                "distinct_customers": distinct_customers,  # Distinct customers in selected date period
+            },
+            "product_sales": list(sales_data.values()),
+        }
+
+        return api_response(200, "Sales report generated", report)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Sales report error: {error_details}")
+        return api_response(500, f"Error generating sales report: {str(e)}")
+# Product Sales Report
+@router.get("/old-sales-report")
 def get_sales_report(
     session: GetSession,
     start_date: Optional[str] = None,
@@ -3090,8 +3332,245 @@ def get_sales_report(
         error_details = traceback.format_exc()
         print(f"Sales report error: {error_details}")
         return api_response(500, f"Error generating sales report: {str(e)}")
-
 @router.get("/shops-sales-report")
+def get_shops_sales_report(
+    session: GetSession,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    shop_id: Optional[int] = None,  # Now filters by shop in order products
+    product_id: Optional[int] = None,
+    user: requireSignin = None,
+):
+    """Get sales report with product-wise sales data (filtered by user's shops)"""
+    try:
+        # Get user's permissions and shops
+        user_permissions = user.get("permissions", [])
+        user_shops = user.get("shops", [])
+        user_shop_ids = [shop["id"] for shop in user_shops]
+        is_admin = "system:*" in user_permissions
+
+        # Validate shop access
+        if shop_id:
+            if not is_admin and shop_id not in user_shop_ids:
+                return api_response(403, "You don't have access to this shop")
+
+        # If not admin and no specific shop_id, user must have at least one shop
+        if not is_admin and not user_shop_ids:
+            return api_response(403, "You don't have any shops assigned")
+
+        # ===== COUNT 1: Total active shops (without any filters) =====
+        total_active_shops_query = select(func.count(Shop.id)).where(Shop.is_active == True)
+        
+        # For non-admin users, only count shops they have access to
+        if not is_admin and user_shop_ids:
+            total_active_shops_query = total_active_shops_query.where(Shop.id.in_(user_shop_ids))
+        
+        total_active_shops = session.exec(total_active_shops_query).scalar() or 0
+
+        # ===== COUNT 2: Shops with sales in the given interval =====
+        # Build query to get order IDs for completed orders within date range
+        order_query = select(Order.id).where(Order.order_status == OrderStatusEnum.COMPLETED)
+
+        # Apply date filters for interval shops count
+        interval_shop_date_conditions = []
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            interval_shop_date_conditions.append(Order.created_at >= start_dt)
+
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
+            interval_shop_date_conditions.append(Order.created_at <= end_dt)
+
+        for condition in interval_shop_date_conditions:
+            order_query = order_query.where(condition)
+
+        # Get order IDs for interval
+        order_ids_result = session.exec(order_query).all()
+        interval_order_ids = [row if isinstance(row, int) else row[0] for row in order_ids_result]
+
+        # Count distinct shops that have sales in the interval
+        shops_with_sales_query = select(func.count(OrderProduct.shop_id.distinct())).where(
+            OrderProduct.order_id.in_(interval_order_ids) if interval_order_ids else False
+        )
+        
+        # Apply user shop access filter
+        if not is_admin and user_shop_ids:
+            shops_with_sales_query = shops_with_sales_query.where(
+                OrderProduct.shop_id.in_(user_shop_ids)
+            )
+        
+        shops_with_sales_in_interval = 0
+        if interval_order_ids:  # Only execute if there are orders
+            shops_with_sales_in_interval = session.exec(shops_with_sales_query).scalar() or 0
+
+        # ===== COUNT 3: Distinct customers in the selected date period =====
+        distinct_customers_query = select(func.count(Order.customer_id.distinct())).where(
+            Order.order_status == OrderStatusEnum.COMPLETED
+        )
+
+        # Apply date filters
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            distinct_customers_query = distinct_customers_query.where(Order.created_at >= start_dt)
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
+            distinct_customers_query = distinct_customers_query.where(Order.created_at <= end_dt)
+
+        # Apply shop filter based on user access
+        if shop_id:
+            # If specific shop is selected, get orders from that shop
+            shop_order_ids = session.exec(
+                select(OrderProduct.order_id)
+                .where(OrderProduct.shop_id == shop_id)
+                .distinct()
+            ).all()
+            shop_order_ids = [row if isinstance(row, int) else row[0] for row in shop_order_ids]
+            if shop_order_ids:
+                distinct_customers_query = distinct_customers_query.where(Order.id.in_(shop_order_ids))
+            else:
+                distinct_customers_query = distinct_customers_query.where(False)
+        elif not is_admin and user_shop_ids:
+            # Non-admin users: only count customers from their shops
+            shop_order_ids = session.exec(
+                select(OrderProduct.order_id)
+                .where(OrderProduct.shop_id.in_(user_shop_ids))
+                .distinct()
+            ).all()
+            shop_order_ids = [row if isinstance(row, int) else row[0] for row in shop_order_ids]
+            if shop_order_ids:
+                distinct_customers_query = distinct_customers_query.where(Order.id.in_(shop_order_ids))
+            else:
+                distinct_customers_query = distinct_customers_query.where(False)
+
+        # Execute customer count query
+        distinct_customers = session.exec(distinct_customers_query).scalar() or 0
+
+        # ===== MAIN REPORT DATA =====
+        # Build query to get order IDs for completed orders (for main report)
+        main_order_query = select(Order.id).where(Order.order_status == OrderStatusEnum.COMPLETED)
+
+        # Apply date filters for main report
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            main_order_query = main_order_query.where(Order.created_at >= start_dt)
+
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
+            main_order_query = main_order_query.where(Order.created_at <= end_dt)
+
+        # Get order IDs for main report
+        main_order_ids_result = session.exec(main_order_query).all()
+        main_order_ids = [row if isinstance(row, int) else row[0] for row in main_order_ids_result]
+
+        if not main_order_ids:
+            return api_response(200, "Sales report generated", {
+                "period": {"start_date": start_date, "end_date": end_date},
+                "summary": {
+                    "total_orders": 0,
+                    "total_products_sold": 0,
+                    "total_revenue": 0,
+                    "total_active_shops": total_active_shops,
+                    "shops_with_sales_in_interval": 0,
+                    "distinct_customers": 0,
+                },
+                "product_sales": [],
+            })
+
+        # Query order products directly
+        op_query = select(OrderProduct).where(OrderProduct.order_id.in_(main_order_ids))
+
+        # Apply shop filter based on user access
+        if shop_id:
+            # Specific shop requested (already validated above)
+            op_query = op_query.where(OrderProduct.shop_id == shop_id)
+        elif not is_admin:
+            # Non-admin users: filter by their shops only
+            op_query = op_query.where(OrderProduct.shop_id.in_(user_shop_ids))
+        # Admin users without shop_id filter see all shops
+
+        # Apply product filter if provided
+        if product_id:
+            op_query = op_query.where(OrderProduct.product_id == product_id)
+
+        # Use scalars() to get proper OrderProduct instances
+        order_products = session.exec(op_query).scalars().all()
+
+        sales_data = {}
+        total_revenue = 0
+        total_products_sold = 0
+        user_order_ids = set()  # Track unique orders containing user's shop products
+        unique_shops_in_report = set()  # Track unique shops in the report data
+
+        for order_product in order_products:
+            prod_id = order_product.product_id
+            quantity = float(order_product.order_quantity)
+            revenue = order_product.subtotal
+
+            # Track unique order IDs and shop IDs
+            user_order_ids.add(order_product.order_id)
+            if order_product.shop_id:
+                unique_shops_in_report.add(order_product.shop_id)
+
+            if prod_id not in sales_data:
+                product = session.get(Product, prod_id)
+                shop = (
+                    session.get(Shop, order_product.shop_id)
+                    if order_product.shop_id
+                    else None
+                )
+                sales_data[prod_id] = {
+                    "product_id": prod_id,
+                    "product_name": product.name if product else "Unknown",
+                    "product_sku": product.sku if product else "Unknown",
+                    "shop_id": order_product.shop_id,
+                    "shop_name": shop.name if shop else "Unknown",
+                    "total_quantity_sold": 0,
+                    "total_revenue": 0,
+                    "average_price": 0,
+                }
+
+            sales_data[prod_id]["total_quantity_sold"] += quantity
+            sales_data[prod_id]["total_revenue"] += revenue
+            total_products_sold += quantity
+            total_revenue += revenue
+
+        # Calculate average prices
+        for product_data in sales_data.values():
+            if product_data["total_quantity_sold"] > 0:
+                product_data["average_price"] = (
+                    product_data["total_revenue"] / product_data["total_quantity_sold"]
+                )
+
+        report = {
+            "period": {"start_date": start_date, "end_date": end_date},
+            "summary": {
+                "total_orders": len(user_order_ids),
+                "total_products_sold": total_products_sold,
+                "total_revenue": total_revenue,
+                "total_active_shops": total_active_shops,  # Total active shops (unfiltered)
+                "shops_with_sales_in_interval": shops_with_sales_in_interval,  # Shops with sales in date range
+                "shops_in_report_data": len(unique_shops_in_report),  # Shops that appear in the actual report data
+                "distinct_customers": distinct_customers,  # Distinct customers in selected date period
+            },
+            "product_sales": list(sales_data.values()),
+        }
+
+        return api_response(200, "Sales report generated", report)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Sales report error: {error_details}")
+        return api_response(500, f"Error generating sales report: {str(e)}")
+@router.get("/old-shops-sales-report")
 def get_sales_report(
     session: GetSession,
     start_date: Optional[str] = None,
@@ -3713,8 +4192,158 @@ def create_shop_earning(session, order: Order):
 # ==========================================
 # NEW: Role-based Order Statistics & Lists
 # ==========================================
-
 @router.get("/my-statistics")
+def get_my_order_statistics(
+    user: requireSignin,
+    session: GetSession,
+    start_date: Optional[str] = Query(None, description="Start date in YYYY-MM-DD format"),
+    end_date: Optional[str] = Query(None, description="End date in YYYY-MM-DD format"),
+):
+    """
+    Get order statistics based on user role:
+    - fulfillment role: Count orders assigned to user (fullfillment_id)
+    - shop_admin role: Count orders from user's shops (includes cancelled/returned)
+    - root role: Count all orders (includes cancelled/returned)
+    
+    Optional date range filtering using start_date and end_date parameters.
+    If not provided, returns all-time statistics.
+    """
+    user_id = user.get("id")
+    role_names = user.get("roles", [])
+    
+    # Determine role priority: root > shop_admin > fulfillment
+    is_root = user.get("is_root", False) or "root" in role_names
+    is_shop_admin = "shop_admin" in role_names or "Seller Roles" in role_names
+    is_fulfillment = "fulfillment" in role_names or "Fulfillment" in role_names
+    
+    # Parse date range if provided
+    date_conditions = []
+    if start_date:
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            date_conditions.append(Order.created_at >= start_dt)
+        except ValueError:
+            return api_response(400, f"Invalid start_date format. Use YYYY-MM-DD")
+    
+    if end_date:
+        try:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
+            date_conditions.append(Order.created_at <= end_dt)
+        except ValueError:
+            return api_response(400, f"Invalid end_date format. Use YYYY-MM-DD")
+    
+    # Build base queries with date filters if provided
+    def apply_date_filters(query):
+        for condition in date_conditions:
+            query = query.where(condition)
+        return query
+    
+    completed_query = select(func.count(Order.id)).where(
+        Order.order_status == OrderStatusEnum.COMPLETED
+    )
+    not_completed_query = select(func.count(Order.id)).where(
+        Order.order_status != OrderStatusEnum.COMPLETED
+    )
+    
+    # Apply date filters to base queries
+    completed_query = apply_date_filters(completed_query)
+    not_completed_query = apply_date_filters(not_completed_query)
+
+    # Additional counts for shop_admin and root
+    cancelled_count = 0
+    returned_count = 0
+    order_ids_with_shop = None  # Initialize for shop_admin use
+
+    if is_root:
+        # Root: All orders, no filters
+        pass
+    elif is_shop_admin:
+        # Get user's shops (use scalars to get list of IDs)
+        user_shops = session.exec(
+            select(Shop.id).where(Shop.owner_id == user_id)
+        ).scalars().all()
+
+        if not user_shops:
+            return api_response(200, "No shops found for user", {
+                "completed": 0,
+                "not_completed": 0,
+                "cancelled": 0,
+                "returned": 0,
+            })
+
+        # Get order IDs that contain products from user's shops (use scalars)
+        order_ids_with_shop = session.exec(
+            select(OrderProduct.order_id)
+            .where(OrderProduct.shop_id.in_(user_shops))
+            .distinct()
+        ).scalars().all()
+
+        if not order_ids_with_shop:
+            return api_response(200, "No orders found for user's shops", {
+                "completed": 0,
+                "not_completed": 0,
+                "cancelled": 0,
+                "returned": 0,
+            })
+
+        # Filter by shop orders
+        completed_query = completed_query.where(Order.id.in_(order_ids_with_shop))
+        not_completed_query = not_completed_query.where(Order.id.in_(order_ids_with_shop))
+
+    elif is_fulfillment:
+        # Fulfillment: Only orders assigned to this user
+        completed_query = completed_query.where(Order.fullfillment_id == user_id)
+        not_completed_query = not_completed_query.where(Order.fullfillment_id == user_id)
+    else:
+        return api_response(403, "User does not have required role for this endpoint")
+
+    # Execute queries using scalar() to get the count value directly
+    completed_count = session.exec(completed_query).scalar() or 0
+    not_completed_count = session.exec(not_completed_query).scalar() or 0
+
+    # Calculate cancelled and returned for shop_admin and root
+    if is_root or is_shop_admin:
+        cancelled_query = select(func.count(Order.id)).where(
+            Order.order_status == OrderStatusEnum.CANCELLED
+        )
+        cancelled_query = apply_date_filters(cancelled_query)
+
+        if is_shop_admin and order_ids_with_shop:
+            cancelled_query = cancelled_query.where(Order.id.in_(order_ids_with_shop))
+
+        cancelled_count = session.exec(cancelled_query).scalar() or 0
+
+        # Count returned orders (order status = refunded)
+        returned_query = select(func.count(Order.id)).where(
+            Order.order_status == OrderStatusEnum.REFUNDED
+        )
+        returned_query = apply_date_filters(returned_query)
+
+        if is_shop_admin and order_ids_with_shop:
+            returned_query = returned_query.where(Order.id.in_(order_ids_with_shop))
+
+        returned_count = session.exec(returned_query).scalar() or 0
+
+    # Build response with date range info
+    response_data = {
+        "completed": completed_count,
+        "not_completed": not_completed_count,
+        "cancelled": cancelled_count,
+        "returned": returned_count,
+        "role": "root" if is_root else "shop_admin" if is_shop_admin else "fulfillment",
+    }
+    
+    # Add date range to response if provided
+    if start_date or end_date:
+        response_data["date_range"] = {
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+
+    return api_response(200, "Order statistics retrieved", response_data)
+@router.get("/old-my-statistics")
 def get_my_order_statistics(
     user: requireSignin,
     session: GetSession,
