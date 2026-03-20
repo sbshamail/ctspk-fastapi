@@ -1037,8 +1037,8 @@ def create(request: OrderCartCreate, session: GetSession, user: isAuthenticated 
                     "amount": order.amount,
                     "delivery_date":order.delivery_time,
                     "payment_gateway":order.payment_gateway,
-                    "total_amount": order.total,
-                    "delivery_fee": order.delivery_fee,
+                    "total_amount": f"Rs.{float(order.total):,.2f}" if order.total else "N/A",
+                    "delivery_fee": f"Rs.{float(order.delivery_fee):,.2f}" if order.delivery_fee else "N/A" ,
                 },
                 session=session
             )
@@ -1668,11 +1668,11 @@ def create_order_from_cart(
                 "order_number": tracking_number,
                 "order_date":order.created_at,
                 "order_id": order.id,
-                "amount": order.amount,
+                "amount": f"Rs.{float(order.amount):,.2f}" if order.amount else "N/A",
                 "delivery_date":order.delivery_time,
                 "payment_gateway":order.payment_gateway,
-                "total_amount": order.total,
-                "delivery_fee": order.delivery_fee,
+                "total_amount": f"Rs.{float(order.total):,.2f}" if order.total else "N/A",
+                "delivery_fee": f"Rs.{float(order.delivery_fee):,.2f}" if order.delivery_fee else "N/A",
             },
             session=session
         )
@@ -3872,7 +3872,7 @@ def cancel_order(
                         "order_id": order.id,
                         "cancelled_by": cancelled_by,
                         "reason": cancel_reason,
-                        "paid_total": cancel_amount,
+                        "paid_total": f"Rs.{float(cancel_amount):,.2f}" if cancel_amount else "N/A",
                     },
                     session=session
                 )
@@ -3893,7 +3893,7 @@ def cancel_order(
                                 "shop_name": shop.name,
                                 "cancelled_by": cancelled_by,
                                 "reason": cancel_reason,
-                                "paid_total": cancel_amount,
+                                "paid_total": f"Rs.{float(cancel_amount):,.2f}" if cancel_amount else "N/A",
                             },
                             session=session
                         )
@@ -3910,7 +3910,7 @@ def cancel_order(
                         "order_id": order.id,
                         "cancelled_by": cancelled_by,
                         "reason": cancel_reason,
-                        "paid_total": cancel_amount,
+                        "paid_total": f"Rs.{float(cancel_amount):,.2f}" if cancel_amount else "N/A",
                     },
                     session=session
                 )
