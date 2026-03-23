@@ -548,6 +548,7 @@ def list(
     category_is_active: Optional[bool] = Query(None, description="Filter by category active status"),
     manufacturer_is_active: Optional[bool] = Query(None, description="Filter by manufacturer active status"),
     manufacturer_is_approved: Optional[bool] = Query(None, description="Filter by manufacturer approved status"),
+    shop_s_active: Optional[bool] = Query(None, description="Filter by shop active status"),
 ):
     query_params = vars(query_params)
     searchFields = ["name", "description", "category.name"]
@@ -563,7 +564,11 @@ def list(
 
     # Filter out soft-deleted products and products from inactive shops
     def active_shop_filter(statement, Model):
-        active_shop_ids = select(Shop.id).where(Shop.is_active == True)
+        if shop_s_active is not None:
+            active_shop_ids = select(Shop.id).where(Shop.is_active == shop_s_active)
+        else:
+            active_shop_ids = select(Shop.id).where(Shop.is_active == True)
+            
         statement = statement.where(Model.deleted_at == None).where(
             or_(Model.shop_id.is_(None), Model.shop_id.in_(active_shop_ids))
         )
@@ -648,6 +653,7 @@ def get_products_by_category(
     category_is_active: Optional[bool] = Query(None, description="Filter by category active status"),
     manufacturer_is_active: Optional[bool] = Query(None, description="Filter by manufacturer active status"),
     manufacturer_is_approved: Optional[bool] = Query(None, description="Filter by manufacturer approved status"),
+    shop_s_active: Optional[bool] = Query(None, description="Filter by shop active status"),
 ):
     # Validate that category exists
     category = session.get(Category, category_id)
@@ -684,7 +690,11 @@ def get_products_by_category(
 
     # Filter by category_ids and exclude products from inactive/disapproved shops
     def category_and_shop_filter(statement, Model):
-        active_shop_ids = select(Shop.id).where(Shop.is_active == True)
+        if shop_s_active is not None:
+            active_shop_ids = select(Shop.id).where(Shop.is_active == shop_s_active)
+        else:
+            active_shop_ids = select(Shop.id).where(Shop.is_active == True)
+            
         statement = statement.where(
             or_(Model.shop_id.is_(None), Model.shop_id.in_(active_shop_ids))
         ).where(Model.category_id.in_(category_ids))

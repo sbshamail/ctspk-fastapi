@@ -2372,7 +2372,12 @@ def get_by_tracking(tracking_number: str, session: GetSession):
     for shop_id in shops:
         shop = session.get(Shop, shop_id)
         if shop:
-            shop_details.append({"id": shop.id, "name": shop.name, "slug": shop.slug})
+            shop_details.append({
+                "id": shop.id, 
+                "name": shop.name, 
+                "slug": shop.slug, 
+                "is_active": shop.is_active
+            })
 
     order_data.shops = shop_details
     order_data.shop_count = len(shop_details)
@@ -2440,6 +2445,7 @@ def list_orders(
     order_status: Optional[OrderStatusEnum] = None,
     payment_status: Optional[PaymentStatusEnum] = None,
     shop_id: Optional[int] = None,  # ADDED: Filter by shop_id (from order products)
+    shop_s_active: Optional[bool] = Query(None, description="Filter by shop active status"),
     sort: Optional[str] = Query(None, description="Sort by column. Example: ['created_at','desc'] or ['total','asc']"),
     page: int = None,
     skip: int = 0,
@@ -2469,16 +2475,17 @@ def list_orders(
         filters["columnFilters"].append(["payment_status", payment_status.value])
 
     # Handle shop filtering - we need to filter orders that have products from this shop
-    if shop_id:
-        # First get order IDs that have products from this shop
-        order_ids_with_shop = session.exec(
-            select(OrderProduct.order_id)
-            .where(OrderProduct.shop_id == shop_id)
-            .distinct()
-        ).all()
+    if shop_id or shop_s_active is not None:
+        stmt = select(OrderProduct.order_id)
+        if shop_id:
+            stmt = stmt.where(OrderProduct.shop_id == shop_id)
+        if shop_s_active is not None:
+            stmt = stmt.join(Shop, OrderProduct.shop_id == Shop.id).where(Shop.is_active == shop_s_active)
+            
+        order_ids_with_shop = session.exec(stmt.distinct()).all()
 
         if not order_ids_with_shop:
-            return api_response(404, "No orders found for this shop")
+            return api_response(404, "No orders found for this shop criteria")
 
         if "columnFilters" not in filters or not filters["columnFilters"]:
             filters["columnFilters"] = []
@@ -2555,6 +2562,7 @@ def list_orders(
     order_status: Optional[OrderStatusEnum] = None,
     payment_status: Optional[PaymentStatusEnum] = None,
     shop_id: Optional[int] = None,  # ADDED: Filter by shop_id (from order products)
+    shop_s_active: Optional[bool] = Query(None, description="Filter by shop active status"),
     sort: Optional[str] = Query(None, description="Sort by column. Example: ['created_at','desc'] or ['total','asc']"),
     page: int = None,
     skip: int = 0,
@@ -2584,16 +2592,17 @@ def list_orders(
         filters["columnFilters"].append(["payment_status", payment_status.value])
 
     # Handle shop filtering - we need to filter orders that have products from this shop
-    if shop_id:
-        # First get order IDs that have products from this shop
-        order_ids_with_shop = session.exec(
-            select(OrderProduct.order_id)
-            .where(OrderProduct.shop_id == shop_id)
-            .distinct()
-        ).all()
+    if shop_id or shop_s_active is not None:
+        stmt = select(OrderProduct.order_id)
+        if shop_id:
+            stmt = stmt.where(OrderProduct.shop_id == shop_id)
+        if shop_s_active is not None:
+            stmt = stmt.join(Shop, OrderProduct.shop_id == Shop.id).where(Shop.is_active == shop_s_active)
+            
+        order_ids_with_shop = session.exec(stmt.distinct()).all()
 
         if not order_ids_with_shop:
-            return api_response(404, "No orders found for this shop")
+            return api_response(404, "No orders found for this shop criteria")
 
         if "columnFilters" not in filters or not filters["columnFilters"]:
             filters["columnFilters"] = []
@@ -2671,6 +2680,7 @@ def list_all_orders(
     order_status: Optional[OrderStatusEnum] = None,
     payment_status: Optional[PaymentStatusEnum] = None,
     shop_id: Optional[int] = None,  # ADDED: Filter by shop_id (from order products)
+    shop_s_active: Optional[bool] = Query(None, description="Filter by shop active status"),
     sort: Optional[str] = Query(None, description="Sort by column. Example: ['created_at','desc'] or ['total','asc']"),
     page: int = None,
     skip: int = 0,
@@ -2700,16 +2710,17 @@ def list_all_orders(
         filters["columnFilters"].append(["payment_status", payment_status.value])
 
     # Handle shop filtering - we need to filter orders that have products from this shop
-    if shop_id:
-        # First get order IDs that have products from this shop
-        order_ids_with_shop = session.exec(
-            select(OrderProduct.order_id)
-            .where(OrderProduct.shop_id == shop_id)
-            .distinct()
-        ).all()
+    if shop_id or shop_s_active is not None:
+        stmt = select(OrderProduct.order_id)
+        if shop_id:
+            stmt = stmt.where(OrderProduct.shop_id == shop_id)
+        if shop_s_active is not None:
+            stmt = stmt.join(Shop, OrderProduct.shop_id == Shop.id).where(Shop.is_active == shop_s_active)
+            
+        order_ids_with_shop = session.exec(stmt.distinct()).all()
 
         if not order_ids_with_shop:
-            return api_response(404, "No orders found for this shop")
+            return api_response(404, "No orders found for this shop criteria")
 
         if "columnFilters" not in filters or not filters["columnFilters"]:
             filters["columnFilters"] = []
@@ -2748,7 +2759,12 @@ def list_all_orders(
             shop = session.get(Shop, s_id)
             if shop:
                 shop_details.append(
-                    {"id": shop.id, "name": shop.name, "slug": shop.slug}
+                    {
+                        "id": shop.id, 
+                        "name": shop.name, 
+                        "slug": shop.slug, 
+                        "is_active": shop.is_active
+                    }
                 )
 
         order_data.shops = shop_details
@@ -2775,6 +2791,7 @@ def list_all_orders(
     order_status: Optional[OrderStatusEnum] = None,
     payment_status: Optional[PaymentStatusEnum] = None,
     shop_id: Optional[int] = None,  # ADDED: Filter by shop_id (from order products)
+    shop_s_active: Optional[bool] = Query(None, description="Filter by shop active status"),
     sort: Optional[str] = Query(None, description="Sort by column. Example: ['created_at','desc'] or ['total','asc']"),
     page: int = None,
     skip: int = 0,
@@ -2826,17 +2843,18 @@ def list_all_orders(
         if not filter_order_ids:
             return api_response(404, "No orders found for your shops")
 
-    # Handle additional shop filtering if shop_id is provided
-    if shop_id:
-        # First get order IDs that have products from this shop
-        order_ids_with_shop = session.execute(
-            select(OrderProduct.order_id)
-            .where(OrderProduct.shop_id == shop_id)
-            .distinct()
-        ).scalars().all()
+    # Handle additional shop filtering if shop_id or shop_s_active is provided
+    if shop_id or shop_s_active is not None:
+        stmt = select(OrderProduct.order_id)
+        if shop_id:
+            stmt = stmt.where(OrderProduct.shop_id == shop_id)
+        if shop_s_active is not None:
+            stmt = stmt.join(Shop, OrderProduct.shop_id == Shop.id).where(Shop.is_active == shop_s_active)
+            
+        order_ids_with_shop = session.execute(stmt.distinct()).scalars().all()
 
         if not order_ids_with_shop:
-            return api_response(404, "No orders found for this shop")
+            return api_response(404, "No orders found for this shop criteria")
 
         # Intersect with existing filter_order_ids if set
         if filter_order_ids is not None:
@@ -2882,7 +2900,12 @@ def list_all_orders(
             shop = session.get(Shop, s_id)
             if shop:
                 shop_details.append(
-                    {"id": shop.id, "name": shop.name, "slug": shop.slug}
+                    {
+                        "id": shop.id, 
+                        "name": shop.name, 
+                        "slug": shop.slug, 
+                        "is_active": shop.is_active
+                    }
                 )
 
         order_data.shops = shop_details
@@ -4652,6 +4675,7 @@ def get_my_recent_order_products(
     order_status: Optional[OrderStatusEnum] = None,
     payment_status: Optional[PaymentStatusEnum] = None,
     shop_id: Optional[int] = None,
+    shop_s_active: Optional[bool] = Query(None, description="Filter by shop active status"),
     product_type: Optional[OrderItemType] = None,
     limit_days: Optional[int] = Query(30, description="Number of days to look back for recent orders (default: 30)"),
     qty_eq: Optional[int] = Query(None, description="Filter by exact quantity"),
@@ -4742,6 +4766,9 @@ def get_my_recent_order_products(
         # Apply shop filter
         if shop_id:
             conditions.append(f"op.shop_id = {shop_id}")
+        if shop_s_active is not None:
+            bool_value = "TRUE" if shop_s_active else "FALSE"
+            conditions.append(f"(s.id IS NULL OR s.is_active = {bool_value})")
         
         # Apply product type filter
         if product_type:
@@ -4904,14 +4931,18 @@ def get_my_recent_order_products(
                 c.slug as category_slug,
                 c.root_id as category_root_id,
                 c.parent_id as category_parent_id,
+                c.is_active as category_is_active,
                 
                 -- Shop details
                 s.id as shop_id,
                 s.name as shop_name,
                 s.slug as shop_slug,
+                s.is_active as shop_is_active,
                 
                 -- Manufacturer details
                 p.manufacturer_id,
+                m.name as manufacturer_name,
+                m.is_active as manufacturer_is_active,
                 
                 -- Variation details (if any)
                 vo.id as variation_id,
@@ -5002,14 +5033,24 @@ def get_my_recent_order_products(
                 "name": row_dict.get('category_name'),
                 "slug": row_dict.get('category_slug'),
                 "root_id": row_dict.get('category_root_id'),
-                "parent_id": row_dict.get('category_parent_id')
+                "parent_id": row_dict.get('category_parent_id'),
+                "is_active": row_dict.get('category_is_active')
             } if row_dict.get('category_id') else None
             
             # Build shop object
             shop = {
                 "id": row_dict.get('shop_id'),
-                "name": row_dict.get('shop_name')
+                "name": row_dict.get('shop_name'),
+                "slug": row_dict.get('shop_slug'),
+                "is_active": row_dict.get('shop_is_active')
             } if row_dict.get('shop_id') else None
+            
+            # Build manufacturer object
+            manufacturer = {
+                "id": row_dict.get('manufacturer_id'),
+                "name": row_dict.get('manufacturer_name'),
+                "is_active": row_dict.get('manufacturer_is_active')
+            } if row_dict.get('manufacturer_id') else None
             
             # Calculate total quantity (product quantity + variation quantities)
             total_quantity = row_dict.get('quantity', 0) or 0
@@ -5076,7 +5117,7 @@ def get_my_recent_order_products(
                 # Related objects
                 "category": category,
                 "shop": shop,
-                "manufacturer_id": row_dict.get('manufacturer_id'),
+                "manufacturer": manufacturer,
                 
                 # Variation details from order (if applicable)
                 "variation_option_id": row_dict.get('variation_option_id'),

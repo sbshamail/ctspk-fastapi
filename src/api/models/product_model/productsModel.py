@@ -241,6 +241,13 @@ class UserReadForProduct(SQLModel):
 class ShopReadForProduct(SQLModel):
     id: int
     name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class ManufacturerReadForProduct(SQLModel):
+    id: int
+    name: str
+    is_active: Optional[bool] = None
 
 
 class CategoryReadProduct(SQLModel):
@@ -249,6 +256,7 @@ class CategoryReadProduct(SQLModel):
     slug: str
     root_id: int
     parent_id: Optional[int] = None
+    is_active: Optional[bool] = None
 
 
 class VariationOptionReadForProduct(SQLModel):
@@ -285,6 +293,7 @@ class ProductRead(TimeStampReadModel):
     category: CategoryReadProduct
     shop: ShopReadForProduct
     manufacturer_id: Optional[int] = None
+    manufacturer: Optional[ManufacturerReadForProduct] = None
     unit: Optional[str] = None
     dimension_unit: Optional[str] = None
     sku: Optional[str] = None

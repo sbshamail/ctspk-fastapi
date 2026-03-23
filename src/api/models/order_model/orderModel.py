@@ -346,9 +346,28 @@ class OrderStatusUpdate(SQLModel):
     completed_image: Optional[List[Dict[str, Any]]] = None  # Required for ORDER_DELIVER (step 7)
 
 
+class ProductOrderShopRead(SQLModel):
+    id: int
+    name: str
+    is_active: Optional[bool] = None
+
+class ProductOrderCategoryRead(SQLModel):
+    id: int
+    name: str
+    is_active: Optional[bool] = None
+
+class ProductOrderManufacturerRead(SQLModel):
+    id: int
+    name: str
+    is_active: Optional[bool] = None
+
 class ProductOrderRead(SQLModel):
     image: Optional[Dict[str, Any]] = None
     name: str
+    is_active: Optional[bool] = None
+    shop: Optional[ProductOrderShopRead] = None
+    category: Optional[ProductOrderCategoryRead] = None
+    manufacturer: Optional[ProductOrderManufacturerRead] = None
 
 
 # Read Schemas - UPDATED

@@ -29,9 +29,28 @@ def serialize_user_with_avatar(user: User) -> UserRead:
     """
     Serialize user and add avatar field
     """
+    from src.api.models.usersModel import ShopReadForUser
+
     user_read = UserRead.model_validate(user)
     # Add avatar field using helper function
     user_read.avatar = get_user_avatar(user.image, user.name)
+    
+    # Custom shop logic based on role
+    has_role_2 = any(role.id == 2 for role in user.roles)
+    
+    if not has_role_2:
+        managed_shops = []
+        for ur_shop in user.user_shops:
+            if ur_shop.shop:
+                managed_shops.append(
+                    ShopReadForUser(
+                        id=ur_shop.shop.id,
+                        name=f"{ur_shop.shop.name} (manage)",
+                        is_active=ur_shop.shop.is_active
+                    )
+                )
+        user_read.shops = managed_shops
+
     return user_read
 
 @router.post("/create")

@@ -97,11 +97,14 @@ class OrderEmailCron:
 
     def _mark_email_sent(self, session: Session, order: Order):
         """Record in order metadata that emails have been sent."""
+        from sqlalchemy.orm.attributes import flag_modified
         try:
             meta = order.metadata if isinstance(getattr(order, 'metadata', None), dict) else {}
-            meta['order_email_sent'] = True
-            meta['order_email_sent_at'] = now_pk().isoformat()
-            order.metadata = meta
+            new_meta = dict(meta)
+            new_meta['order_email_sent'] = True
+            new_meta['order_email_sent_at'] = now_pk().isoformat()
+            order.metadata = new_meta
+            flag_modified(order, 'metadata')
             session.add(order)
             session.flush()
         except Exception as e:
@@ -113,6 +116,15 @@ class OrderEmailCron:
         """Start the cron job in a background daemon thread."""
         if self.is_running:
             print("[order-email] cron already running")
+            return
+
+        # Ensure only one worker thread starts the cron by binding to a specific port
+        import socket
+        try:
+            self._lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._lock_socket.bind(("127.0.0.1", 61234))
+        except socket.error:
+            print("[order-email] cron is already running in another worker")
             return
 
         self.is_running = True
