@@ -44,7 +44,7 @@ async def uploadImage(files, user, thumbnail):
                 base_name = os.path.splitext(unique_filename)[0]
                 output_filename = f"{base_name}.webp"
                 file_path = os.path.join(user_dir, output_filename)
-                img.save(file_path, "webp",lossless=True, quality=100, method=6)
+                img.save(file_path, "webp", quality=85, method=6)
                 ext = ".webp"  # update extension
             except UnidentifiedImageError:
                 raise ValueError(f"File type {ext} is not a supported image format.")
