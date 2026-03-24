@@ -84,14 +84,14 @@ def update_category(
 
     if request.parent_id is not None and request.parent_id != category.parent_id:
         if request.parent_id == id:
-            return api_response(400, "A category cannot be its own parent")
+            api_response(400, "A category cannot be its own parent")
 
         parent = session.get(Category, request.parent_id)
         if not parent:
-            return api_response(400, "New parent category not found")
+            api_response(400, "New parent category not found")
 
         if parent.level >= 3:
-            return api_response(400, "Cannot move under a level 3 category")
+            api_response(400, "Cannot move under a level 3 category")
 
         category.level = parent.level + 1
         category.root_id = parent.root_id if parent.root_id else parent.id
