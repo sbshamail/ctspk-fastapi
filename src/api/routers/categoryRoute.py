@@ -82,35 +82,43 @@ def update_category(
     category = session.get(Category, id)
     raiseExceptions((category, 404, "Category not found"))
 
-    # Check if parent changed
     if request.parent_id is not None and request.parent_id != category.parent_id:
-        # Cannot set parent to itself or its children
         if request.parent_id == id:
-            api_response(400, "A category cannot be its own parent")
+            return api_response(400, "A category cannot be its own parent")
 
-        # Verify parent validity
         parent = session.get(Category, request.parent_id)
         if not parent:
-            api_response(400, "New parent category not found")
+            return api_response(400, "New parent category not found")
 
         if parent.level >= 3:
-            api_response(400, "Cannot move under a level 3 category")
+            return api_response(400, "Cannot move under a level 3 category")
 
-        # ✅ Update level and root based on new parent
         category.level = parent.level + 1
         category.root_id = parent.root_id if parent.root_id else parent.id
         category.parent_id = request.parent_id
 
-    # Apply other updates dynamically
     for key, value in request.model_dump(exclude_unset=True).items():
         setattr(category, key, value)
 
-    # Slug update if name changed
     if request.name:
         category.slug = uniqueSlugify(session, Category, request.name)
         category.updated_at = now_pk()
 
     session.add(category)
+
+    if request.admin_commission_rate is not None:
+        def update_children_recursive(parent_cat):
+            children = session.exec(
+                select(Category).where(Category.parent_id == parent_cat.id)
+            ).all()
+            for child in children:
+                child.admin_commission_rate = request.admin_commission_rate
+                child.updated_at = now_pk()
+                session.add(child)
+                update_children_recursive(child)
+
+        update_children_recursive(category)
+
     session.commit()
     session.refresh(category)
 
@@ -267,13 +275,11 @@ def list(
         for cat in result['data']:
             print(f"DEBUG: Category '{cat.name}' - is_active: {cat.is_active}")
 
-    # ... rest of your code
     if not result["data"]:
         return api_response(404, "No products found")
 
     categories = result["data"]
 
-    # Build a map of all categories in the result
     category_map = {
         c.id: CategoryReadNested(
             id=c.id,
@@ -292,7 +298,6 @@ def list(
     }
     roots = []
 
-    # Step 1: attach children to their parents
     for cat in category_map.values():
         if cat.parent_id and cat.id != cat.parent_id:
             parent = category_map.get(cat.parent_id)
@@ -300,16 +305,17 @@ def list(
                 if not any(child.id == cat.id for child in parent.children):
                     parent.children.append(cat)
 
-    # Step 2: collect roots (categories with no parent_id OR parent not in result set)
     for cat in category_map.values():
         if not cat.parent_id:
-            # Actual root category
             roots.append(cat)
         elif cat.parent_id not in category_map:
-            # Parent not in result set - treat as root for this response
             roots.append(cat)
 
-    return api_response(200, "Category found", roots, result["total"])
+    total_roots = len(roots)
+    if total_roots == 0:
+        total_roots = result["total"]
+
+    return api_response(200, "Category found", roots, total_roots)
 
 
 # ✅ PATCH Category status (toggle/verify)

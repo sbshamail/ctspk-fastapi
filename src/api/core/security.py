@@ -8,6 +8,7 @@ from sqlmodel import Session
 from fastapi import (
     Depends,
     Header,
+    HTTPException,
     Security,
     status,
 )
@@ -136,28 +137,28 @@ def require_signin(
         user = payload.get("user")
 
         if user is None:
-            api_response(
-                status.HTTP_401_UNAUTHORIZED,
-                "Invalid token: no user data",
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: no user data",
             )
 
         if payload.get("refresh") is True:
-            api_response(
-                401,
-                "Refresh token is not allowed for this route",
+            raise HTTPException(
+                status_code=401,
+                detail="Refresh token is not allowed for this route",
             )
 
         return user  # contains {"email": ..., "id": ...}
 
     except JWTError as e:
         print(e)
-        return api_response(status.HTTP_401_UNAUTHORIZED, "Invalid token", data=str(e))
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token: {str(e)}")
 
 
 def require_admin(user: dict = Depends(require_signin)):
     roles: List[str] = user.get("roles", [])
     if "root" not in roles:
-        api_response(status.HTTP_403_FORBIDDEN, "Root User only")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Root User only")
     return user
 
 
@@ -200,6 +201,6 @@ def require_permission(*permissions):
         print(f"Permission denied for user: {user.get('email')}")
         print(f"  Required: {flat_permissions}")
         print(f"  User has: {user_permissions}")
-        api_response(status.HTTP_403_FORBIDDEN, f"Permission denied. Required: {flat_permissions}, You have: {user_permissions}")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Permission denied. Required: {flat_permissions}, You have: {user_permissions}")
 
     return permission_checker
