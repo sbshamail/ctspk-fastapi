@@ -164,6 +164,15 @@ def get_wishlist_items_with_products(session, query_params, user_id=None):
     """Get wishlist items with product data using direct query"""
     from sqlmodel import select
     
+    from src.api.models.product_model.wishlist_schemas import (
+        CategoryReadForWishlist,
+        ShopReadForWishlist,
+        ManufacturerReadForWishlist,
+    )
+    from src.api.models.shop_model.shopsModel import Shop
+    from src.api.models.category_model.categoryModel import Category
+    from src.api.models.manufacturer_model.manufacturerModel import Manufacturer
+    
     # Build base query
     query = select(Wishlist)
     
@@ -184,6 +193,39 @@ def get_wishlist_items_with_products(session, query_params, user_id=None):
     for item in wishlist_items:
         product = session.get(Product, item.product_id)
         if product:
+            category = None
+            if product.category_id:
+                category_obj = session.get(Category, product.category_id)
+                if category_obj:
+                    category = CategoryReadForWishlist(
+                        id=category_obj.id,
+                        name=category_obj.name,
+                        slug=category_obj.slug,
+                        root_id=category_obj.root_id,
+                        parent_id=category_obj.parent_id,
+                        is_active=category_obj.is_active
+                    )
+            
+            shop = None
+            if product.shop_id:
+                shop_obj = session.get(Shop, product.shop_id)
+                if shop_obj:
+                    shop = ShopReadForWishlist(
+                        id=shop_obj.id,
+                        name=shop_obj.name,
+                        is_active=shop_obj.is_active
+                    )
+            
+            manufacturer = None
+            if product.manufacturer_id:
+                manufacturer_obj = session.get(Manufacturer, product.manufacturer_id)
+                if manufacturer_obj:
+                    manufacturer = ManufacturerReadForWishlist(
+                        id=manufacturer_obj.id,
+                        name=manufacturer_obj.name,
+                        is_active=manufacturer_obj.is_active
+                    )
+            
             enhanced_item = WishlistReadWithProduct(
                 id=item.id,
                 user_id=item.user_id,
@@ -198,7 +240,10 @@ def get_wishlist_items_with_products(session, query_params, user_id=None):
                     image=product.image,
                     in_stock=product.quantity > 0,
                     shop_id=product.shop_id,
-                    slug=product.slug
+                    slug=product.slug,
+                    category=category,
+                    shop=shop,
+                    manufacturer=manufacturer
                 )
             )
             enhanced_items.append(enhanced_item)
@@ -243,13 +288,13 @@ def list_my_wishlist(
 def list_all_wishlists(
     query_params: ListQueryParams,
     session: GetSession,
-    user=requirePermission("wishlist:view_all")
+    user=requireSignin
 ):
     query_params_dict = vars(query_params)
     
     # Get all wishlist items with product data
-    enhanced_wishlist = get_wishlist_items_with_products(session, query_params_dict)
-    total_count = get_wishlist_count(session)
+    enhanced_wishlist = get_wishlist_items_with_products(session, query_params_dict, user.get("id"))
+    total_count = get_wishlist_count(session, user.get("id"))
     
     # If no wishlist items found
     if not enhanced_wishlist:

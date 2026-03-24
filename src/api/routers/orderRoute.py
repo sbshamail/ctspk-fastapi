@@ -4849,6 +4849,7 @@ def get_my_recent_order_products(
             FROM order_product op
             LEFT JOIN products p ON op.product_id = p.id
             LEFT JOIN categories c ON p.category_id = c.id
+            LEFT JOIN shops s ON op.shop_id = s.id
             LEFT JOIN manufacturers m ON p.manufacturer_id = m.id
             WHERE {op_where}
         """

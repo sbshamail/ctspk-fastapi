@@ -4,6 +4,27 @@ from datetime import datetime
 from sqlmodel import SQLModel
 
 
+class CategoryReadForWishlist(SQLModel):
+    id: int
+    name: str
+    slug: str
+    root_id: int
+    parent_id: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class ShopReadForWishlist(SQLModel):
+    id: int
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class ManufacturerReadForWishlist(SQLModel):
+    id: int
+    name: str
+    is_active: Optional[bool] = None
+
+
 class ProductReadForWishlist(SQLModel):
     id: int
     name: str
@@ -13,6 +34,9 @@ class ProductReadForWishlist(SQLModel):
     in_stock: bool = True
     shop_id: int
     slug: str
+    category: Optional[CategoryReadForWishlist] = None
+    shop: Optional[ShopReadForWishlist] = None
+    manufacturer: Optional[ManufacturerReadForWishlist] = None
 
 
 class WishlistReadWithProduct(SQLModel):
