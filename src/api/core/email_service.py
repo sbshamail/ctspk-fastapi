@@ -2,7 +2,11 @@ import smtplib
 import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def send_verification_email(recipient_email: str, verification_code: str) -> bool:
@@ -16,19 +20,18 @@ def send_verification_email(recipient_email: str, verification_code: str) -> boo
     Returns:
         bool: True if email sent successfully, False otherwise
     """
-    # Email configuration - use environment variables for security
-    SMTP_SERVER = "mail.ghertak.com"
-    SMTP_PORT = 587
-    SENDER_EMAIL = os.getenv("SMTP_EMAIL")  # Your Gmail address
-    SENDER_PASSWORD = os.getenv("SMTP_PASSWORD")  # Your Gmail App Password
+    SMTP_SERVER = os.getenv("SMTP_HOST", "mail.ghertak.com")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SENDER_EMAIL = os.getenv("FROM_EMAIL") or os.getenv("SMTP_EMAIL")
+    SENDER_PASSWORD = os.getenv("SMTP_PASSWORD")
+    FROM_NAME = os.getenv("FROM_NAME", "System")
     
     if not SENDER_EMAIL or not SENDER_PASSWORD:
-        raise ValueError("SMTP_EMAIL and SMTP_PASSWORD environment variables must be set")
+        raise ValueError("FROM_EMAIL/SMTP_EMAIL and SMTP_PASSWORD environment variables must be set")
     
-    # Create message
     message = MIMEMultipart("alternative")
     message["Subject"] = "Password Reset Verification Code"
-    message["From"] = SENDER_EMAIL
+    message["From"] = formataddr((FROM_NAME, SENDER_EMAIL))
     message["To"] = recipient_email
     
     # Create the plain text version
@@ -105,19 +108,22 @@ def send_password_reset_confirmation(recipient_email: str, user_name: Optional[s
     Returns:
         bool: True if email sent successfully, False otherwise
     """
-    SMTP_SERVER = "mail.ghertak.com"
-    SMTP_PORT = 587
-    SENDER_EMAIL = os.getenv("SMTP_EMAIL")
+    SMTP_SERVER = os.getenv("SMTP_HOST", "mail.ghertak.com")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SENDER_EMAIL = os.getenv("FROM_EMAIL") or os.getenv("SMTP_EMAIL")
     SENDER_PASSWORD = os.getenv("SMTP_PASSWORD")
+    FROM_NAME = os.getenv("FROM_NAME", "System")
+    SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "False").lower() == "true"
+    SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "True").lower() == "true"
     
     if not SENDER_EMAIL or not SENDER_PASSWORD:
-        raise ValueError("SMTP_EMAIL and SMTP_PASSWORD environment variables must be set")
+        raise ValueError("FROM_EMAIL/SMTP_EMAIL and SMTP_PASSWORD environment variables must be set")
     
     greeting = f"Hello {user_name}," if user_name else "Hello,"
     
     message = MIMEMultipart("alternative")
     message["Subject"] = "Password Reset Successful"
-    message["From"] = SENDER_EMAIL
+    message["From"] = formataddr((FROM_NAME, SENDER_EMAIL))
     message["To"] = recipient_email
     
     text = f"""
@@ -128,7 +134,7 @@ def send_password_reset_confirmation(recipient_email: str, user_name: Optional[s
     If you did not make this change, please contact our support team immediately.
     
     Best regards,
-    Your App Team
+    {FROM_NAME}
     """
     
     html = f"""
@@ -145,7 +151,7 @@ def send_password_reset_confirmation(recipient_email: str, user_name: Optional[s
             <strong>Important:</strong> If you did not make this change, please contact our support team immediately.
           </p>
           <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-          <p style="color: #999; font-size: 12px;">Best regards,<br>Your App Team</p>
+          <p style="color: #999; font-size: 12px;">Best regards,<br>{FROM_NAME}</p>
         </div>
       </body>
     </html>
@@ -157,10 +163,17 @@ def send_password_reset_confirmation(recipient_email: str, user_name: Optional[s
     message.attach(part2)
     
     try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        if SMTP_USE_SSL:
+            server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=30)
+        else:
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30)
+        
+        if SMTP_USE_TLS and not SMTP_USE_SSL:
             server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.send_message(message)
+        
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.send_message(message)
+        server.quit()
         
         print(f"Password reset confirmation sent to {recipient_email}")
         return True
