@@ -110,7 +110,7 @@ def update_category(
         def update_children_recursive(parent_cat):
             children = session.exec(
                 select(Category).where(Category.parent_id == parent_cat.id)
-            ).all()
+            ).scalars().all()
             for child in children:
                 child.admin_commission_rate = request.admin_commission_rate
                 child.updated_at = now_pk()
@@ -292,6 +292,7 @@ def list(
             parent_id=c.parent_id,
             created_at=c.created_at,
             updated_at=c.updated_at,
+            admin_commission_rate=c.admin_commission_rate,
             children=[],
         )
         for c in categories

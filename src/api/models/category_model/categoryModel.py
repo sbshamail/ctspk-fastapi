@@ -98,6 +98,7 @@ class CategoryRead(TimeStampReadModel):
     seo_description:Optional[str] = None
     seo_keywords:Optional[str] = None
     seo_title:Optional[str] = None
+    admin_commission_rate: Optional[float] = None
 
 class CategoryReadNested(TimeStampReadModel):
     id: int
@@ -108,6 +109,7 @@ class CategoryReadNested(TimeStampReadModel):
     slug: Optional[str] = None
     parent_id: int | None = None
     is_active: bool
+    admin_commission_rate: Optional[float] = None
     children: list["CategoryReadNested"] = Field(default_factory=list)
 
     class Config:
