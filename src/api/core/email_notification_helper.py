@@ -3,11 +3,18 @@
 Email notification system for automated reminders and alerts
 Works alongside the notification system to send emails
 """
-from typing import List, Optional
+from typing import List, Optional, Union
 from sqlmodel import Session, select
 from src.api.models.usersModel import User
 from src.api.models.shop_model.shopsModel import Shop
 from src.api.core.email_helper import send_email
+
+
+def format_amount(amount: Union[float, int]) -> str:
+    """Format amount with comma separators (e.g., 1234 -> 1,234)"""
+    if amount is None:
+        return "0"
+    return f"{amount:,}"
 
 
 class EmailNotificationHelper:
@@ -133,7 +140,7 @@ class EmailNotificationHelper:
         replacements = {
             "user_name": user.name or "Customer",
             "item_count": item_count,
-            "total_amount": f"Rs.{total_amount:.2f}" if total_amount else "N/A",
+            "total_amount": f"Rs.{format_amount(total_amount)}" if total_amount else "N/A",
             "cart_url": "/cart",
             "checkout_url": "/checkout"
         }
