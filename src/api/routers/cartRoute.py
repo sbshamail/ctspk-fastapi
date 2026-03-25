@@ -52,11 +52,16 @@ def validate_variable_product(session: GetSession, product_id: int, variation_op
 
 
 def build_cart_item_response(
+    session: GetSession,
     cart: Cart,
     product: Product,
     variation_option: Optional[VariationOption] = None
 ) -> CartItemResponse:
     """Helper function to build CartItemResponse from cart, product, and optionally variation_option"""
+    from src.api.models.cart_model.cartModel import CategoryForCart, ShopForCart, ManufacturerForCart
+    from src.api.models.category_model.categoryModel import Category
+    from src.api.models.shop_model.shopsModel import Shop
+    from src.api.models.manufacturer_model.manufacturerModel import Manufacturer
 
     # Get image URL from product or variation
     image_url = None
@@ -81,6 +86,41 @@ def build_cart_item_response(
     # Get title - use variation title if exists, otherwise product name
     title = variation_option.title if variation_option else product.name
 
+    # Get category info
+    category = None
+    if product.category_id:
+        cat_obj = session.get(Category, product.category_id)
+        if cat_obj:
+            category = CategoryForCart(
+                id=cat_obj.id,
+                name=cat_obj.name,
+                slug=cat_obj.slug,
+                is_active=cat_obj.is_active
+            )
+
+    # Get shop info
+    shop = None
+    shop_obj = session.get(Shop, cart.shop_id)
+    if shop_obj:
+        shop = ShopForCart(
+            id=shop_obj.id,
+            name=shop_obj.name,
+            slug=shop_obj.slug,
+            is_active=shop_obj.is_active
+        )
+
+    # Get manufacturer info
+    manufacturer = None
+    if product.manufacturer_id:
+        mfr_obj = session.get(Manufacturer, product.manufacturer_id)
+        if mfr_obj:
+            manufacturer = ManufacturerForCart(
+                id=mfr_obj.id,
+                name=mfr_obj.name,
+                slug=mfr_obj.slug,
+                is_active=mfr_obj.is_active
+            )
+
     return CartItemResponse(
         product_id=cart.product_id,
         shop_id=cart.shop_id,
@@ -91,7 +131,11 @@ def build_cart_item_response(
         original_price=original_price,
         discount=discount,
         imageUrl=image_url,
-        unit=product.unit
+        unit=product.unit,
+        category=category,
+        shop=shop,
+        manufacturer_id=product.manufacturer_id,
+        manufacturer=manufacturer
     )
 
 
@@ -121,7 +165,7 @@ def get_my_cart(
             var_stmt = select(VariationOption).where(VariationOption.id == cart.variation_option_id)
             variation_option = session.execute(var_stmt).scalar_one_or_none()
 
-        cart_response = build_cart_item_response(cart, product, variation_option)
+        cart_response = build_cart_item_response(session, cart, product, variation_option)
         cart_responses.append(cart_response)
 
     return MyCartResponse(success=1, data=cart_responses)
@@ -191,7 +235,7 @@ def add_to_cart(
         var_stmt = select(VariationOption).where(VariationOption.id == cart.variation_option_id)
         variation_option = session.execute(var_stmt).scalar_one_or_none()
 
-    cart_response = build_cart_item_response(cart, product, variation_option)
+    cart_response = build_cart_item_response(session, cart, product, variation_option)
     return AddCartResponse(success=1, data=cart_response)
 
 
@@ -269,7 +313,7 @@ def bulk_add_to_cart(
             var_stmt = select(VariationOption).where(VariationOption.id == cart.variation_option_id)
             variation_option = session.execute(var_stmt).scalar_one_or_none()
 
-        cart_response = build_cart_item_response(cart, product, variation_option)
+        cart_response = build_cart_item_response(session, cart, product, variation_option)
         cart_responses.append(cart_response)
 
     return BulkAddCartResponse(success=1, data=cart_responses)
@@ -315,7 +359,10 @@ def create_role(
         session.add(existing_cart)
         session.commit()
         session.refresh(existing_cart)
-        return api_response(200, "Cart quantity updated", CartRead.model_validate(existing_cart))
+        # Load product relationship
+        stmt = select(Cart).where(Cart.id == existing_cart.id).options(joinedload(Cart.product))
+        cart_with_product = session.exec(stmt).scalar_one()
+        return api_response(200, "Cart quantity updated", CartRead.model_validate(cart_with_product))
     else:
         # Create new cart item - handle variation_option_id properly
         cart_data = request.model_dump()
@@ -328,7 +375,10 @@ def create_role(
         session.add(cart)
         session.commit()
         session.refresh(cart)
-        return api_response(200, "Cart Created Successfully", CartRead.model_validate(cart))
+        # Load product relationship
+        stmt = select(Cart).where(Cart.id == cart.id).options(joinedload(Cart.product))
+        cart_with_product = session.exec(stmt).scalar_one()
+        return api_response(200, "Cart Created Successfully", CartRead.model_validate(cart_with_product))
 
 
 @router.post("/bulk-create", response_model=CartBulkResponse)
@@ -471,7 +521,10 @@ def update_role(
     session.add(cart)
     session.commit()
     session.refresh(cart)
-    return api_response(200, "Cart Update Successfully", CartRead.model_validate(cart))
+    # Load product relationship
+    stmt = select(Cart).where(Cart.id == cart.id).options(joinedload(Cart.product))
+    cart_with_product = session.exec(stmt).scalar_one()
+    return api_response(200, "Cart Update Successfully", CartRead.model_validate(cart_with_product))
 
 
 @router.patch("/updatecart/{product_id}", response_model=AddCartResponse)
@@ -530,7 +583,7 @@ def update_cart_quantity(
         var_stmt = select(VariationOption).where(VariationOption.id == cart.variation_option_id)
         variation_option = session.execute(var_stmt).scalar_one_or_none()
 
-    cart_response = build_cart_item_response(cart, product, variation_option)
+    cart_response = build_cart_item_response(session, cart, product, variation_option)
     return AddCartResponse(success=1, data=cart_response)
 
 
@@ -539,8 +592,8 @@ def get_role(product_id: int, session: GetSession, user: requireSignin):
     stmt = select(Cart).where(
         Cart.product_id == product_id,
         Cart.user_id == user["id"]
-    )
-    cart = session.execute(stmt).scalar_one_or_none()
+    ).options(joinedload(Cart.product))
+    cart = session.exec(stmt).scalar_one_or_none()
 
     raiseExceptions((cart, 400, "Cart not found"))
 

@@ -84,6 +84,30 @@ class CartBulkResponse(BaseModel):
 
 
 # New models for cart/my-cart, cart/add, cart/bulk-add responses
+class CategoryForCart(BaseModel):
+    """Category info for cart item"""
+    id: int
+    name: str
+    slug: str
+    is_active: Optional[bool] = None
+
+
+class ShopForCart(BaseModel):
+    """Shop info for cart item"""
+    id: int
+    name: str
+    slug: str
+    is_active: Optional[bool] = None
+
+
+class ManufacturerForCart(BaseModel):
+    """Manufacturer info for cart item"""
+    id: int
+    name: str
+    slug: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 class CartItemResponse(BaseModel):
     """Response model for a single cart item with product details"""
     product_id: int
@@ -96,6 +120,10 @@ class CartItemResponse(BaseModel):
     discount: float
     imageUrl: Optional[str] = None
     unit: Optional[str] = None
+    category: Optional[CategoryForCart] = None
+    shop: Optional[ShopForCart] = None
+    manufacturer_id: Optional[int] = None
+    manufacturer: Optional[ManufacturerForCart] = None
 
 
 class MyCartResponse(BaseModel):
