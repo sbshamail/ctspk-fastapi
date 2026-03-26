@@ -664,7 +664,8 @@ def remove_cart_item(
         )
     cart = session.execute(stmt).scalar_one_or_none()
 
-    raiseExceptions((cart, 404, "Cart not found"))
+    if not cart:
+        return api_response(404, "Cart not found")
 
     session.delete(cart)
     session.commit()
