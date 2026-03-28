@@ -5153,3 +5153,263 @@ def get_my_recent_order_products(
         import traceback
         traceback.print_exc()
         return api_response(500, f"Error: {str(e)}")
+
+
+@router.post("/{order_id}/add-to-cart")
+def add_order_products_to_cart(
+    order_id: int,
+    session: GetSession,
+    user: requireSignin
+):
+    """
+    Add products from an order to the user's cart.
+    - Only products with quantity > 0 are added
+    - If order product quantity > available stock, add available quantity instead
+    """
+    user_id = user.get("id")
+
+    order = session.get(Order, order_id)
+    if not order:
+        return api_response(404, "Order not found")
+
+    if order.customer_id != user_id:
+        return api_response(403, "You can only add products from your own orders to cart")
+
+    order_products_result = session.exec(
+        select(OrderProduct).where(OrderProduct.order_id == order_id)
+    ).all()
+
+    order_products = []
+    for item in order_products_result:
+        if hasattr(item, '_mapping'):
+            mapping = dict(item._mapping)
+            order_product = mapping.get('OrderProduct') or mapping.get(OrderProduct)
+            if not order_product:
+                for value in mapping.values():
+                    if isinstance(value, OrderProduct):
+                        order_product = value
+                        break
+            if order_product:
+                order_products.append(order_product)
+        elif isinstance(item, OrderProduct):
+            order_products.append(item)
+
+    if not order_products:
+        return api_response(404, "No products found in this order")
+
+    added_products = []
+    skipped_products = []
+    updated_products = []
+
+    for op in order_products:
+        order_quantity = float(op.order_quantity)
+        
+        if order_quantity <= 0:
+            skipped_products.append({
+                "product_id": op.product_id,
+                "reason": "Order quantity is 0 or less"
+            })
+            continue
+
+        product = session.get(Product, op.product_id)
+        if not product or not product.is_active:
+            skipped_products.append({
+                "product_id": op.product_id,
+                "product_name": product.name if product else "Unknown",
+                "reason": "Product not found or inactive"
+            })
+            continue
+
+        available_quantity = 0
+
+        if op.variation_option_id:
+            variation = session.get(VariationOption, op.variation_option_id)
+            if not variation or not variation.is_active:
+                skipped_products.append({
+                    "product_id": op.product_id,
+                    "variation_option_id": op.variation_option_id,
+                    "reason": "Variation not found or inactive"
+                })
+                continue
+            available_quantity = variation.quantity
+        else:
+            available_quantity = product.quantity
+
+        if available_quantity <= 0:
+            skipped_products.append({
+                "product_id": op.product_id,
+                "product_name": product.name,
+                "variation_option_id": op.variation_option_id,
+                "reason": "Product out of stock"
+            })
+            continue
+
+        quantity_to_add = int(min(order_quantity, available_quantity))
+
+        if op.variation_option_id:
+            cart_result = session.exec(
+                select(Cart).where(
+                    Cart.user_id == user_id,
+                    Cart.product_id == op.product_id,
+                    Cart.variation_option_id == op.variation_option_id
+                )
+            ).first()
+        else:
+            cart_result = session.exec(
+                select(Cart).where(
+                    Cart.user_id == user_id,
+                    Cart.product_id == op.product_id,
+                    Cart.variation_option_id.is_(None)
+                )
+            ).first()
+
+        existing_cart = None
+        if cart_result:
+            if hasattr(cart_result, '_mapping'):
+                mapping = dict(cart_result._mapping)
+                existing_cart = mapping.get('Cart') or mapping.get(Cart)
+                if not existing_cart:
+                    for value in mapping.values():
+                        if isinstance(value, Cart):
+                            existing_cart = value
+                            break
+            elif isinstance(cart_result, Cart):
+                existing_cart = cart_result
+
+        if existing_cart:
+            existing_cart.quantity += quantity_to_add
+            session.add(existing_cart)
+            updated_products.append({
+                "product_id": op.product_id,
+                "product_name": product.name,
+                "variation_option_id": op.variation_option_id,
+                "quantity_added": quantity_to_add,
+                "new_total_quantity": existing_cart.quantity
+            })
+        else:
+            new_cart = Cart(
+                user_id=user_id,
+                product_id=op.product_id,
+                shop_id=product.shop_id,
+                quantity=quantity_to_add,
+                variation_option_id=op.variation_option_id
+            )
+            session.add(new_cart)
+            added_products.append({
+                "product_id": op.product_id,
+                "product_name": product.name,
+                "variation_option_id": op.variation_option_id,
+                "quantity_added": quantity_to_add
+            })
+
+    try:
+        session.commit()
+
+        all_cart_items = []
+        for item in added_products + updated_products:
+            product = session.get(Product, item["product_id"])
+            if product:
+                variation_option = None
+                if item["variation_option_id"]:
+                    variation_option = session.get(VariationOption, item["variation_option_id"])
+
+                cart_stmt = select(Cart).where(
+                    Cart.user_id == user_id,
+                    Cart.product_id == item["product_id"],
+                    Cart.variation_option_id == item["variation_option_id"] if item["variation_option_id"] else Cart.variation_option_id.is_(None)
+                ).options(joinedload(Cart.product))
+                cart_result = session.execute(cart_stmt).first()
+
+                if cart_result:
+                    if hasattr(cart_result, '_mapping'):
+                        mapping = dict(cart_result._mapping)
+                        cart_obj = mapping.get('Cart') or mapping.get(Cart)
+                        if not cart_obj:
+                            for value in mapping.values():
+                                if isinstance(value, Cart):
+                                    cart_obj = value
+                                    break
+                    elif isinstance(cart_result, Cart):
+                        cart_obj = cart_result
+                    else:
+                        cart_obj = None
+
+                    if cart_obj:
+                        from src.api.models.cart_model.cartModel import CategoryForCart, ShopForCart, ManufacturerForCart
+                        from src.api.models.category_model.categoryModel import Category
+                        from src.api.models.shop_model.shopsModel import Shop
+                        from src.api.models.manufacturer_model.manufacturerModel import Manufacturer
+
+                        image_url = None
+                        if variation_option and variation_option.image:
+                            image_url = variation_option.image.get("original") or variation_option.image.get("thumbnail")
+                        elif product.image:
+                            image_url = product.image.get("original") or product.image.get("thumbnail")
+
+                        if variation_option:
+                            unit_price = float(variation_option.sale_price) if variation_option.sale_price else float(variation_option.price)
+                            original_price = float(variation_option.price)
+                        else:
+                            unit_price = product.sale_price if product.sale_price else product.price
+                            original_price = product.price
+
+                        discount = original_price - unit_price if original_price > unit_price else 0
+                        title = variation_option.title if variation_option else product.name
+
+                        category = None
+                        if product.category_id:
+                            cat_obj = session.get(Category, product.category_id)
+                            if cat_obj:
+                                category = CategoryForCart(
+                                    id=cat_obj.id,
+                                    name=cat_obj.name,
+                                    slug=cat_obj.slug,
+                                    is_active=cat_obj.is_active
+                                )
+
+                        shop = None
+                        if cart_obj.shop_id:
+                            shop_obj = session.get(Shop, cart_obj.shop_id)
+                            if shop_obj:
+                                shop = ShopForCart(
+                                    id=shop_obj.id,
+                                    name=shop_obj.name,
+                                    slug=shop_obj.slug,
+                                    is_active=shop_obj.is_active
+                                )
+
+                        manufacturer = None
+                        if product.manufacturer_id:
+                            mfr_obj = session.get(Manufacturer, product.manufacturer_id)
+                            if mfr_obj:
+                                manufacturer = ManufacturerForCart(
+                                    id=mfr_obj.id,
+                                    name=mfr_obj.name,
+                                    slug=mfr_obj.slug,
+                                    is_active=mfr_obj.is_active
+                                )
+
+                        all_cart_items.append({
+                            "product_id": cart_obj.product_id,
+                            "shop_id": cart_obj.shop_id,
+                            "quantity": cart_obj.quantity,
+                            "variation_option_id": cart_obj.variation_option_id,
+                            "title": title,
+                            "unit_price": unit_price,
+                            "original_price": original_price,
+                            "discount": discount,
+                            "imageUrl": image_url,
+                            "unit": product.unit,
+                            "category": category,
+                            "shop": shop,
+                            "manufacturer_id": product.manufacturer_id,
+                            "manufacturer": manufacturer
+                        })
+
+        return {"success": 1, "data": all_cart_items}
+    except Exception as e:
+        session.rollback()
+        print(f"Error adding products to cart: {e}")
+        import traceback
+        traceback.print_exc()
+        return api_response(500, f"Failed to add products to cart: {str(e)}")
