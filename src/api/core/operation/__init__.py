@@ -119,7 +119,7 @@ def listop(
     results = total[skip:skip + limit]
 
     print(results)
-    return {"data": results, "total": total_count}
+    return {"data": results, "total": len(results), "totalCount": total_count}
 
 
 def listRecords(
@@ -194,6 +194,7 @@ def listRecords(
             f"data found" if list_data else "No Result found",
             list_data,
             result["total"],
+            result.get("totalCount"),
         )
     except DataError as e:
         # This will catch OFFSET/limit errors and send proper API response

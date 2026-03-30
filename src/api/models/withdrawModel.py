@@ -65,6 +65,7 @@ class ShopEarning(TimeStampedModel, table=True):
     order_product_id: int = Field(foreign_key="order_product.id", index=True)  # ADDED: Link to specific order product
     order_amount: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)
     admin_commission: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)
+    delivery_fee_per_product: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)
     shop_earning: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)
     settled_amount: Decimal = Field(default=Decimal("0.00"), max_digits=12, decimal_places=2)  # Tracks partial settlements
     is_settled: bool = Field(default=False)  # True when settled_amount >= shop_earning
@@ -118,6 +119,7 @@ class ShopEarningRead(TimeStampReadModel):
     order_product_id: int  # ADDED
     order_amount: Decimal
     admin_commission: Decimal
+    delivery_fee_per_product: Decimal = Decimal("0.00")
     shop_earning: Decimal
     settled_amount: Decimal = Decimal("0.00")  # Amount already settled/withdrawn
     remaining_balance: Optional[Decimal] = None  # Computed: shop_earning - settled_amount

@@ -4206,6 +4206,7 @@ def create_shop_earning(session, order: Order):
             order_product_id=order_product.id,  # Link to specific order product
             order_amount=Decimal(str(order_product.subtotal)),
             admin_commission=order_product.admin_commission,
+            delivery_fee_per_product=delivery_fee_per_product,
             shop_earning=shop_earning,
         )
         print(f"earning:{earning}")

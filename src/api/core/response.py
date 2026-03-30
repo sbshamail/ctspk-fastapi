@@ -44,6 +44,7 @@ def api_response(
     detail: str,
     data: Optional[Union[dict, list]] = None,
     total: Optional[int] = None,
+    totalCount: Optional[int] = None,
 ):
 
     # Convert data to JSON-able format
@@ -60,6 +61,8 @@ def api_response(
 
     if total is not None:
         content["total"] = total
+    if totalCount is not None:
+        content["totalCount"] = totalCount
 
     headers = {"X-Content-Type-Options": "nosniff"}
 

@@ -101,6 +101,15 @@ def create_earnings_for_order(session, order: Order, dry_run: bool = True) -> li
         # Calculate shop earning
         shop_earning = calculate_shop_earning_for_product(order, order_product, order_products)
 
+        # Calculate delivery fee per product (need to recalculate here)
+        delivery_fee_per_product = Decimal("0.00")
+        if order.delivery_fee and len(order_products) > 0:
+            total_subtotal = sum(Decimal(str(op.subtotal)) for op in order_products)
+            if total_subtotal > 0:
+                delivery_fee_per_product = Decimal(str(order.delivery_fee)) * (
+                    Decimal(str(order_product.subtotal)) / total_subtotal
+                )
+
         # Create earning record
         earning = ShopEarning(
             shop_id=order_product.shop_id,
@@ -108,6 +117,7 @@ def create_earnings_for_order(session, order: Order, dry_run: bool = True) -> li
             order_product_id=order_product.id,
             order_amount=Decimal(str(order_product.subtotal)),
             admin_commission=order_product.admin_commission,
+            delivery_fee_per_product=delivery_fee_per_product,
             shop_earning=shop_earning,
             is_settled=False,
             settled_at=None
@@ -122,6 +132,7 @@ def create_earnings_for_order(session, order: Order, dry_run: bool = True) -> li
             'shop_id': order_product.shop_id,
             'order_amount': order_product.subtotal,
             'admin_commission': order_product.admin_commission,
+            'delivery_fee_per_product': delivery_fee_per_product,
             'shop_earning': shop_earning
         })
 
