@@ -31,6 +31,7 @@ class ProductReadForWishlist(SQLModel):
     price: Optional[float] = None
     sale_price: Optional[float] = None
     image: Optional[Dict[str, Any]] = None
+    quantity: Optional[int] = None
     in_stock: bool = True
     shop_id: int
     slug: str
