@@ -103,6 +103,7 @@ def read_wishlist_item(id: int, session: GetSession, user:requireSignin):
             price=product.price,
             sale_price=product.sale_price,
             image=product.image,
+            quantity=product.quantity,
             in_stock=product.in_stock,
             slug=product.slug
         )
@@ -343,6 +344,7 @@ def check_in_wishlist(
                 price=product.price,
                 sale_price=product.sale_price,
                 image=product.image,
+                quantity=product.quantity,
                 in_stock=product.in_stock,
                 slug=product.slug
             )
@@ -361,6 +363,7 @@ def check_in_wishlist(
                 price=product.price,
                 sale_price=product.sale_price,
                 image=product.image,
+                quantity=product.quantity,
                 in_stock=product.in_stock,
                 slug=product.slug
             )
