@@ -45,8 +45,9 @@ def _exec(session, statement, Model):
     else:
         # Fallback: try scalars (for select(Category))
         try:
-            return result.scalars().all()
-        except Exception:
+            scalar_result = result.scalars().all()
+            return scalar_result
+        except Exception as e:
             return result.all()
 
 
@@ -117,6 +118,13 @@ def listop(
 
     # Apply pagination on deduplicated results
     results = total[skip:skip + limit]
+
+    # Debug output to see result types
+    if results and len(results) > 0:
+        first_item = results[0]
+        print(f"DEBUG listop results: type={type(first_item)}, Model={Model.__name__}")
+        if hasattr(first_item, '__class__'):
+            print(f"DEBUG result class name: {first_item.__class__.__name__}")
 
     print(results)
     return {"data": results, "total": len(results), "totalCount": total_count}

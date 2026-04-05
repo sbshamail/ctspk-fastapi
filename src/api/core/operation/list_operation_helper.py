@@ -1,13 +1,11 @@
 import ast
-from src.api.core.utility import now_pk
+from src.api.core.utility import now_pk, parse_date
 import json
 from typing import List, Optional
 from fastapi import HTTPException
 from sqlmodel import SQLModel, and_, asc, desc, func, or_
 from sqlmodel.sql.expression import Select, SelectOfScalar
 
-from src.api.core.response import api_response
-from src.api.core.utility import parse_date
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import sqltypes as SATypes
 
@@ -15,8 +13,11 @@ from sqlalchemy.sql import sqltypes as SATypes
 def _get_column_type(attr):
     # attr is InstrumentedAttribute of a column
     try:
-        return attr.property.columns[0].type
-    except Exception:
+        col_type = attr.property.columns[0].type
+        print(f"🔧 _get_column_type: {attr.key} -> {col_type} (type: {type(col_type)})")
+        return col_type
+    except Exception as e:
+        print(f"🔧 _get_column_type error: {e}")
         return None  # relationship or something unexpected
 
 
@@ -42,8 +43,27 @@ def _is_datetime_type(t):
     return isinstance(t, SATypes.DateTime)
 
 
+def _is_enum_type(t):
+    return isinstance(t, SATypes.Enum)
+
+
+def _coerce_enum_value(col_type, value, col_name: str):
+    if isinstance(value, str):
+        enum_values = [e.value if hasattr(e, 'value') else e for e in col_type.enum_class]
+        if value.upper() in enum_values:
+            return value.upper()
+        raise HTTPException(
+            400,
+            f"Column '{col_name}' expects one of {enum_values}; got '{value}'.",
+        )
+    return value
+
+
 def _coerce_value_for_column(col_type, value, col_name: str):
     """Coerce incoming value (possibly a string) to a Python value compatible with the column type."""
+    if value in ("NULL", "NOT_NULL"):
+        return value
+
     if col_type is None:
         # Fallback – treat as string
         return value
@@ -59,11 +79,11 @@ def _coerce_value_for_column(col_type, value, col_name: str):
                 else:
                     return float(v)
             except ValueError:
-                raise api_response(
+                raise HTTPException(
                     400,
                     f"Column '{col_name}' expects a number; got '{value}'.",
                 )
-        raise api_response(400, f"Column '{col_name}' expects a number.")
+        raise HTTPException(400, f"Column '{col_name}' expects a number.")
     elif _is_bool_type(col_type):
         if isinstance(value, bool):
             return value
@@ -73,12 +93,12 @@ def _coerce_value_for_column(col_type, value, col_name: str):
                 return True
             if v in ("false", "0", "no"):
                 return False
-        raise api_response(400, f"Column '{col_name}' expects a boolean.")
+        raise HTTPException(400, f"Column '{col_name}' expects a boolean.")
     elif _is_datetime_type(col_type):
         if isinstance(value, str):
             # reuse your existing parse_date
             return parse_date(value)
-        raise api_response(400, f"Column '{col_name}' expects a datetime string.")
+        raise HTTPException(400, f"Column '{col_name}' expects a datetime string.")
     else:
         # string-like or other -> ensure string
         return str(value) if not isinstance(value, str) else value
@@ -98,7 +118,14 @@ def resolve_column(Model, col: str, statement, joined=None):  # nested object fi
     attr = None
 
     for i, part in enumerate(parts):  # enumerate = index + value in one go
-        mapper_attr = getattr(current_model, part)
+        try:
+            mapper_attr = getattr(current_model, part)
+        except AttributeError:
+            available = [a for a in dir(current_model) if not a.startswith('_')]
+            raise AttributeError(
+                f"Column '{part}' not found in {current_model.__name__}. "
+                f"Available columns: {available}"
+            )
 
         if hasattr(mapper_attr, "property") and hasattr(mapper_attr.property, "mapper"):
             # It's a relationship -> join it only if not already joined
@@ -213,6 +240,8 @@ def object_array_filter(statement: Select, Model, parsed_filters, joined=None):
 
         try:
             attr, statement = resolve_column(Model, col_name, statement, joined)
+            if attr is None:
+                continue
         except Exception:
             continue
 
@@ -327,7 +356,10 @@ def applyFilters(
     # Column-specific search
     if columnFilters:
         try:
-            parsed_terms = ast.literal_eval(columnFilters)
+            if isinstance(columnFilters, str):
+                parsed_terms = ast.literal_eval(columnFilters)
+            else:
+                parsed_terms = columnFilters
             columnFilters = [tuple(sublist) for sublist in parsed_terms]
 
             # Group filters by column name
@@ -339,15 +371,32 @@ def applyFilters(
             for col, values in grouped.items():
                 attr, statement = resolve_column(Model, col, statement, joined)
                 col_type = _get_column_type(attr)
+                print(f"🔧 columnFilters: col={col}, col_type={col_type}")
 
-                coerced_values = [
-                    _coerce_value_for_column(col_type, v, col) for v in values
-                ]
+                coerced_values = []
+                for v in values:
+                    if isinstance(v, list):
+                        coerced_values.append([_coerce_value_for_column(col_type, item, col) for item in v])
+                    else:
+                        coerced_values.append(_coerce_value_for_column(col_type, v, col))
 
                 # If multiple values → OR
                 ors = []
                 for v in coerced_values:
-                    if isinstance(v, str):
+                    if isinstance(v, list):
+                        # Empty list -> no matches possible
+                        if not v:
+                            import sqlalchemy
+                            ors.append(sqlalchemy.sql.false())
+                        else:
+                            ors.append(attr.in_(v))
+                    elif _is_enum_type(col_type):
+                        ors.append(attr == v)
+                    elif v == "NULL":
+                        ors.append(attr.is_(None))
+                    elif v == "NOT_NULL":
+                        ors.append(attr.isnot(None))
+                    elif isinstance(v, str):
                         ors.append(attr.ilike(f"%{v}%"))
                     else:
                         ors.append(attr == v)
@@ -356,10 +405,7 @@ def applyFilters(
             statement = statement.where(and_(*filters))
 
         except Exception as e:
-            return api_response(
-                400,
-                f" {e}",
-            )
+            raise e
 
     if customFilters:
         print(f"🔧 applyFilters: customFilters = {customFilters}")
@@ -370,10 +416,21 @@ def applyFilters(
             # optional handling formats
             col_type = _get_column_type(attr)
             print(f"🔧 Column type for {col}: {col_type}")
+            
+            # Handle None value for IS NULL check
+            if value is None:
+                filters.append(attr.is_(None))
+                print(f"🔧 Using IS NULL for {col}")
+                continue
+            
             value = _coerce_value_for_column(col_type, value, col)
             print(f"🔧 After coercion: value={value}, type={type(value)}")
 
-            if isinstance(value, str):
+            if _is_enum_type(col_type):
+                print(f"🔧 Using == for enum {col}")
+                coerced_value = _coerce_enum_value(col_type, value, col)
+                filters.append(attr == coerced_value)
+            elif isinstance(value, str):
                 print(f"🔧 Using ILIKE for {col}")
                 filters.append(attr.ilike(f"%{value}%"))
             else:
@@ -471,10 +528,7 @@ def applyFilters(
             elif direction.lower() == "desc":
                 statement = statement.order_by(desc(order_expr))
         except Exception as e:
-            return api_response(
-                400,
-                f"Invalid sort parameter: {e}",
-            )
+            raise e
 
     # Add secondary sort by id for deterministic pagination
     if hasattr(Model, 'id'):
@@ -491,19 +545,20 @@ def applyFilters(
                 )
                 statement = string_array_filter(statement, Model, parsed, joined)
             except Exception as e:
-                return api_response(400, f"stringArrayFilter parse error: {e}")
+                raise e
     if objectArrayFilters:
         object_array_raw = objectArrayFilters
 
         if object_array_raw:
             try:
-                parsed = (
-                    ast.literal_eval(object_array_raw)
-                    if isinstance(object_array_raw, str)
-                    else object_array_raw
-                )
+                # Handle JSON with null values - replace null with None before parsing
+                if isinstance(object_array_raw, str):
+                    object_array_raw = object_array_raw.replace('null', 'None')
+                    parsed = ast.literal_eval(object_array_raw)
+                else:
+                    parsed = object_array_raw
                 statement = object_array_filter(statement, Model, parsed, joined)
             except Exception as e:
-                return api_response(400, f"objectArrayFilter parse error: {e}")
+                raise e
 
     return statement

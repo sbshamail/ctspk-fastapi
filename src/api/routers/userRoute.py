@@ -372,6 +372,10 @@ def list_users(
     role_ids: Optional[List[int]] = Query(None, description="Filter by allowed role IDs (include users with these roles)"),
     exclude_role_ids: Optional[List[int]] = Query(None, description="Filter by excluded role IDs (exclude users with these roles)"),
     customer: Optional[bool] = Query(None, description="If true, show only users without any roles (customers)"),
+    is_active: Optional[bool] = Query(None, description="Filter by user active status"),
+    email_verified: Optional[bool] = Query(None, description="Filter by email verified status (true = email_verified_at is set, false = email_verified_at is null)"),
+    phone_verified: Optional[bool] = Query(None, description="Filter by phone verified status (true = phone_verified_at is set, false = phone_verified_at is null)"),
+    has_shops: Optional[bool] = Query(None, description="Filter users by whether they own a shop"),
     page: int = None,
     skip: int = 0,
     limit: int = Query(10, ge=1, le=200),
@@ -389,9 +393,42 @@ def list_users(
     - /user/list?role_ids=1&role_ids=2&exclude_role_ids=3 - Get users with role 1 or 2, but NOT role 3
     - /user/list?customer=true - Get users without any roles (customers only)
     """
+
+    import ast
+    parsed_cf = []
+    if columnFilters:
+        if isinstance(columnFilters, str):
+            try:
+                parsed_cf = ast.literal_eval(columnFilters)
+            except Exception:
+                parsed_cf = []
+        elif isinstance(columnFilters, list):
+            parsed_cf = columnFilters.copy()
+
+    if is_active is not None:
+        parsed_cf.append(["is_active", is_active])
+
+    # Handle email_verified filter - filter by email_verified_at column
+    if email_verified is not None:
+        if email_verified:
+            # Only users with email_verified_at NOT NULL
+            parsed_cf.append(["email_verified_at", "NOT_NULL"])
+        else:
+            # Only users with email_verified_at IS NULL
+            parsed_cf.append(["email_verified_at", "NULL"])
+
+    # Handle phone_verified filter - filter by phone_verified_at column
+    if phone_verified is not None:
+        if phone_verified:
+            # Only users with phone_verified_at NOT NULL
+            parsed_cf.append(["phone_verified_at", "NOT_NULL"])
+        else:
+            # Only users with phone_verified_at IS NULL
+            parsed_cf.append(["phone_verified_at", "NULL"])
+
     filters = {
         "searchTerm": searchTerm,
-        "columnFilters": columnFilters,
+        "columnFilters": parsed_cf,
         "dateRange": dateRange,
         "numberRange": numberRange,
     }
@@ -416,16 +453,23 @@ def list_users(
     users_with_roles = [row[0] for row in session.execute(users_with_roles_query).fetchall()]
 
     # Handle customer filter - show only users without any roles
-    if customer is True:
-        # Get all users and exclude those with roles
-        all_users_query = sa_select(distinct(User.id))
-        all_user_ids = [row[0] for row in session.execute(all_users_query).fetchall()]
-        customer_user_ids = [uid for uid in all_user_ids if uid not in users_with_roles]
+    if customer is not None:
+        if customer:
+            # Get all users and exclude those with roles
+            all_users_query = sa_select(distinct(User.id))
+            all_user_ids = [row[0] for row in session.execute(all_users_query).fetchall()]
+            customer_user_ids = [uid for uid in all_user_ids if uid not in users_with_roles]
 
-        if not customer_user_ids:
-            return api_response(404, "No customers found")
+            if not customer_user_ids:
+                return api_response(404, "No customers found")
 
-        base_statement = sm_select(User).where(User.id.in_(customer_user_ids))
+            base_statement = sm_select(User).where(User.id.in_(customer_user_ids))
+        else:
+            # Show only users with roles
+            if not users_with_roles:
+                return api_response(404, "No users with roles found")
+
+            base_statement = sm_select(User).where(User.id.in_(users_with_roles))
 
     # Handle role_ids and exclude_role_ids filtering
     elif role_ids or exclude_role_ids or role:
@@ -461,6 +505,22 @@ def list_users(
 
         # Create base statement with user ID filter using IN clause
         base_statement = sm_select(User).where(User.id.in_(final_user_ids))
+
+    # Handle has_shops filter
+    if has_shops is not None:
+        if base_statement is None:
+            base_statement = sm_select(User)
+            
+        shop_owners_query = sa_select(distinct(Shop.owner_id)).where(Shop.owner_id.isnot(None))
+        shop_owner_ids = [row[0] for row in session.execute(shop_owners_query).fetchall()]
+        
+        if has_shops:
+            if not shop_owner_ids:
+                return api_response(404, "No users with shops found")
+            base_statement = base_statement.where(User.id.in_(shop_owner_ids))
+        else:
+            if shop_owner_ids:
+                base_statement = base_statement.where(User.id.notin_(shop_owner_ids))
 
     result = listop(
         session=session,

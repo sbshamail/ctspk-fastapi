@@ -2671,9 +2671,21 @@ def get_product_inventory(
         if filter_shop_ids is not None:
             query = query.where(Product.shop_id.in_(filter_shop_ids))
 
-        # Apply filters
+        # Apply filters - category with subcategories (like /products/related/{category_id})
         if category_id is not None:
-            query = query.where(Product.category_id == category_id)
+            # Get all descendant category IDs (children and grandchildren)
+            descendants = session.exec(
+                select(Category.id).where(
+                    or_(
+                        Category.parent_id == category_id,  # Direct children
+                        Category.parent_id.in_(
+                            select(Category.id).where(Category.parent_id == category_id)
+                        )  # Grandchildren
+                    )
+                )
+            ).all()
+            category_ids = [category_id] + [d for d in descendants]
+            query = query.where(Product.category_id.in_(category_ids))
 
         if manufacturer_id is not None:
             query = query.where(Product.manufacturer_id == manufacturer_id)

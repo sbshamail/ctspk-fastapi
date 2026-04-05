@@ -34,6 +34,7 @@ class User(TimeStampedModel, table=True):
     phone_no: str = Field(max_length=30)
     is_root: bool = Field(default=False)
     email_verified_at: Optional[datetime.datetime] = None
+    phone_verified_at: Optional[datetime.datetime] = None
     password: Optional[str] = None
     remember_token: Optional[str] = Field(default=None, max_length=100)
     is_active: bool = Field(default=True)

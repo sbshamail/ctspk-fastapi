@@ -414,30 +414,32 @@ class OrderRead(TimeStampReadModel):
     language: str
     coupon_id: Optional[int] = None
     discount: Optional[float] = None
-    coupon_discount: Optional[float] = None  # NEW: Coupon discount field
-    wallet_amount_used: Optional[float] = None  # Wallet amount used for this order
+    coupon_discount: Optional[float] = None
+    wallet_amount_used: Optional[float] = None
     payment_gateway: Optional[str] = None
     shipping_address: Optional[Dict[str, Any]] = None
     billing_address: Optional[Dict[str, Any]] = None
     logistics_provider: Optional[int] = None
     delivery_fee: Optional[float] = None
-    original_delivery_fee: Optional[float] = None  # Original shipping before free shipping discount
-    free_shipping_source: Optional[str] = None  # FreeShippingSource: none, coupon, settings
+    original_delivery_fee: Optional[float] = None
+    free_shipping_source: Optional[str] = None
     delivery_time: Optional[str] = None
-    # NEW: Added tax and shipping fields
     tax_id: Optional[int] = None
     shipping_id: Optional[int] = None
     order_status: OrderStatusEnum
     payment_status: PaymentStatusEnum
     fullfillment_id: Optional[int] = None
     assign_date: Optional[datetime] = None
-    fullfillment_user_info: Optional[FulfillmentUserInfo] = None  # NEW: Fulfillment user info
+    fullfillment_user_info: Optional[FulfillmentUserInfo] = None
     shops: Optional[List[Dict[str, Any]]] = None
     shop_count: Optional[int] = None
     deliver_image: Optional[List[Dict[str, Any]]] = None
     completed_image: Optional[List[Dict[str, Any]]] = None
     order_review_id:  Optional[int] = None
     payment_response: Optional[Dict[str, Any]] = None
+    total_balance: Decimal = Decimal("0.00")
+    product_count: int = 0
+    order_count: int = 0
 
 
 class OrderStatusRead(TimeStampReadModel):

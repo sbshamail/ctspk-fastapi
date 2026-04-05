@@ -80,6 +80,42 @@ def generate_tracking_number():
     now = now_pk()
     return f"GTISB-{now:%Y-%m-%d}-{uuid.uuid4().hex[:8].upper()}"
 
+
+def extract_custom_order_filters(columnFilters_str: Optional[str], objectArrayFilters_str: Optional[str], current_shop_id: Optional[int]):
+    extracted_shop_id = current_shop_id
+    fulfillment_filter = None
+
+    parsed_cf = []
+    if columnFilters_str:
+        import ast
+        try:
+            parsed = ast.literal_eval(columnFilters_str) if isinstance(columnFilters_str, str) else columnFilters_str
+            for f in parsed:
+                if isinstance(f, list) and len(f) >= 2 and f[0] == "fulfillment_assigned":
+                    fulfillment_filter = f[1]
+                else:
+                    parsed_cf.append(f)
+        except Exception:
+            parsed_cf = []
+
+    parsed_oaf = []
+    if objectArrayFilters_str:
+        import ast
+        try:
+            parsed = ast.literal_eval(objectArrayFilters_str) if isinstance(objectArrayFilters_str, str) else objectArrayFilters_str
+            for f in parsed:
+                if isinstance(f, list) and len(f) >= 3 and f[0] == "shops":
+                    for item in f[1:]:
+                        if isinstance(item, list) and len(item) == 2 and item[0] == "id":
+                            extracted_shop_id = int(item[1])
+                else:
+                    parsed_oaf.append(f)
+        except Exception:
+            parsed_oaf = []
+
+    return parsed_cf, parsed_oaf, extracted_shop_id, fulfillment_filter
+
+
 def save_default_addresses_from_order(
     session,
     customer_id: Optional[int],
@@ -2450,48 +2486,55 @@ def list_orders(
     page: int = None,
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
+    objectArrayFilters: Optional[str] = Query(None),
 ):
+    parsed_cf, parsed_oaf, shop_id, fulfillment_filter = extract_custom_order_filters(
+        columnFilters, objectArrayFilters, shop_id
+    )
+
     customFilters = [["customer_id", user.get("id")]]
 
     filters = {
         "searchTerm": searchTerm,
-        "columnFilters": columnFilters,
+        "columnFilters": parsed_cf,
         "dateRange": dateRange,
         "numberRange": numberRange,
         "customFilters": customFilters,
+        "objectArrayFilters": parsed_oaf,
     }
 
     searchFields = ["tracking_number", "customer_contact", "customer_name"]
 
     # Add status filters
     if order_status:
-        if "columnFilters" not in filters or not filters["columnFilters"]:
-            filters["columnFilters"] = []
         filters["columnFilters"].append(["order_status", order_status.value])
 
     if payment_status:
-        if "columnFilters" not in filters or not filters["columnFilters"]:
-            filters["columnFilters"] = []
         filters["columnFilters"].append(["payment_status", payment_status.value])
 
     # Handle shop filtering - we need to filter orders that have products from this shop
     if shop_id or shop_s_active is not None:
-        stmt = select(OrderProduct.order_id)
+        shop_stmt = select(OrderProduct.order_id)
         if shop_id:
-            stmt = stmt.where(OrderProduct.shop_id == shop_id)
+            shop_stmt = shop_stmt.where(OrderProduct.shop_id == shop_id)
         if shop_s_active is not None:
-            stmt = stmt.join(Shop, OrderProduct.shop_id == Shop.id).where(Shop.is_active == shop_s_active)
+            shop_stmt = shop_stmt.join(Shop, OrderProduct.shop_id == Shop.id).where(Shop.is_active == shop_s_active)
             
-        order_ids_with_shop = session.exec(stmt.distinct()).all()
+        order_ids_with_shop = session.execute(shop_stmt.distinct()).scalars().all()
 
         if not order_ids_with_shop:
             return api_response(404, "No orders found for this shop criteria")
 
-        if "columnFilters" not in filters or not filters["columnFilters"]:
-            filters["columnFilters"] = []
         filters["columnFilters"].append(
             ["id", [str(oid) for oid in order_ids_with_shop]]
         )
+
+    # Base statement for order fulfillment checks
+    stmt = select(Order)
+    if fulfillment_filter == "assigned":
+        stmt = stmt.where(Order.fullfillment_id > 0)
+    elif fulfillment_filter == "not_assigned":
+        stmt = stmt.where((Order.fullfillment_id == 0) | (Order.fullfillment_id.is_(None)))
 
     result = listop(
         session=session,
@@ -2502,6 +2545,8 @@ def list_orders(
         page=page,
         limit=limit,
         sort=sort,
+        Statement=stmt,
+        join_options=[selectinload(Order.order_products)],
     )
 
     if not result["data"]:
@@ -2541,13 +2586,37 @@ def list_orders(
             # Add fulfillment user info if fullfillment_id > 0
             order_data = add_fulfillment_user_info(order_data, order, session)
 
+            # Get balance (from shop_earnings for each shop in this order)
+            total_balance = Decimal("0.00")
+            for s_id in shops:
+                balance_stmt = select(
+                    func.coalesce(func.sum(ShopEarning.shop_earning), 0) - func.coalesce(func.sum(ShopEarning.settled_amount), 0)
+                ).where(ShopEarning.shop_id == s_id)
+                balance_result = session.exec(balance_stmt).scalar()
+                if balance_result is not None and balance_result != 0:
+                    try:
+                        total_balance += Decimal(str(balance_result))
+                    except:
+                        total_balance += Decimal("0.00")
+            order_data.total_balance = total_balance
+
+            # Get product count for this order
+            product_count_stmt = select(func.count(OrderProduct.id)).where(OrderProduct.order_id == order.id)
+            product_count = session.exec(product_count_stmt).scalar() or 0
+            order_data.product_count = product_count
+
+            # Get total order count for customer
+            order_count_stmt = select(func.count(Order.id)).where(Order.customer_id == order.customer_id)
+            order_count = session.exec(order_count_stmt).scalar() or 0
+            order_data.order_count = order_count
+
             enhanced_orders.append(order_data)
         except Exception as e:
-            # Log the problematic order but continue processing others
             Print(f"Error processing order {order.id if order else 'unknown'}: {str(e)}")
-            continue  # Skip this order
+            continue
     
-    return api_response(200, "Orders found", enhanced_orders, result["total"])
+    return api_response(200, "Orders found", enhanced_orders, result["total"], result.get("totalCount"))
+
 @router.get(
     "/my-orders",
     response_model=list[OrderReadNested],
@@ -2567,48 +2636,55 @@ def list_orders(
     page: int = None,
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
+    objectArrayFilters: Optional[str] = Query(None),
 ):
+    parsed_cf, parsed_oaf, shop_id, fulfillment_filter = extract_custom_order_filters(
+        columnFilters, objectArrayFilters, shop_id
+    )
+
     customFilters = [["customer_id", user.get("id")]]
 
     filters = {
         "searchTerm": searchTerm,
-        "columnFilters": columnFilters,
+        "columnFilters": parsed_cf,
         "dateRange": dateRange,
         "numberRange": numberRange,
         "customFilters": customFilters,
+        "objectArrayFilters": parsed_oaf,
     }
 
     searchFields = ["tracking_number", "customer_contact", "customer_name"]
 
     # Add status filters
     if order_status:
-        if "columnFilters" not in filters or not filters["columnFilters"]:
-            filters["columnFilters"] = []
         filters["columnFilters"].append(["order_status", order_status.value])
 
     if payment_status:
-        if "columnFilters" not in filters or not filters["columnFilters"]:
-            filters["columnFilters"] = []
         filters["columnFilters"].append(["payment_status", payment_status.value])
 
     # Handle shop filtering - we need to filter orders that have products from this shop
     if shop_id or shop_s_active is not None:
-        stmt = select(OrderProduct.order_id)
+        shop_stmt = select(OrderProduct.order_id)
         if shop_id:
-            stmt = stmt.where(OrderProduct.shop_id == shop_id)
+            shop_stmt = shop_stmt.where(OrderProduct.shop_id == shop_id)
         if shop_s_active is not None:
-            stmt = stmt.join(Shop, OrderProduct.shop_id == Shop.id).where(Shop.is_active == shop_s_active)
+            shop_stmt = shop_stmt.join(Shop, OrderProduct.shop_id == Shop.id).where(Shop.is_active == shop_s_active)
             
-        order_ids_with_shop = session.exec(stmt.distinct()).all()
+        order_ids_with_shop = session.execute(shop_stmt.distinct()).scalars().all()
 
         if not order_ids_with_shop:
             return api_response(404, "No orders found for this shop criteria")
 
-        if "columnFilters" not in filters or not filters["columnFilters"]:
-            filters["columnFilters"] = []
         filters["columnFilters"].append(
             ["id", [str(oid) for oid in order_ids_with_shop]]
         )
+
+    # Base statement for order fulfillment checks
+    stmt = select(Order)
+    if fulfillment_filter == "assigned":
+        stmt = stmt.where(Order.fullfillment_id > 0)
+    elif fulfillment_filter == "not_assigned":
+        stmt = stmt.where((Order.fullfillment_id == 0) | (Order.fullfillment_id.is_(None)))
 
     result = listop(
         session=session,
@@ -2619,6 +2695,8 @@ def list_orders(
         page=page,
         limit=limit,
         sort=sort,
+        Statement=stmt,
+        join_options=[selectinload(Order.order_products)],
     )
 
     if not result["data"]:
@@ -2658,13 +2736,36 @@ def list_orders(
             # Add fulfillment user info if fullfillment_id > 0
             order_data = add_fulfillment_user_info(order_data, order, session)
 
+            # Get balance (from shop_earnings for each shop in this order)
+            total_balance = Decimal("0.00")
+            for s_id in shops:
+                balance_stmt = select(
+                    func.coalesce(func.sum(ShopEarning.shop_earning), 0) - func.coalesce(func.sum(ShopEarning.settled_amount), 0)
+                ).where(ShopEarning.shop_id == s_id)
+                balance_result = session.exec(balance_stmt).scalar()
+                if balance_result is not None:
+                    try:
+                        total_balance += Decimal(str(balance_result))
+                    except:
+                        pass
+            order_data.total_balance = total_balance
+
+            # Get product count for this order
+            product_count_stmt = select(func.count(OrderProduct.id)).where(OrderProduct.order_id == order.id)
+            product_count = session.exec(product_count_stmt).scalar() or 0
+            order_data.product_count = product_count
+
+            # Get total order count for customer
+            order_count_stmt = select(func.count(Order.id)).where(Order.customer_id == order.customer_id)
+            order_count = session.exec(order_count_stmt).scalar() or 0
+            order_data.order_count = order_count
+
             enhanced_orders.append(order_data)
         except Exception as e:
-            # Log the problematic order but continue processing others
             Print(f"Error processing order {order.id if order else 'unknown'}: {str(e)}")
-            continue  # Skip this order
+            continue
     
-    return api_response(200, "Orders found", enhanced_orders, result["total"])
+    return api_response(200, "Orders found", enhanced_orders, result["total"], result.get("totalCount"))
 
 @router.get(
     "/listorder",
@@ -2685,48 +2786,56 @@ def list_all_orders(
     page: int = None,
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
+    objectArrayFilters: Optional[str] = Query(None),
 ):
    # customFilters = [["customer_id", user.get("id")]]
     print(f"user:{user}")
+
+    parsed_cf, parsed_oaf, shop_id, fulfillment_filter = extract_custom_order_filters(
+        columnFilters, objectArrayFilters, shop_id
+    )
+
     filters = {
         "searchTerm": searchTerm,
-        "columnFilters": columnFilters,
+        "columnFilters": parsed_cf,
         "dateRange": dateRange,
         "numberRange": numberRange,
        # "customFilters": customFilters,
+        "objectArrayFilters": parsed_oaf,
     }
 
     searchFields = ["tracking_number", "customer_contact", "customer_name"]
 
     # Add status filters
     if order_status:
-        if "columnFilters" not in filters or not filters["columnFilters"]:
-            filters["columnFilters"] = []
         filters["columnFilters"].append(["order_status", order_status.value])
 
     if payment_status:
-        if "columnFilters" not in filters or not filters["columnFilters"]:
-            filters["columnFilters"] = []
         filters["columnFilters"].append(["payment_status", payment_status.value])
 
     # Handle shop filtering - we need to filter orders that have products from this shop
     if shop_id or shop_s_active is not None:
-        stmt = select(OrderProduct.order_id)
+        shop_stmt = select(OrderProduct.order_id)
         if shop_id:
-            stmt = stmt.where(OrderProduct.shop_id == shop_id)
+            shop_stmt = shop_stmt.where(OrderProduct.shop_id == shop_id)
         if shop_s_active is not None:
-            stmt = stmt.join(Shop, OrderProduct.shop_id == Shop.id).where(Shop.is_active == shop_s_active)
+            shop_stmt = shop_stmt.join(Shop, OrderProduct.shop_id == Shop.id).where(Shop.is_active == shop_s_active)
             
-        order_ids_with_shop = session.exec(stmt.distinct()).all()
+        order_ids_with_shop = session.execute(shop_stmt.distinct()).scalars().all()
 
         if not order_ids_with_shop:
             return api_response(404, "No orders found for this shop criteria")
 
-        if "columnFilters" not in filters or not filters["columnFilters"]:
-            filters["columnFilters"] = []
         filters["columnFilters"].append(
             ["id", [str(oid) for oid in order_ids_with_shop]]
         )
+
+    # Base statement for order fulfillment checks
+    stmt = select(Order)
+    if fulfillment_filter == "assigned":
+        stmt = stmt.where(Order.fullfillment_id > 0)
+    elif fulfillment_filter == "not_assigned":
+        stmt = stmt.where((Order.fullfillment_id == 0) | (Order.fullfillment_id.is_(None)))
 
     result = listop(
         session=session,
@@ -2737,7 +2846,13 @@ def list_all_orders(
         page=page,
         limit=limit,
         sort=sort,
+        Statement=stmt,
+        join_options=[selectinload(Order.order_products)],
     )
+
+    # Debug: Print the type of first result
+    if result["data"] and len(result["data"]) > 0:
+        print(f"DEBUG list_all_orders: first item type = {type(result['data'][0])}")
 
     if not result["data"]:
         return api_response(404, "No orders found")
@@ -2773,9 +2888,33 @@ def list_all_orders(
         # Add fulfillment user info if fullfillment_id > 0
         order_data = add_fulfillment_user_info(order_data, order, session)
 
+        # Get balance (from shop_earnings for each shop in this order)
+        total_balance = Decimal("0.00")
+        for s_id in shops:
+            balance_stmt = select(
+                func.coalesce(func.sum(ShopEarning.shop_earning), 0) - func.coalesce(func.sum(ShopEarning.settled_amount), 0)
+            ).where(ShopEarning.shop_id == s_id)
+            balance_result = session.exec(balance_stmt).scalar()
+            if balance_result is not None and balance_result != 0:
+                try:
+                    total_balance += Decimal(str(balance_result))
+                except:
+                    total_balance += Decimal("0.00")
+        order_data.total_balance = total_balance
+
+        # Get product count for this order
+        product_count_stmt = select(func.count(OrderProduct.id)).where(OrderProduct.order_id == order.id)
+        product_count = session.exec(product_count_stmt).scalar() or 0
+        order_data.product_count = product_count
+
+        # Get total order count for customer
+        order_count_stmt = select(func.count(Order.id)).where(Order.customer_id == order.customer_id)
+        order_count = session.exec(order_count_stmt).scalar() or 0
+        order_data.order_count = order_count
+
         enhanced_orders.append(order_data)
 
-    return api_response(200, "Orders found", enhanced_orders, result["total"])
+    return api_response(200, "Orders found", enhanced_orders, result["total"], result.get("totalCount"))
 
 @router.get(
     "/shoporders",
@@ -2796,28 +2935,30 @@ def list_all_orders(
     page: int = None,
     skip: int = 0,
     limit: int = Query(200, ge=1, le=200),
+    objectArrayFilters: Optional[str] = Query(None),
 ):
     user_id = user.get("id")
     is_root = user.get("is_root", False)
 
+    parsed_cf, parsed_oaf, shop_id, fulfillment_filter = extract_custom_order_filters(
+        columnFilters, objectArrayFilters, shop_id
+    )
+
     filters = {
         "searchTerm": searchTerm,
-        "columnFilters": columnFilters,
+        "columnFilters": parsed_cf,
         "dateRange": dateRange,
         "numberRange": numberRange,
+        "objectArrayFilters": parsed_oaf,
     }
 
     searchFields = ["tracking_number", "customer_contact", "customer_name"]
 
     # Add status filters
     if order_status:
-        if "columnFilters" not in filters or not filters["columnFilters"]:
-            filters["columnFilters"] = []
         filters["columnFilters"].append(["order_status", order_status.value])
 
     if payment_status:
-        if "columnFilters" not in filters or not filters["columnFilters"]:
-            filters["columnFilters"] = []
         filters["columnFilters"].append(["payment_status", payment_status.value])
 
     # Track order IDs to filter by (for non-root users or shop filtering)
@@ -2845,13 +2986,13 @@ def list_all_orders(
 
     # Handle additional shop filtering if shop_id or shop_s_active is provided
     if shop_id or shop_s_active is not None:
-        stmt = select(OrderProduct.order_id)
+        shop_stmt = select(OrderProduct.order_id)
         if shop_id:
-            stmt = stmt.where(OrderProduct.shop_id == shop_id)
+            shop_stmt = shop_stmt.where(OrderProduct.shop_id == shop_id)
         if shop_s_active is not None:
-            stmt = stmt.join(Shop, OrderProduct.shop_id == Shop.id).where(Shop.is_active == shop_s_active)
+            shop_stmt = shop_stmt.join(Shop, OrderProduct.shop_id == Shop.id).where(Shop.is_active == shop_s_active)
             
-        order_ids_with_shop = session.execute(stmt.distinct()).scalars().all()
+        order_ids_with_shop = session.execute(shop_stmt.distinct()).scalars().all()
 
         if not order_ids_with_shop:
             return api_response(404, "No orders found for this shop criteria")
@@ -2863,10 +3004,17 @@ def list_all_orders(
             filter_order_ids = order_ids_with_shop
 
     # Build otherFilters function if we have order IDs to filter
-    def order_id_filter(stmt, m):
+    def order_id_filter(query_stmt, m):
         if filter_order_ids is not None:
-            return stmt.where(m.id.in_(filter_order_ids))
-        return stmt
+            return query_stmt.where(m.id.in_(filter_order_ids))
+        return query_stmt
+
+    # Base statement for order fulfillment checks
+    stmt = select(Order)
+    if fulfillment_filter == "assigned":
+        stmt = stmt.where(Order.fullfillment_id > 0)
+    elif fulfillment_filter == "not_assigned":
+        stmt = stmt.where((Order.fullfillment_id == 0) | (Order.fullfillment_id.is_(None)))
 
     result = listop(
         session=session,
@@ -2877,7 +3025,9 @@ def list_all_orders(
         page=page,
         limit=limit,
         sort=sort,
+        Statement=stmt,
         otherFilters=order_id_filter if filter_order_ids else None,
+        join_options=[selectinload(Order.order_products)],
     )
 
     if not result["data"]:
@@ -2914,9 +3064,33 @@ def list_all_orders(
         # Add fulfillment user info if fullfillment_id > 0
         order_data = add_fulfillment_user_info(order_data, order, session)
 
+        # Get balance (from shop_earnings for each shop in this order)
+        total_balance = Decimal("0.00")
+        for s_id in shops:
+            balance_stmt = select(
+                func.coalesce(func.sum(ShopEarning.shop_earning), 0) - func.coalesce(func.sum(ShopEarning.settled_amount), 0)
+            ).where(ShopEarning.shop_id == s_id)
+            balance_result = session.exec(balance_stmt).scalar()
+            if balance_result is not None and balance_result != 0:
+                try:
+                    total_balance += Decimal(str(balance_result))
+                except:
+                    total_balance += Decimal("0.00")
+        order_data.total_balance = total_balance
+
+        # Get product count for this order
+        product_count_stmt = select(func.count(OrderProduct.id)).where(OrderProduct.order_id == order.id)
+        product_count = session.exec(product_count_stmt).scalar() or 0
+        order_data.product_count = product_count
+
+        # Get total order count for customer
+        order_count_stmt = select(func.count(Order.id)).where(Order.customer_id == order.customer_id)
+        order_count = session.exec(order_count_stmt).scalar() or 0
+        order_data.order_count = order_count
+
         enhanced_orders.append(order_data)
 
-    return api_response(200, "Orders found", enhanced_orders, result["total"])
+    return api_response(200, "Orders found", enhanced_orders, result["total"], result.get("totalCount"))
 
 
 @router.get("/customer/{customer_id}", response_model=list[OrderReadNested])
@@ -2944,7 +3118,7 @@ def get_customer_orders(
         return api_response(404, "No orders found for this customer")
 
     orders = result["data"]
-    return api_response(200, "Customer orders found", orders, result["total"])
+    return api_response(200, "Customer orders found", orders, result["total"], result.get("totalCount"))
 
 @router.get("/sales-report")
 def get_sales_report(

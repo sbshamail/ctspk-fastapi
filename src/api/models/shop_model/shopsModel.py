@@ -89,16 +89,21 @@ class ShopRead(TimeStampReadModel):
     # include nested owner
     owner: Optional[UserReadBase] = None
 
-    model_config = {"from_attributes": True}
-
 
 # ---------- READ WITH EARNINGS ----------
 class ShopReadWithEarnings(ShopRead):
     """Shop read schema with earnings summary from shop_earnings table"""
+    model_config = {"from_attributes": True}
+    
     total_earnings: Decimal = Decimal("0.00")  # Total shop_earning
     total_settled: Decimal = Decimal("0.00")  # Total settled_amount
     total_admin_commission: Decimal = Decimal("0.00")  # Total admin_commission
     available_balance: Decimal = Decimal("0.00")  # total_earnings - total_settled
+    total_products: int = 0  # Total products (active + inactive)
     total_active_products: int = 0
     total_inactive_products: int = 0
     total_orders: int = 0
+    has_products: bool = False  # Shop has any product
+    has_orders: bool = False  # Shop has any order
+    products_in_cart: int = 0  # Number of products added to cart
+    products_in_orders: int = 0  # Number of products placed in orders
